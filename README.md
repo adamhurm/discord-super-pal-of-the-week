@@ -11,16 +11,18 @@ Currently this supports commands and the looped task.
 
 ## Setup
 
-Install dependencies:
-`pip install -U discord.py python-dotenv`
+1. Ensure python3 is on your system and then install dependencies: `pip install -U discord.py python-dotenv`
 
 
-Create a local file named `.env` and fill it with the following content:
+2. Create a local file named `.env` and fill it with the following content:
 ```
 DISCORD_TOKEN=
 GUILD_ID=
 CHANNEL_ID=
 ```
+
+3. Run the python script: `python3 discord-super-pal-of-the-week.py`
+
 #### DISCORD_TOKEN
 - You can find or create a bot token in the [Discord developer portal](https://discord.com/developers/applications/).
 
@@ -42,5 +44,5 @@ CHANNEL_ID=
 
 - GUILD_ID: Right-click on your server icon and select `Copy ID`
 
-- CHANNEL_ID: Right click on the text channel where you want posts from super-pal-of-the-week-manager and select `Copy ID`
+- CHANNEL_ID: Right-click on the text channel where you want posts from super-pal-of-the-week-manager and select `Copy ID`
 
