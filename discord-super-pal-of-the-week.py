@@ -9,8 +9,8 @@ from random import randrange
 # Load environmental variables.
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-GUILD_ID = os.getenv('GUILD_ID')
-CHANNEL_ID = os.getenv('CHANNEL_ID')
+GUILD_ID = int(os.getenv('GUILD_ID'))
+CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 
 # Required to list all users in a guild.
 intents = discord.Intents.default()
@@ -41,6 +41,11 @@ async def super_pal_of_the_week():
             print(f'{member.name} has been added to super pal of the week role.')
             await channel.send(f'Congratulations to {spotw.name}, the super pal of the week!')
 
+# Event: Wait until bot is ready to fetch members
+@bot.event
+async def on_ready():
+    super_pal_of_the_week.start()
+
 # Command: Promote Users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
 @commands.has_role('super pal of the week')
@@ -49,5 +54,4 @@ async def add_super_pal(ctx, member: discord.Member):
     if role not in member.roles:
         await member.add_roles(role)
 
-super_pal_of_the_week.start()
 bot.run(TOKEN)
