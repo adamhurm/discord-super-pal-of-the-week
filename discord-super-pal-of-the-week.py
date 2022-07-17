@@ -1,4 +1,4 @@
-# discord-super-pal-of-the-week.py
+#!/usr/bin/env python3
 from http.client import ResponseNotReady
 import os
 import discord
