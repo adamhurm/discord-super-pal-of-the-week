@@ -50,7 +50,7 @@ async def super_pal_of_the_week():
 async def before_super_pal_of_the_week():
     # Find amount of time until Sunday at noon. 
     now = datetime.now()
-    days_until_sunday = 7 - datetime.date.today().isoweekday()
+    days_until_sunday = 7 - date.today().isoweekday()
     future = datetime.datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
     # Sleep task until Sunday at noon.
     await asyncio.sleep((future-now).seconds)
