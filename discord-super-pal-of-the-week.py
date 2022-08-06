@@ -2,7 +2,7 @@
 import asyncio
 import discord
 import os
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from http.client import ResponseNotReady
@@ -51,7 +51,7 @@ async def before_super_pal_of_the_week():
     # Find amount of time until Sunday at noon. 
     now = datetime.now()
     days_until_sunday = 7 - date.today().isoweekday()
-    future = datetime.datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
+    future = datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
     # Sleep task until Sunday at noon.
     await asyncio.sleep((future-now).seconds)
 
@@ -65,7 +65,11 @@ async def on_ready():
 @commands.has_role('super pal of the week')
 async def add_super_pal(ctx, member: discord.Member):
     role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
+    former_super_pal = ctx.message.author
     if role not in member.roles:
         await member.add_roles(role)
+        await former_super_pal.remove_roles(role)
+        await channel.send(f'Congratulations {member.name}! You have been promoted to super pal of the week by {former_super_pal.name}.')
+        print(f'{member.name}promoted {former_super_pal.name}')
 
 bot.run(TOKEN)
