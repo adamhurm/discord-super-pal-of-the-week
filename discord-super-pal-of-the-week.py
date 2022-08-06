@@ -64,13 +64,14 @@ async def on_ready():
 # Command: Promote users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
 @commands.has_role('super pal of the week')
-async def add_super_pal(ctx, member: discord.Member):
+async def add_super_pal(ctx, new_super_pal: discord.Member):
     role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
-    former_super_pal = ctx.message.author
-    if role not in member.roles and role in former_super_pal.roles:
-        await member.add_roles(role)
-        await former_super_pal.remove_roles(role)
-        await channel.send(f'Congratulations {member.name}! You have been promoted to super pal of the week by {former_super_pal.name}.')
-        print(f'{member.name} promoted {former_super_pal.name}')
+    current_super_pal = ctx.message.author
+    if role not in new_super_pal.roles:
+        # Promote new user and remove current user.
+        await new_super_pal.add_roles(role)
+        await current_super_pal.remove_roles(role)
+        print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
+        await channel.send(f'Congratulations {new_super_pal.name}! You have been promoted to super pal of the week by {current_super_pal.name}.')
 
 bot.run(TOKEN)
