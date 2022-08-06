@@ -53,6 +53,7 @@ async def before_super_pal_of_the_week():
     days_until_sunday = 7 - date.today().isoweekday()
     future = datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
     # Sleep task until Sunday at noon.
+    print(f'Sleeping for {(future-now).seconds} seconds. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).seconds)
 
 # Event: Start loop once bot is ready
@@ -70,6 +71,6 @@ async def add_super_pal(ctx, member: discord.Member):
         await member.add_roles(role)
         await former_super_pal.remove_roles(role)
         await channel.send(f'Congratulations {member.name}! You have been promoted to super pal of the week by {former_super_pal.name}.')
-        print(f'{member.name}promoted {former_super_pal.name}')
+        print(f'{member.name} promoted {former_super_pal.name}')
 
 bot.run(TOKEN)
