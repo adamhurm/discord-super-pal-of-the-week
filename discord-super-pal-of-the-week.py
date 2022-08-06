@@ -67,7 +67,7 @@ async def on_ready():
 async def add_super_pal(ctx, member: discord.Member):
     role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
     former_super_pal = ctx.message.author
-    if role not in member.roles:
+    if role not in member.roles and role in former_super_pal.roles:
         await member.add_roles(role)
         await former_super_pal.remove_roles(role)
         await channel.send(f'Congratulations {member.name}! You have been promoted to super pal of the week by {former_super_pal.name}.')
