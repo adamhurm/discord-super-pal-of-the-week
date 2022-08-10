@@ -59,7 +59,8 @@ async def before_super_pal_of_the_week():
 # Event: Start loop once bot is ready
 @bot.event
 async def on_ready():
-    super_pal_of_the_week.start()
+    if not super_pal_of_the_week.is_running():
+        super_pal_of_the_week.start()
 
 # Command: Promote users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
