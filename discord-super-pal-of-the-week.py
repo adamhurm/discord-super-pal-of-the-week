@@ -43,7 +43,7 @@ async def super_pal_of_the_week():
         elif member == spotw:
             await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
-            await channel.send(f'Congratulations to {spotw.name}, the super pal of the week!')
+            await channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!')
 
 # Before Loop : Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
@@ -73,6 +73,6 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-        await channel.send(f'Congratulations {new_super_pal.name}! You have been promoted to super pal of the week by {current_super_pal.name}.')
+        await channel.send(f'Congratulations {new_super_pal.mention}! You have been promoted to super pal of the week by {current_super_pal.name}.')
 
 bot.run(TOKEN)
