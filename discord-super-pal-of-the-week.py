@@ -45,7 +45,7 @@ async def super_pal_of_the_week():
             print(f'{member.name} has been added to super pal of the week role.')
             await channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!\n'
                                 f'You can now try out the following super pal commands:\n'
-                                f'!spotw @name | !cacaw | !meow | !help (for more info)')
+                                f'!spotw @name | !cacaw | !meow | !commands (for full list)')
 
 # Before Loop : Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
@@ -78,9 +78,9 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         await channel.send(f'Congratulations {new_super_pal.mention}!'
                             f'You have been promoted to super pal of the week by {current_super_pal.name}.')
 # Command: Display more information about commands.
-@bot.command(name='help', pass_context=True)
+@bot.command(name='commands', pass_context=True)
 @commands.has_role('super pal of the week')
-async def cacaw(ctx):
+async def list_commands(ctx):
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used help command.')
     msg = f"""!spotw @name\n\tPromote another user to super pal of the week. Be sure to @mention the user.
