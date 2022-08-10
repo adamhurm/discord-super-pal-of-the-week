@@ -43,7 +43,7 @@ async def super_pal_of_the_week():
         elif member == spotw:
             await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
-            await channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!\n'
+            await channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!\n\n'
                                 f'You can now try out the following super pal commands:\n'
                                 f'!spotw @name | !cacaw | !meow | !commands (for full list)')
 
