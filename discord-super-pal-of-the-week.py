@@ -53,8 +53,8 @@ async def before_super_pal_of_the_week():
     days_until_sunday = 7 - date.today().isoweekday()
     future = datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
     # Sleep task until Sunday at noon.
-    print(f'Sleeping for {(future-now).seconds} seconds. Will wake up Sunday at 12PM Eastern Time.')
-    await asyncio.sleep((future-now).seconds)
+    print(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
+    await asyncio.sleep((future-now).total_seconds())
 
 # Event: Start loop once bot is ready
 @bot.event
