@@ -13,6 +13,7 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
+ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 
 # Required to list all users in a guild.
 intents = discord.Intents.default()
@@ -26,6 +27,7 @@ async def super_pal_of_the_week():
     await bot.wait_until_ready()
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
+    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='super pal of the week')
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
@@ -43,11 +45,12 @@ async def super_pal_of_the_week():
         elif member == spotw:
             await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
-            await channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!\n\n'
+            await announcements_channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!')
+            await channel.send(f'Congratulations {spotw.mention}! Welcome to the super pal channel.\n\n'
                                 f'You can now try out the following super pal commands:\n'
                                 f'!spotw @name | !cacaw | !meow | !commands (for full list)')
 
-# Before Loop : Wait until Sunday at noon.
+# Before Loop: Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
 async def before_super_pal_of_the_week():
     # Find amount of time until Sunday at noon. 
@@ -64,7 +67,7 @@ async def before_super_pal_of_the_week():
 # Event: Avoid printing errors message for commands that aren't related to Super Pal Bot.
 @bot.event
 async def on_command_error(ctx, error):
-    if isinstance(error, CommandNotFound):
+    if isinstance(error, commands.errors.CommandNotFound):
         return
     raise error
 
@@ -85,8 +88,12 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-        await channel.send(f'Congratulations {new_super_pal.mention}!'
+        await announcements_channel.send(f'Congratulations {spotw.mention},'
                             f'You have been promoted to super pal of the week by {current_super_pal.name}.')
+        await channel.send(f'Congratulations {spotw.mention}! Welcome to the super pal channel.\n\n'
+                            f'You can now try out the following super pal commands:\n'
+                            f'!spotw @name | !cacaw | !meow | !commands (for full list)')
+
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
 @commands.has_role('super pal of the week')
