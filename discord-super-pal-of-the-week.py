@@ -82,6 +82,7 @@ async def on_ready():
 @bot.command(name='spotw', pass_context=True)
 @commands.has_role('super pal of the week')
 async def add_super_pal(ctx, new_super_pal: discord.Member):
+    await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
     announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
     role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
