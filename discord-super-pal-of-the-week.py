@@ -78,6 +78,31 @@ async def on_ready():
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
 
+# Command: Spin the whell for a random "Super Pal of the Week"
+@bot.command(name='spinthewheel', pass_context=True)
+@commands.has_role('super pal of the week')
+async def spinthewheel(ctx):
+    await bot.wait_until_ready()
+    guild = bot.get_guild(GUILD_ID)
+    channel = bot.get_channel(CHANNEL_ID)
+    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
+    role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
+    current_super_pal = ctx.message.author
+    # Get list of members and filter out bots.
+    true_member_list = [m for m in guild.members if not m.bot]
+    new_super_pal = true_member_list[randrange(len(true_member_list))]
+    print(f'\nPicking new super pal of the week.')
+    if role not in new_super_pal.roles:
+        # Promote new user and remove current user.
+        await new_super_pal.add_roles(role)
+        await current_super_pal.remove_roles(role)
+        print(f'{new_super_pal.name} picked - random spin by {current_super_pal.name}')
+        await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
+                            f'you have been promoted to super pal of the week by {current_super_pal.name}\'s wheel spin.')
+        await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
+                            f'You can now try out the following super pal commands:\n'
+                            f'!spotw @name | !cacaw | !meow | !commands (for full list)')
+
 # Command: Promote users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
 @commands.has_role('super pal of the week')
