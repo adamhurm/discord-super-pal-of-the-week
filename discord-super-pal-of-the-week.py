@@ -91,8 +91,8 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-        await announcements_channel.send(f'Congratulations {new_super_pal.mention},'
-                            f'You have been promoted to super pal of the week by {current_super_pal.name}.')
+        await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
+                            f'you have been promoted to super pal of the week by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
                             f'!spotw @name | !cacaw | !meow | !commands (for full list)')
