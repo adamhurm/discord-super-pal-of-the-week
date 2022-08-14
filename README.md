@@ -6,6 +6,7 @@ This just runs in a tmux session on a raspberry pi.
 Currently this supports commands and the looped task.
 - **Commands:**
   - `!spotw @user` : add another person to super pal of the week.
+  - `!commands` : list all supported commands.
   - `!cacaw` : spam chat with partyparrot emojis.
   - `!meow` : spam chat with partycat emojis.
 - **Looped Task:**
