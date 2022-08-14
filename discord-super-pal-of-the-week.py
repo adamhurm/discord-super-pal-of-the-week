@@ -12,6 +12,7 @@ from random import randrange
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
+EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 
@@ -143,9 +144,11 @@ async def list_commands(ctx):
 async def cacaw(ctx):
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
+    emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
+    partyparrot = discord.utils.get(emoji_guild.emojis, name='partyparrot')
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used cacaw command.')
-    await channel.send(':partyparrot:'*100)
+    await channel.send(str(partyparrot)*100)
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
@@ -153,8 +156,10 @@ async def cacaw(ctx):
 async def meow(ctx):
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
+    emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
+    partymeow = discord.utils.get(emoji_guild.emojis, name='partymeow')
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used meow command.')
-    await channel.send(':partymeow:'*100)
+    await channel.send(str(partymeow)*100)
 
 bot.run(TOKEN)
