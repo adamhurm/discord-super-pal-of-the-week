@@ -53,6 +53,9 @@ async def before_super_pal_of_the_week():
     # Find amount of time until Sunday at noon. 
     now = datetime.now()
     days_until_sunday = 7 - date.today().isoweekday()
+    # If it's past noon on Sunday, add 7 days to timer.
+    if date.today().isoweekday() == 7 and now.hour > 12:
+        days_until_sunday = 7
     future = datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
     # Sleep task until Sunday at noon.
     print(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
