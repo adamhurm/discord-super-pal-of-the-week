@@ -84,17 +84,21 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
 @bot.command(name='commands', pass_context=True)
 @commands.has_role('super pal of the week')
 async def list_commands(ctx):
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used help command.')
-    msg = f"""!spotw @name\n\tPromote another user to super pal of the week. Be sure to @mention the user.
-            !cacaw\n\tSpam the channel with party parrots.
-            !meow\n\tSpam the channel with party cats."""
+    msg = f"""**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.
+**!cacaw**\n\tSpam the channel with party parrots.
+**!meow**\n\tSpam the channel with party cats."""
     await channel.send(msg)
 
 # Command: Send party parrot discord emoji
 @bot.command(name='cacaw', pass_context=True)
 @commands.has_role('super pal of the week')
 async def cacaw(ctx):
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used cacaw command.')
     await channel.send(':partyparrot:'*100)
@@ -103,6 +107,8 @@ async def cacaw(ctx):
 @bot.command(name='meow', pass_context=True)
 @commands.has_role('super pal of the week')
 async def meow(ctx):
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used meow command.')
     await channel.send(':partymeow:'*100)
