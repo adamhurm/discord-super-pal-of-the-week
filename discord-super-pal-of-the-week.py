@@ -61,6 +61,13 @@ async def before_super_pal_of_the_week():
     print(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).total_seconds())
 
+# Event: Avoid printing errors message for commands that aren't related to Super Pal Bot.
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, CommandNotFound):
+        return
+    raise error
+
 # Event: Start loop once bot is ready
 @bot.event
 async def on_ready():
