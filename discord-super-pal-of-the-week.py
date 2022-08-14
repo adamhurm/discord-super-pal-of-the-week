@@ -68,7 +68,6 @@ async def before_super_pal_of_the_week():
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.errors.CommandNotFound):
-        print(f'{ctx.message.author.name} used command that was not mean for super pal bot')
         return
     raise error
 
@@ -90,6 +89,7 @@ async def spinthewheel(ctx):
     current_super_pal = ctx.message.author
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
+    # Choose random "Super Pal of the Week" from list.
     new_super_pal = true_member_list[randrange(len(true_member_list))]
     print(f'\nPicking new super pal of the week.')
     if role not in new_super_pal.roles:
@@ -101,7 +101,7 @@ async def spinthewheel(ctx):
                             f'you have been promoted to super pal of the week by {current_super_pal.name}\'s wheel spin.')
         await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !cacaw | !meow | !commands (for full list)')
+                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
 
 # Command: Promote users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
@@ -121,7 +121,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !cacaw | !meow | !commands (for full list)')
+                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
@@ -132,6 +132,7 @@ async def list_commands(ctx):
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used help command.')
     msg = f"""**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.
+**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.
 **!cacaw**\n\tSpam the channel with party parrots.
 **!meow**\n\tSpam the channel with party cats."""
     await channel.send(msg)
