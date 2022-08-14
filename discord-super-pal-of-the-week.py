@@ -68,6 +68,7 @@ async def before_super_pal_of_the_week():
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.errors.CommandNotFound):
+        print(f'{ctx.message.author.name} used command that was not mean for super pal bot')
         return
     raise error
 
@@ -90,9 +91,9 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-        await announcements_channel.send(f'Congratulations {spotw.mention},'
+        await announcements_channel.send(f'Congratulations {new_super_pal.mention},'
                             f'You have been promoted to super pal of the week by {current_super_pal.name}.')
-        await channel.send(f'Congratulations {spotw.mention}! Welcome to the super pal channel.\n\n'
+        await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
                             f'!spotw @name | !cacaw | !meow | !commands (for full list)')
 
