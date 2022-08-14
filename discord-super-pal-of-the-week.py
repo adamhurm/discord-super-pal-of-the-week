@@ -78,6 +78,28 @@ async def on_ready():
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
 
+# Event: Check Spin The Wheel rich message
+@bot.event
+async def on_message(message):
+    embeds = message.embeds
+    for embed in embeds:
+        if embed.description[0] == '🏆':
+            await bot.wait_until_ready()
+            guild = bot.get_guild(GUILD_ID)
+            channel = bot.get_channel(CHANNEL_ID)
+            announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
+            role = discord.utils.get(guild.roles, name='super pal of the week')
+            winner = embed.description[12:-2]
+            new_super_pal = discord.utils.get(guild.members, name=winner)
+            print(f'{new_super_pal.name} was chosen by the wheel spin.')
+            await new_super_pal.add_roles(role)
+            await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
+                            f'you have been promoted to super pal of the week by wheel spin.')
+            await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
+                            f'You can now try out the following super pal commands:\n'
+                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
+    await bot.process_commands(message)
+
 # Command: Spin the whell for a random "Super Pal of the Week"
 @bot.command(name='spinthewheel', pass_context=True)
 @commands.has_role('super pal of the week')
@@ -86,23 +108,18 @@ async def spinthewheel(ctx):
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
-    role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
+    role = discord.utils.get(guild.roles, name='super pal of the week')
     current_super_pal = ctx.message.author
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
     # Choose random "Super Pal of the Week" from list.
     new_super_pal = true_member_list[randrange(len(true_member_list))]
-    print(f'\nPicking new super pal of the week.')
-    if role not in new_super_pal.roles:
-        # Promote new user and remove current user.
-        await new_super_pal.add_roles(role)
-        await current_super_pal.remove_roles(role)
-        print(f'{new_super_pal.name} picked - random spin by {current_super_pal.name}')
-        await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
-                            f'you have been promoted to super pal of the week by {current_super_pal.name}\'s wheel spin.')
-        await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
-                            f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
+    true_name_list = [member.name for member in true_member_list]
+    true_name_str = ", ".join(true_name_list)
+    await channel.send(f'!pick {true_name_str}')
+    print(f'\nSpinning the wheel for new super pal of the week.')
+    # Promote new user and remove current user.
+    await current_super_pal.remove_roles(role)
 
 # Command: Promote users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
@@ -148,7 +165,7 @@ async def cacaw(ctx):
     partyparrot = discord.utils.get(emoji_guild.emojis, name='partyparrot')
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used cacaw command.')
-    await channel.send(str(partyparrot)*100)
+    await channel.send(str(partyparrot)*50)
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
@@ -160,6 +177,6 @@ async def meow(ctx):
     partymeow = discord.utils.get(emoji_guild.emojis, name='partymeow')
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used meow command.')
-    await channel.send(str(partymeow)*100)
+    await channel.send(str(partymeow)*50)
 
 bot.run(TOKEN)
