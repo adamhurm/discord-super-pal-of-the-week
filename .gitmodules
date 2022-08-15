@@ -1,0 +1,3 @@
+[submodule "wheel-of-names-discord-bot"]
+	path = wheel-of-names-discord-bot
+	url = https://github.com/adamhurm/wheel-of-names-discord-bot
