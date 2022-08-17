@@ -31,6 +31,7 @@ WHEEL_TOKEN=
 GUILD_ID=
 CHANNEL_ID=
 ANNOUNCEMENTS_CHANNEL_ID=
+EMOJI_GUILD_ID=
 ```
 
 #### SUPERPAL\_TOKEN and WHEEL\_TOKEN
@@ -53,6 +54,8 @@ ANNOUNCEMENTS_CHANNEL_ID=
 - Turn on `Developer Mode` in Settings -> Advanced
 
 - GUILD\_ID: Right-click on your server icon and select `Copy ID`
+
+- EMOJI\_GUILD\_ID: Right-click on the server icon where party emojis are hosted and select `Copy ID`
 
 - CHANNEL\_ID: Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID`
 
