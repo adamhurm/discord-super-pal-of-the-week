@@ -10,7 +10,7 @@ from random import randrange
 
 # Load environmental variables.
 load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('SUPERPAL_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
 EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
