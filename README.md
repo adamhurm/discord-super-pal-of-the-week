@@ -1,7 +1,7 @@
 # super-pal-of-the-week
 Discord mod that promotes users to Super Pal of the Week role.
 
-This just runs in a tmux session on a raspberry pi.
+This can just run in a tmux session on a raspberry pi. If you want a more portable build, however, you can use the docker image.
 
 Currently this supports commands and the looped task.
 - **Commands:**
@@ -13,28 +13,35 @@ Currently this supports commands and the looped task.
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
 
 --------
+## LOCAL INSTALLATION
 
-## Step 1: Install dependencies
-Ensure python3 is on your system and then install dependencies: `pip install -U discord.py python-dotenv`
+### Step 1: Clone this repository and install dependencies
+First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
+
+Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv`
 
 <br/>
 
-## Step 2: Create a local file named `.env` to hold your tokens and IDs:
+### Step 2: Create a local file named `.env` to hold your tokens and IDs:
 
-### .env
+#### .env
 ```
-DISCORD_TOKEN=
+SUPERPAL_TOKEN=
+WHEEL_TOKEN=
 GUILD_ID=
 CHANNEL_ID=
+ANNOUNCEMENTS_CHANNEL_ID=
 ```
 
-#### DISCORD\_TOKEN
-- You can find or create a bot token in the [Discord developer portal](https://discord.com/developers/applications/).
+#### SUPERPAL\_TOKEN and WHEEL\_TOKEN
+
+- You will need to create two bots in the [Discord developer portal](https://discord.com/developers/applications/): Super Pal Bot & Spin the Wheel Bot.
 
 - Choose your application -> Go to Bot section -> Look under "Token" section \
 (This token can only be copied once so you may have to reset your token if you do not know it)
 
-#### GUILD\_ID and CHANNEL\_ID
+
+#### GUILD\_ID, CHANNEL\_ID, and ANNOUNCEMENTS\_CHANNEL\_ID
 [Web Application](https://discord.com/app) (in-browser)
 
 - Click on the text channel in your server.
@@ -47,11 +54,13 @@ CHANNEL_ID=
 
 - GUILD\_ID: Right-click on your server icon and select `Copy ID`
 
-- CHANNEL\_ID: Right-click on the text channel where you want posts from super-pal-of-the-week-manager and select `Copy ID`
+- CHANNEL\_ID: Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID`
+
+- ANNOUNCEMENTS\_CHANNEL\_ID: Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID`
 
 <br/>
 
-## Step 3: Configure Super Pal roles in your channel:
+### Step 3: Configure Super Pal roles in your channel:
 
 - Create a role named `super pal of the week` and add your desired elevated permissions (if any).
 
@@ -60,7 +69,7 @@ CHANNEL_ID=
 
 <br/>
 
-## Step 4: Create an invite link to add the Super Pal Bot to your channel.
+### Step 4: Create an invite link to add the Super Pal Bot to your channel.
 
 Get your bot's CLIENT\_ID under OAuth2 > General in the [Discord developer portal](https://discord.com/developers/applications/).
 
@@ -78,7 +87,17 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 
 <br/>
 
-## Run the script!
+### Run the script!
 Now just run the python script: `python3 discord-super-pal-of-the-week.py`
 
 (I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
+
+<br/>
+
+## Docker installation instructions:
+
+First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
+
+Next, follow Step 2 above to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
+
+Once the .env file is in place, build the container: `docker build -t discord-super-pal-of-the-week .`
