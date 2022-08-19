@@ -29,9 +29,9 @@ Then after ensuring python3 is on your system, install dependencies: `pip instal
 SUPERPAL_TOKEN=
 WHEEL_TOKEN=
 GUILD_ID=
+EMOJI_GUILD_ID=
 CHANNEL_ID=
 ANNOUNCEMENTS_CHANNEL_ID=
-EMOJI_GUILD_ID=
 ```
 
 #### SUPERPAL\_TOKEN and WHEEL\_TOKEN
@@ -42,7 +42,7 @@ EMOJI_GUILD_ID=
 (This token can only be copied once so you may have to reset your token if you do not know it)
 
 
-#### GUILD\_ID, CHANNEL\_ID, and ANNOUNCEMENTS\_CHANNEL\_ID
+#### GUILD\_ID, EMOJI\_GUILD\_ID, CHANNEL\_ID, and ANNOUNCEMENTS\_CHANNEL\_ID
 [Web Application](https://discord.com/app) (in-browser)
 
 - Click on the text channel in your server.
