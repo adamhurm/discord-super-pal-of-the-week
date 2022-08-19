@@ -13,7 +13,7 @@ Currently this supports commands and the looped task.
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
 
 --------
-## LOCAL INSTALLATION
+## Local Installation
 
 ### Step 1: Clone this repository and install dependencies
 First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
@@ -103,4 +103,8 @@ First clone this repository: `git clone git@github.com:adamhurm/discord-super-pa
 
 Next, follow Step 2 above to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
 
-Once the .env file is in place, build the container: `docker build -t discord-super-pal-of-the-week .`
+Once the .env file is in place, build the image: `docker build -t discord-super-pal-of-the-week .`
+
+Now you can just deploy and run the image anywhere: `docker run -d discord-super-pal-of-the-week`
+
+*WARNING: This iteration of the project does not use any docker secrets or secure storage for discord tokens. Your tokens will all be in plaintext, so -- Please do not publicly upload your container until this notice is removed.*
