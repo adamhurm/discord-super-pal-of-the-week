@@ -77,12 +77,20 @@ ANNOUNCEMENTS_CHANNEL_ID=
 Get your bot's CLIENT\_ID under OAuth2 > General in the [Discord developer portal](https://discord.com/developers/applications/).
 
 Recommended settings for OAuth Invite Link:
+**Super Pal Bot**
 - guilds
 - guilds.members.read
 - bot
   - Manage Roles
   - Send Messages
 
+**Spin the Wheel Bot**
+- guilds
+- guilds.members.read
+- bot
+  - Send Messages
+  - Manage Messages
+  - Attach Files
 <br/>
 
 The settings listed above would result in the following link, where [CLIENT\_ID] is substituted with your bot's CLIENT\_ID:
@@ -90,8 +98,10 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 
 <br/>
 
-### Run the script!
-Now just run the python script: `python3 discord-super-pal-of-the-week.py`
+### Run the bots!
+Now you'll need to run the bots:
+ - Super Pal Bot: `python3 discord-super-pal-of-the-week.py`
+ - Spin the Wheel Bot: `npm start`
 
 (I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
 
