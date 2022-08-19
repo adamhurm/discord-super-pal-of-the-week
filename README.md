@@ -21,7 +21,7 @@ First clone this repository: `git clone git@github.com:adamhurm/discord-super-pa
 
 Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv`
 
-Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd spin-the-wheel-discord-bot && yarn install`
+Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
 
 <br/>
 
@@ -104,7 +104,7 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 ### Run the bots!
 Now you'll need to run the bots:
  - Super Pal Bot: `python3 discord-super-pal-of-the-week.py`
- - Spin the Wheel Bot: `yarn start`
+ - Spin the Wheel Bot: `cd discord-spin-the-wheel && yarn start`
 
 (I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
 
