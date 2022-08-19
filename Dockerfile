@@ -11,7 +11,7 @@ RUN apt update && apt install python3 python3-pip git curl -y \
 && cd /home && git clone https://github.com/adamhurm/discord-super-pal-of-the-week \
 && cd discord-super-pal-of-the-week && pip install -U discord.py python-dotenv \
 && cd wheel-of-names-discord-bot && git submodule update --init \
-&& npm install -g yarn && yarn install && yarn setup \
+&& npm install -g yarn dotenv && yarn install && yarn setup \
 && cp /home/.env /home/discord-super-pal-of-the-week \
 && chmod +x /home/run.sh
 
