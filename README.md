@@ -20,7 +20,7 @@ First clone this repository: `git clone git@github.com:adamhurm/discord-super-pa
 
 Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv`
 
-Follow the [spin-the-wheel installation instructions](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use): `cd spin-the-wheel-discord-bot && yarn install`
+Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd spin-the-wheel-discord-bot && yarn install`
 
 <br/>
 
@@ -113,7 +113,7 @@ Now you'll need to run the bots:
 
 First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Next, follow Step 2 above to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
+Next, follow [Step 2 above](https://github.com/adamhurm/discord-super-pal-of-the-week#step-2-create-a-local-file-named-env-to-hold-your-tokens-and-ids) to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
 
 Once the .env file is in place, build the image: `docker build -t discord-super-pal-of-the-week .`
 
