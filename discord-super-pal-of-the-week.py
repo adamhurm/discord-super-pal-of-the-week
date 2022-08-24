@@ -180,4 +180,18 @@ async def meow(ctx):
     print(f'{current_super_pal.name} used meow command.')
     await channel.send(str(partymeow)*50)
 
+# Command: Surprise images
+@bot.command(name='surprise', pass_context=True)
+@commands.has_role('super pal of the week')
+async def surprise(ctx):
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    current_super_pal = ctx.message.author
+    print(f'{current_super_pal.name} used surprise command.')
+	image_types = ["bucket", "nails", "mantis"]
+	random_image_type = image_types[randrange(0,3)]
+	random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
+				      + random_image_type + str(randrange(0,10)) + ".jpg"
+	await bot.send_file(channel, open(random_path))
+
 bot.run(TOKEN)
