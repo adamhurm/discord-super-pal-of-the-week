@@ -189,9 +189,9 @@ async def surprise(ctx):
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used surprise command.')
     image_types = ["bucket", "nails", "mantis"]
-	random_image_type = image_types[randrange(0,3)]
-	random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
-				      + random_image_type + str(randrange(0,10)) + ".jpg"
-	await bot.send_file(channel, open(random_path))
+    random_image_type = image_types[randrange(0,3)]
+    random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
+                      + random_image_type + str(randrange(0,10)) + ".jpg"
+    await bot.send_file(channel, open(random_path))
 
 bot.run(TOKEN)
