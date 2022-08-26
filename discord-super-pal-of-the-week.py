@@ -171,7 +171,7 @@ async def cacaw(ctx):
 # Command: Randomly remove one user from voice chat
 @bot.command(name='karatechop', pass_context=True)
 @commands.has_role('super pal of the week')
-async def add_super_pal(ctx):
+async def karate_chop(ctx):
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
