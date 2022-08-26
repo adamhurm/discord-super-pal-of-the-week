@@ -174,15 +174,15 @@ async def karate_chop(ctx):
     current_super_pal = ctx.message.author
     # Assume "General" voice channel exists
     voice_channel = discord.utils.get(ctx.message.server.channels, name="General", type=discord.ChannelType.voice)
-	if not voice_channel.members:
-		print(f'{current_super_pal.name} used karate chop, but no one is in the voice channel')
-    	await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
-	else:
-    	true_member_list = [m for m in voice_channel.members if not m.bot]
-    	chopped_member = choice(true_member_list)
-    	chopped_member.move_to(None)
-    	print(f'{chopped_member.name} karate chopped by {current_super_pal.name}')
-    	await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
+    if not voice_channel.members:
+        print(f'{current_super_pal.name} used karate chop, but no one is in the voice channel')
+        await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
+    else:
+        true_member_list = [m for m in voice_channel.members if not m.bot]
+        chopped_member = choice(true_member_list)
+        chopped_member.move_to(None)
+        print(f'{chopped_member.name} karate chopped by {current_super_pal.name}')
+        await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
