@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from http.client import ResponseNotReady
-from random import randrange
+from random import choice, randrange
 
 # Load environmental variables.
 load_dotenv()
@@ -167,6 +167,21 @@ async def cacaw(ctx):
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used cacaw command.')
     await channel.send(str(partyparrot)*50)
+
+# Command: Randomly remove one user from voice chat
+@bot.command(name='karatechop', pass_context=True)
+@commands.has_role('super pal of the week')
+async def add_super_pal(ctx):
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    current_super_pal = ctx.message.author
+    # Assume "General" voice channel exists
+    voice_channel = discord.utils.get(ctx.message.server.channels, name="General", type=discord.ChannelType.voice)
+    true_member_list = [m for m in voice_channel.members if not m.bot]
+    chopped_member = choice(true_member_list)
+    chopped_member.move_to(None)
+    print(f'{chopped_member.name} karate chopped by {current_super_pal.name}')
+    await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
