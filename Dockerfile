@@ -13,7 +13,7 @@ RUN apt update && apt install python3 python3-pip git curl tmux -y \
 && cd discord-spin-the-wheel && git submodule update --init \
 && npm install -g yarn dotenv && yarn install && yarn setup \
 && cp /home/.env /home/discord-super-pal-of-the-week \
-&& chmod +x /home/run.sh
+&& chmod +x /home/run.sh && mkdir assets
 
-COPY assets /home/discord-super-pal-of-the-week/
+COPY assets /home/discord-super-pal-of-the-week/assets
 CMD ["/bin/bash", "/home/run.sh"]
