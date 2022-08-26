@@ -108,13 +108,10 @@ async def spinthewheel(ctx):
     await bot.wait_until_ready()
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
-    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='super pal of the week')
     current_super_pal = ctx.message.author
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
-    # Choose random "Super Pal of the Week" from list.
-    new_super_pal = true_member_list[randrange(len(true_member_list))]
     true_name_list = [member.name for member in true_member_list]
     true_name_str = ", ".join(true_name_list)
     await channel.send(f'!pick {true_name_str}')
