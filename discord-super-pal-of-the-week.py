@@ -2,11 +2,11 @@
 import asyncio
 import discord
 import os
+import random
 from datetime import date, datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from http.client import ResponseNotReady
-from random import choice, randrange
 
 # Load environmental variables.
 load_dotenv()
@@ -34,7 +34,7 @@ async def super_pal_of_the_week():
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
     # Choose random "Super Pal of the Week" from list.
-    spotw = true_member_list[randrange(len(true_member_list))]
+    spotw = random.choice(true_member_list)
     print(f'\nPicking new super pal of the week.')
 
     for member in true_member_list:
@@ -179,7 +179,7 @@ async def karate_chop(ctx):
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
         true_member_list = [m for m in voice_channel.members if not m.bot]
-        chopped_member = choice(true_member_list)
+        chopped_member = random.choice(true_member_list)
         chopped_member.move_to(None)
         print(f'{chopped_member.name} karate chopped by {current_super_pal.name}')
         await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
@@ -205,9 +205,9 @@ async def surprise(ctx):
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used surprise command.')
     image_types = ["bucket", "nails", "mantis"]
-    random_image_type = image_types[randrange(0,3)]
+    random_image_type = image_types[random.randrange(0,3)]
     random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
-                      + random_image_type + str(randrange(0,10)) + ".jpg"
+                      + random_image_type + str(random.randrange(0,10)) + ".jpg"
     await channel.send(file=discord.File(random_path))
 
 bot.run(TOKEN)
