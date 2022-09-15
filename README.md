@@ -36,42 +36,28 @@ EMOJI_GUILD_ID=
 CHANNEL_ID=
 ANNOUNCEMENTS_CHANNEL_ID=
 ```
+<br/>
 
-#### SUPERPAL\_TOKEN and WHEEL\_TOKEN
+| Token / ID       | How do I get this value? |
+| ---------------- | ------------------------ |
+| SUPERPAL\_TOKEN  | Create a Super Pal of the Week bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
+| WHEEL\_TOKEN     | Create a Spin the Wheel bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
+| GUILD\_ID        | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
+| EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
+| CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
+| ANNOUNCEMENTS\_CHANNEL\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[ANNOUNCEMENTS_CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID` |
 
-- You will need to create two bots in the [Discord developer portal](https://discord.com/developers/applications/): Super Pal Bot & Spin the Wheel Bot.
-
-- Choose your application -> Go to Bot section -> Look under "Token" section \
-(This token can only be copied once so you may have to reset your token if you do not know it)
-
-
-#### GUILD\_ID, EMOJI\_GUILD\_ID, CHANNEL\_ID, and ANNOUNCEMENTS\_CHANNEL\_ID
-[Web Application](https://discord.com/app) (in-browser)
-
-- Click on the text channel in your server.
-
-- Look at your URL. It will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]`
-
-[Desktop Application](https://discord.com/download)
-
-- Turn on `Developer Mode` in Settings -> Advanced
-
-- GUILD\_ID: Right-click on your server icon and select `Copy ID`
-
-- EMOJI\_GUILD\_ID: Right-click on the server icon where party emojis are hosted and select `Copy ID`
-
-- CHANNEL\_ID: Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID`
-
-- ANNOUNCEMENTS\_CHANNEL\_ID: Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID`
+**Bot token warning:** The discord bot token can only be copied once so you may have to reset your token if you do not know it. <br/>
+**In-browser:** In a web browser, open the [web application](https://discord.com/app). <br/>
+**Desktop Client:** In the [desktop application](https://discord.com/download), turn on **Developer Mode** in Settings -> Advanced. <br/>
 
 <br/>
 
 ### Step 3: Configure Super Pal roles in your channel:
 
-- Create a role named `super pal of the week` and add your desired elevated permissions (if any).
+Create a role named `super pal of the week` and add your desired elevated permissions (if any).
 
-- Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot.
-  - This is required in order for the Super Pal Bot to apply the `super pal of the week` role.
+Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `super pal of the week` role.
 
 <br/>
 
@@ -80,6 +66,7 @@ ANNOUNCEMENTS_CHANNEL_ID=
 Get your bot's CLIENT\_ID under OAuth2 > General in the [Discord developer portal](https://discord.com/developers/applications/).
 
 Recommended settings for OAuth Invite Link:
+
 **Super Pal Bot**
 - guilds
 - guilds.members.read
