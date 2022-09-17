@@ -56,7 +56,7 @@ async def super_pal_of_the_week():
 # Before Loop: Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
 async def before_super_pal_of_the_week():
-    # Find amount of time until Sunday at noon. 
+    # Find amount of time until Sunday at noon.
     now = datetime.now()
     days_until_sunday = 7 - date.today().isoweekday()
     # If it's past noon on Sunday, add 7 days to timer.
@@ -188,23 +188,27 @@ async def karate_chop(ctx):
     current_super_pal = ctx.message.author
     # Assume "General" voice channel exists.
     voice_channels = [
-        discord.utils.get(ctx.message.server.channels, name="General", type=discord.ChannelType.voice),
-        discord.utils.get(ctx.message.server.channels, name="Classified", type=discord.ChannelType.voice),
+        discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F50A | General", type=discord.ChannelType.voice),
+        discord.utils.get(ctx.message.guild.voice_channels, name="Classified", type=discord.ChannelType.voice),
+        discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F3AE | Games", type=discord.ChannelType.voice),
+        discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F464 | AFK", type=discord.ChannelType.voice)
     ]
     # Kick random user from voice channel.
-    if not voice_channels[0].members or voice_channels[1].members:
+    if not voice_channels[0].members or voice_channels[1].members or voice_channels[2].members:
         print(f'{current_super_pal.name} used karate chop, but no one is in the voice channels')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
         # Prioritize Classified channel for karate chop
         voice_channel = None
-        if voice_channels[1].members:
+        if voice_channels[2].members:
+            voice_channel = voice_channels[2]
+        elif voice_channels[1].members:
             voice_channel = voice_channels[1]
         else:
-            voice_channel = voice_channels[0] 
+            voice_channel = voice_channels[0]
         true_member_list = [m for m in voice_channel.members if not m.bot]
         chopped_member = random.choice(true_member_list)
-        chopped_member.move_to(None)
+        await chopped_member.move_to(voice_channels[3])
         print(f'{chopped_member.name} karate chopped by {current_super_pal.name}')
         await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
 
