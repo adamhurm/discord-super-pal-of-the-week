@@ -146,7 +146,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
+                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !surprise | !karatechop | !commands (for full list)')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
@@ -161,7 +161,10 @@ async def list_commands(ctx):
     msg = f"""**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.
 **!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.
 **!cacaw**\n\tSpam the channel with party parrots.
-**!meow**\n\tSpam the channel with party cats."""
+**!meow**\n\tSpam the channel with party cats.
+**!surprise**\n\tReceive a surprise image in the channel
+**!karatechop**\n\tMove a random user to AFK voice channel.
+"""
     await channel.send(msg)
 
 # Command: Send party parrot discord emoji
