@@ -10,6 +10,8 @@ Currently this supports commands and the looped task.
   - `!commands` : list all supported commands.
   - `!cacaw` : spam chat with partyparrot emojis.
   - `!meow` : spam chat with partycat emojis.
+  - `!surprise` : receive a surprise image in the channel
+  - `!karatechop` : move a random user to AFK voice channel.
 - **Looped Task:**
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
 
