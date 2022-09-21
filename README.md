@@ -10,7 +10,8 @@ Currently this supports commands and the looped task.
   - `!commands` : list all supported commands.
   - `!cacaw` : spam chat with partyparrot emojis.
   - `!meow` : spam chat with partycat emojis.
-  - `!surprise` : receive a surprise image in the channel
+  - `!surprise your text here` : receive a surprise image in the channel based on the text you provide.
+  - `!unsurprise` : receive a surprise image in the channel.
   - `!karatechop` : move a random user to AFK voice channel.
 - **Looped Task:**
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
@@ -21,9 +22,11 @@ Currently this supports commands and the looped task.
 ### Step 1: Clone this repository and install dependencies
 First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv`
+Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv requests`
 
 Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
+
+Follow the [DALL-E Playground](https://github.com/saharmor/dalle-playground) installation instructions: `cd dalle-playground && docker-compose build`
 
 <br/>
 
@@ -94,6 +97,7 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 Now you'll need to run the bots:
  - Super Pal Bot: `python3 discord-super-pal-of-the-week.py`
  - Spin the Wheel Bot: `cd discord-spin-the-wheel && yarn start`
+ - AI Image Bot: `cd dalle-playground && docker-compose up`
 
 (I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
 
@@ -110,3 +114,5 @@ Once the .env file is in place, build the image: `docker build -t discord-super-
 Now you can just deploy and run the image anywhere: `docker run -d discord-super-pal-of-the-week`
 
 *WARNING: This iteration of the project does not use any docker secrets or secure storage for discord tokens. Your tokens will all be in plaintext, so -- Please do not publicly upload your container until this notice is removed.*
+
+*NOTE: Docker installation does not support AI image surprise at this time as it is meant to be much more lightweight.*

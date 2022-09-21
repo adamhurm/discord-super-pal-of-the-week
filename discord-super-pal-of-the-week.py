@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-import asyncio
-import discord
-import os
-import random
+import asyncio, base64, discord, io, os, random, requests
 from datetime import date, datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
@@ -146,7 +143,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !surprise | !karatechop | !commands (for full list)')
+                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !surprise | !unsurprise | !karatechop | !commands (for full list)')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
@@ -162,7 +159,8 @@ async def list_commands(ctx):
 **!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.
 **!cacaw**\n\tSpam the channel with party parrots.
 **!meow**\n\tSpam the channel with party cats.
-**!surprise**\n\tReceive a surprise image in the channel
+**!surprise** your text here\n\tReceive a surprise image in the channel based on the text you provide.
+**!unsurprise**\n\tReceive a surprise image in the channel.
 **!karatechop**\n\tMove a random user to AFK voice channel.
 """
     await channel.send(msg)
@@ -229,16 +227,42 @@ async def meow(ctx):
     print(f'{current_super_pal.name} used meow command.')
     await channel.send(str(partymeow)*50)
 
-# Command: Surprise images
+# Command : Surprise images (AI)
 @bot.command(name='surprise', pass_context=True)
-@commands.has_role('super pal of the week')
 async def surprise(ctx):
+    # Get images from DALLE backend
+    def getDALLE(message):
+        r = requests.post('http://localhost:8080/dalle',
+                         json={'text':message,'num_images':4})
+        if r.status_code != 200:
+            return None
+        images = r.json().get('generatedImgs')
+        return images
+
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    current_super_pal = ctx.message.author
+    print(f'{current_super_pal.name} used surprise command.')
+    print(ctx.message.content)
+    # Talk to local DALL-E AI for surprise images
+    your_text_here = ctx.message.content.removeprefix('!surprise ')
+    files = getDALLE(your_text_here)
+    if files:
+        await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(f)),
+                            filename='{random.randrange(1000)}.jpg') for f in files])
+    else:
+        await channel.send('Failed to create surprise image. Everyone boo Adam.')
+
+# Command: Unsurprise images
+@bot.command(name='unsurprise', pass_context=True)
+@commands.has_role('super pal of the week')
+async def unsurprise(ctx):
     # Get IDs.
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
     # Grab random image from assets folder and send message.
-    print(f'{current_super_pal.name} used surprise command.')
+    print(f'{current_super_pal.name} used unsurprise command.')
     image_types = ["bucket", "nails", "mantis"]
     random_image_type = image_types[random.randrange(0,3)]
     random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \

@@ -1,3 +1,6 @@
 [submodule "discord-spin-the-wheel"]
 	path = discord-spin-the-wheel
 	url = https://github.com/adamhurm/discord-spin-the-wheel
+[submodule "dalle-playground"]
+	path = dalle-playground
+	url = https://github.com/saharmor/dalle-playground
