@@ -16,12 +16,18 @@ EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 
+# Define text strings for re-use.
+WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
+                f'Use super pal commands by posting commands in chat. Examples:\n'
+                f'( !commands (for full list) | spotw @name | !karatechop | !meow )' )
+
 # Required to list all users in a guild.
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
+
 
 # Weekly Task: Choose "Super Pal of the Week"
 @tasks.loop(hours=24*7)
@@ -49,9 +55,7 @@ async def super_pal_of_the_week():
             await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
             await announcements_channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!')
-            await channel.send(f'Congratulations {spotw.mention}! Welcome to the super pal channel.\n\n'
-                                f'You can now try out the following super pal commands:\n'
-                                f'!spotw @name | !cacaw | !meow | !commands (for full list)')
+            await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
 
 # Before Loop: Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
@@ -101,9 +105,7 @@ async def on_message(message):
             await new_super_pal.add_roles(role)
             await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
                             f'you have been promoted to super pal of the week by wheel spin.')
-            await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
-                            f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
+            await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
@@ -144,9 +146,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
         await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
-        await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
-                            f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !surprise | !karatechop | !commands (for full list)')
+        await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
@@ -197,18 +197,15 @@ async def karate_chop(ctx):
         discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F464 | AFK", type=discord.ChannelType.voice)
     ]
     # Kick random user from voice channel.
-    if not voice_channels[0].members or voice_channels[1].members or voice_channels[2].members:
+    first_available_channel = None
+    for channel in voice_channels:
+        if channel.members:
+            first_available_channel = channel
+            break
+    if first_available_channel == None:
         print(f'{current_super_pal.name} used karate chop, but no one is in the voice channels')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
-        # Prioritize Classified channel for karate chop
-        voice_channel = None
-        if voice_channels[2].members:
-            voice_channel = voice_channels[2]
-        elif voice_channels[1].members:
-            voice_channel = voice_channels[1]
-        else:
-            voice_channel = voice_channels[0]
         true_member_list = [m for m in voice_channel.members if not m.bot]
         chopped_member = random.choice(true_member_list)
         await chopped_member.move_to(voice_channels[3])
