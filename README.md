@@ -22,11 +22,9 @@ Currently this supports commands and the looped task.
 ### Step 1: Clone this repository and install dependencies
 First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv requests`
+Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv openai`
 
 Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
-
-Follow the [DALL-E Playground](https://github.com/saharmor/dalle-playground) installation instructions: `cd dalle-playground && docker-compose build`
 
 <br/>
 
@@ -52,7 +50,7 @@ OPENAI_API_KEY=
 | EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
 | CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
 | ANNOUNCEMENTS\_CHANNEL\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[ANNOUNCEMENTS_CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID` |
-| OPENAI_API_KEY   | Create an OpenAI account and create an [API key](https://beta.openai.com/account/api-keys). |
+| OPENAI\_API\_KEY   | Create an OpenAI account and create an [API key](https://beta.openai.com/account/api-keys). |
 
 **Bot token warning:** The discord bot token can only be copied once so you may have to reset your token if you do not know it. <br/>
 **In-browser:** In a web browser, open the [web application](https://discord.com/app). <br/>
@@ -116,4 +114,3 @@ Now you can just deploy and run the image anywhere: `docker run -d discord-super
 
 *WARNING: This iteration of the project does not use any docker secrets or secure storage for discord tokens. Your tokens will all be in plaintext, so -- Please do not publicly upload your container until this notice is removed.*
 
-*NOTE: Docker installation does not support AI image surprise at this time as it is meant to be much more lightweight.*
