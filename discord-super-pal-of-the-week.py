@@ -100,7 +100,7 @@ async def on_message(message):
                             f'you have been promoted to super pal of the week by wheel spin.')
             await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !commands (for full list)')
+                            f'!commands (full list of commands) | examples include: !cacaw | !surprise | !unsurprise | !karatechop ')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
@@ -143,7 +143,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
                             f'You can now try out the following super pal commands:\n'
-                            f'!spotw @name | !spinthewheel | !cacaw | !meow | !surprise | !unsurprise | !karatechop | !commands (for full list)')
+                            f'!commands (full list of commands) | examples include: !cacaw | !surprise | !unsurprise | !karatechop ')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
@@ -195,18 +195,17 @@ async def karate_chop(ctx):
         discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F464 | AFK", type=discord.ChannelType.voice)
     ]
     # Kick random user from voice channel.
-    if not voice_channels[0].members or voice_channels[1].members or voice_channels[2].members:
+    if not any(voice_channels[x].members for x in voice_channels):
         print(f'{current_super_pal.name} used karate chop, but no one is in the voice channels')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
         # Prioritize Classified channel for karate chop
         voice_channel = None
-        if voice_channels[2].members:
-            voice_channel = voice_channels[2]
-        elif voice_channels[1].members:
-            voice_channel = voice_channels[1]
-        else:
-            voice_channel = voice_channels[0]
+        for channel in voice_channels:
+            if channel.members:
+                voice_channel = channel
+                break
+
         true_member_list = [m for m in voice_channel.members if not m.bot]
         chopped_member = random.choice(true_member_list)
         await chopped_member.move_to(voice_channels[3])
