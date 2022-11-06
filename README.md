@@ -10,6 +10,9 @@ Currently this supports commands and the looped task.
   - `!commands` : list all supported commands.
   - `!cacaw` : spam chat with partyparrot emojis.
   - `!meow` : spam chat with partycat emojis.
+  - `!surprise your text here` : receive a surprise image in the channel based on the text you provide.
+  - `!unsurprise` : receive a surprise image in the channel.
+  - `!karatechop` : move a random user to AFK voice channel.
 - **Looped Task:**
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
 
@@ -19,9 +22,11 @@ Currently this supports commands and the looped task.
 ### Step 1: Clone this repository and install dependencies
 First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv`
+Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv requests`
 
 Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
+
+Follow the [DALL-E Playground](https://github.com/saharmor/dalle-playground) installation instructions: `cd dalle-playground && docker-compose build`
 
 <br/>
 
@@ -35,43 +40,31 @@ GUILD_ID=
 EMOJI_GUILD_ID=
 CHANNEL_ID=
 ANNOUNCEMENTS_CHANNEL_ID=
+OPENAI_API_KEY=
 ```
+<br/>
 
-#### SUPERPAL\_TOKEN and WHEEL\_TOKEN
+| Token / ID       | How do I get this value? |
+| ---------------- | ------------------------ |
+| SUPERPAL\_TOKEN  | Create a Super Pal of the Week bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
+| WHEEL\_TOKEN     | Create a Spin the Wheel bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
+| GUILD\_ID        | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
+| EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
+| CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
+| ANNOUNCEMENTS\_CHANNEL\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[ANNOUNCEMENTS_CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID` |
+| OPENAI_API_KEY   | Create an OpenAI account and create an [API key](https://beta.openai.com/account/api-keys). |
 
-- You will need to create two bots in the [Discord developer portal](https://discord.com/developers/applications/): Super Pal Bot & Spin the Wheel Bot.
-
-- Choose your application -> Go to Bot section -> Look under "Token" section \
-(This token can only be copied once so you may have to reset your token if you do not know it)
-
-
-#### GUILD\_ID, EMOJI\_GUILD\_ID, CHANNEL\_ID, and ANNOUNCEMENTS\_CHANNEL\_ID
-[Web Application](https://discord.com/app) (in-browser)
-
-- Click on the text channel in your server.
-
-- Look at your URL. It will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]`
-
-[Desktop Application](https://discord.com/download)
-
-- Turn on `Developer Mode` in Settings -> Advanced
-
-- GUILD\_ID: Right-click on your server icon and select `Copy ID`
-
-- EMOJI\_GUILD\_ID: Right-click on the server icon where party emojis are hosted and select `Copy ID`
-
-- CHANNEL\_ID: Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID`
-
-- ANNOUNCEMENTS\_CHANNEL\_ID: Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID`
+**Bot token warning:** The discord bot token can only be copied once so you may have to reset your token if you do not know it. <br/>
+**In-browser:** In a web browser, open the [web application](https://discord.com/app). <br/>
+**Desktop Client:** In the [desktop application](https://discord.com/download), turn on **Developer Mode** in Settings -> Advanced. <br/>
 
 <br/>
 
 ### Step 3: Configure Super Pal roles in your channel:
 
-- Create a role named `super pal of the week` and add your desired elevated permissions (if any).
+Create a role named `super pal of the week` and add your desired elevated permissions (if any).
 
-- Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot.
-  - This is required in order for the Super Pal Bot to apply the `super pal of the week` role.
+Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `super pal of the week` role.
 
 <br/>
 
@@ -80,6 +73,7 @@ ANNOUNCEMENTS_CHANNEL_ID=
 Get your bot's CLIENT\_ID under OAuth2 > General in the [Discord developer portal](https://discord.com/developers/applications/).
 
 Recommended settings for OAuth Invite Link:
+
 **Super Pal Bot**
 - guilds
 - guilds.members.read
@@ -103,7 +97,7 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 
 ### Run the bots!
 Now you'll need to run the bots:
- - Super Pal Bot: `python3 discord-super-pal-of-the-week.py`
+ - Super Pal Bot: `python3 super-pal.py`
  - Spin the Wheel Bot: `cd discord-spin-the-wheel && yarn start`
 
 (I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
@@ -121,3 +115,5 @@ Once the .env file is in place, build the image: `docker build -t discord-super-
 Now you can just deploy and run the image anywhere: `docker run -d discord-super-pal-of-the-week`
 
 *WARNING: This iteration of the project does not use any docker secrets or secure storage for discord tokens. Your tokens will all be in plaintext, so -- Please do not publicly upload your container until this notice is removed.*
+
+*NOTE: Docker installation does not support AI image surprise at this time as it is meant to be much more lightweight.*
