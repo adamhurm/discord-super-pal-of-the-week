@@ -244,7 +244,7 @@ async def surprise(ctx):
         size="1024x1024"
     )
     if response['data']:
-        await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img)),
+        await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img['b64_json'])),
                             filename='{random.randrange(1000)}.jpg') for img in response['data']])
     else:
         await channel.send('Failed to create surprise image. Everyone boo Adam.')
