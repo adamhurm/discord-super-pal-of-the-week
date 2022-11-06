@@ -95,7 +95,7 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 
 ### Run the bots!
 Now you'll need to run the bots:
- - Super Pal Bot: `python3 discord-super-pal-of-the-week.py`
+ - Super Pal Bot: `python3 super-pal.py`
  - Spin the Wheel Bot: `cd discord-spin-the-wheel && yarn start`
  - AI Image Bot: `cd dalle-playground && docker-compose up`
 
