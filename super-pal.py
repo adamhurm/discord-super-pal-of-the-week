@@ -17,7 +17,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # Define text strings for re-use.
 WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
                 f'Use super pal commands by posting commands in chat. Examples:\n'
-                f'( !commands (for full list) | !spotw @name | !karatechop | !meow )' )
+                f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
 
 # Required to list all users in a guild.
 intents = discord.Intents.default()
@@ -159,7 +159,7 @@ async def list_commands(ctx):
 **!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.
 **!cacaw**\n\tSpam the channel with party parrots.
 **!meow**\n\tSpam the channel with party cats.
-**!surprise** your text here\n\tReceive a surprise image in the channel based on the text you provide.
+**!surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.
 **!unsurprise**\n\tReceive a surprise image in the channel.
 **!karatechop**\n\tMove a random user to AFK voice channel.
 """
