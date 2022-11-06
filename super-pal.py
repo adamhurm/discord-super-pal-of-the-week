@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-import asyncio, base64, discord, io, os, random, requests
-from datetime import date, datetime, timedelta
+import asyncio, base64, io, os, random
+import discord, openai
+from datetime import date, datetime
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from http.client import ResponseNotReady
 
 # Load environmental variables.
 load_dotenv()
@@ -12,6 +12,7 @@ GUILD_ID = int(os.getenv('GUILD_ID'))
 EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Define text strings for re-use.
 WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
@@ -101,7 +102,7 @@ async def on_message(message):
             await new_super_pal.add_roles(role)
             await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
                             f'you have been promoted to super pal of the week by wheel spin.')
-            await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
+            await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
@@ -142,7 +143,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
         await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
-        await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
+        await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
@@ -228,26 +229,23 @@ async def meow(ctx):
 # Command : Surprise images (AI)
 @bot.command(name='surprise', pass_context=True)
 async def surprise(ctx):
-    # Get images from DALLE backend
-    def getDALLE(message):
-        r = requests.post('http://localhost:8080/dalle',
-                         json={'text':message,'num_images':4})
-        if r.status_code != 200:
-            return None
-        images = r.json().get('generatedImgs')
-        return images
-
+    # Get IDs.
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
     print(f'{current_super_pal.name} used surprise command.')
     print(ctx.message.content)
-    # Talk to local DALL-E AI for surprise images
+    # Talk to DALL-E 2 AI (beta) for surprise images
     your_text_here = ctx.message.content.removeprefix('!surprise ')
-    files = getDALLE(your_text_here)
-    if files:
-        await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(f)),
-                            filename='{random.randrange(1000)}.jpg') for f in files])
+    response = openai.Image.create(
+        prompt=your_text_here,
+        n=4,
+        response_format="b64_json",
+        size="1024x1024"
+    )
+    if response['data']:
+        await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img)),
+                            filename='{random.randrange(1000)}.jpg') for img in response['data']])
     else:
         await channel.send('Failed to create surprise image. Everyone boo Adam.')
 
