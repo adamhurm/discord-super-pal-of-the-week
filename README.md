@@ -40,6 +40,7 @@ GUILD_ID=
 EMOJI_GUILD_ID=
 CHANNEL_ID=
 ANNOUNCEMENTS_CHANNEL_ID=
+OPENAI_API_KEY=
 ```
 <br/>
 
@@ -51,6 +52,7 @@ ANNOUNCEMENTS_CHANNEL_ID=
 | EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
 | CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
 | ANNOUNCEMENTS\_CHANNEL\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[ANNOUNCEMENTS_CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID` |
+| OPENAI_API_KEY   | Create an OpenAI account and create an [API key](https://beta.openai.com/account/api-keys). |
 
 **Bot token warning:** The discord bot token can only be copied once so you may have to reset your token if you do not know it. <br/>
 **In-browser:** In a web browser, open the [web application](https://discord.com/app). <br/>
@@ -97,7 +99,6 @@ The settings listed above would result in the following link, where [CLIENT\_ID]
 Now you'll need to run the bots:
  - Super Pal Bot: `python3 super-pal.py`
  - Spin the Wheel Bot: `cd discord-spin-the-wheel && yarn start`
- - AI Image Bot: `cd dalle-playground && docker-compose up`
 
 (I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
 
