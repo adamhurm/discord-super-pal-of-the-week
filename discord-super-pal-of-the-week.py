@@ -13,6 +13,11 @@ EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 
+# Define text strings for re-use.
+WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
+                f'Use super pal commands by posting commands in chat. Examples:\n'
+                f'( !commands (for full list) | !spotw @name | !karatechop | !meow )' )
+
 # Required to list all users in a guild.
 intents = discord.Intents.default()
 intents.members = True
@@ -46,9 +51,7 @@ async def super_pal_of_the_week():
             await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
             await announcements_channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!')
-            await channel.send(f'Congratulations {spotw.mention}! Welcome to the super pal channel.\n\n'
-                                f'You can now try out the following super pal commands:\n'
-                                f'!spotw @name | !cacaw | !meow | !commands (for full list)')
+            await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
 
 # Before Loop: Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
@@ -98,9 +101,7 @@ async def on_message(message):
             await new_super_pal.add_roles(role)
             await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
                             f'you have been promoted to super pal of the week by wheel spin.')
-            await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
-                            f'You can now try out the following super pal commands:\n'
-                            f'!commands (full list of commands) | examples include: !cacaw | !surprise | !unsurprise | !karatechop ')
+            await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
@@ -141,9 +142,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
         await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
-        await channel.send(f'Congratulations {new_super_pal.mention}! Welcome to the super pal channel.\n\n'
-                            f'You can now try out the following super pal commands:\n'
-                            f'!commands (full list of commands) | examples include: !cacaw | !surprise | !unsurprise | !karatechop ')
+        await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
