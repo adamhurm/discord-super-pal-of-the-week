@@ -14,6 +14,7 @@ EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 openai.api_key = os.getenv("OPENAI_API_KEY")
+VOICE_CHANNELS = "\U0001F50A | General,Classified,\U0001F3AE | Games,\U0001F464 | AFK"
 
 # Define text strings for re-use.
 COMMANDS_MSG = (f'**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.\n'
@@ -269,10 +270,8 @@ async def karate_chop(ctx):
     current_super_pal = ctx.message.author
     # Assume "General" voice channel exists.
     voice_channels = [
-        discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F50A | General", type=discord.ChannelType.voice),
-        discord.utils.get(ctx.message.guild.voice_channels, name="Classified", type=discord.ChannelType.voice),
-        discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F3AE | Games", type=discord.ChannelType.voice),
-        discord.utils.get(ctx.message.guild.voice_channels, name="\U0001F464 | AFK", type=discord.ChannelType.voice)
+        discord.utils.get(ctx.message.guild.voice_channels, name=voice_channel, type=discord.ChannelType.voice)
+        for voice_channel in VOICE_CHANNELS
     ]
     # Kick random user from voice channel.
     if not any(voice_channels[x].members for x in voice_channels):
