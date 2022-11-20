@@ -15,9 +15,23 @@ ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Define text strings for re-use.
+COMMANDS_MSG = (f'**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.\n'
+    f'**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.'
+    f'**!cacaw**\n\tSpam the channel with party parrots.\n'
+    f'**!meow**\n\tSpam the channel with party cats.\n'
+    f'**!surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.\n'
+    f'**!unsurprise**\n\tReceive a surprise image in the channel.\n'
+    f'**!karatechop**\n\tMove a random user to AFK voice channel.' )
+
+GAMBLE_MSG = ( f'Respond to the two polly polls to participate in Super Pal of the Week Gambling™.\n'
+    f'- Choose your challenger\n'
+    f'- Make your wager\n\n'
+    f'You will be given 100 points weekly so feel free to go all-in.\n\n'
+    f'*The National Problem Gambling Helpline (1-800-522-4700) is available 24/7 and is 100% confidential.*' )
+
 WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
-                f'Use super pal commands by posting commands in chat. Examples:\n'
-                f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
+    f'Use super pal commands by posting commands in chat. Examples:\n'
+    f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
 
 # Required to list all users in a guild.
 intents = discord.Intents.default()
@@ -106,7 +120,7 @@ async def on_message(message):
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
-# Command: Spin the whell for a random "Super Pal of the Week"
+# Command: Spin the wheel for a random "Super Pal of the Week"
 @bot.command(name='spinthewheel', pass_context=True)
 @commands.has_role('super pal of the week')
 async def spinthewheel(ctx):
@@ -155,15 +169,7 @@ async def list_commands(ctx):
     current_super_pal = ctx.message.author
     # Print help message.
     print(f'{current_super_pal.name} used help command.')
-    msg = f"""**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.
-**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.
-**!cacaw**\n\tSpam the channel with party parrots.
-**!meow**\n\tSpam the channel with party cats.
-**!surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.
-**!unsurprise**\n\tReceive a surprise image in the channel.
-**!karatechop**\n\tMove a random user to AFK voice channel.
-"""
-    await channel.send(msg)
+    await channel.send(COMMANDS_MSG)
 
 # Command: Send party parrot discord emoji
 @bot.command(name='cacaw', pass_context=True)
@@ -178,6 +184,20 @@ async def cacaw(ctx):
     # Send message.
     print(f'{current_super_pal.name} used cacaw command.')
     await channel.send(str(partyparrot)*50)
+
+# Command: Get more info about gambling
+@bot.command(name="gamble")
+async def gamble():
+    # Get IDs.
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    guild = bot.get_guild(GUILD_ID)
+    await channel.send(GAMBLE_MSG)
+
+    true_member_list = [m for m in guild.members if not m.bot]
+    true_name_list = [member.name for member in true_member_list]
+    true_name_str = ", ".join(true_name_list)
+    await channel.send(f'/poll {true_name_str}')
 
 # Command: Randomly remove one user from voice chat
 @bot.command(name='karatechop', pass_context=True)
