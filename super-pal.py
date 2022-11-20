@@ -2,6 +2,7 @@
 import asyncio, base64, io, os, random
 import discord, openai
 from datetime import date, datetime
+from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
@@ -39,6 +40,63 @@ intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+class SuperPalCog(commands.Cog):
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot: commands.Bot = bot
+    
+    @commands.hybrid_command(name="bet")
+    async def bet_on_super_pal(self, ctx: commands.Context, user: discord.Member, amount: int) -> None:
+        # Get IDs.
+        await bot.wait_until_ready()
+        channel = bot.get_channel(CHANNEL_ID)
+        betting_user = ctx.message.author
+        user_already_bet = 0 #fetch this dynamically from local file
+        if user_already_bet:
+            await channel.send(f'Hi {betting_user.mention}, you have already placed your bet for this week.')
+            return
+        await channel.send(f'Hi {betting_user.mention}, you have bet {amount} points that {user.name} will be Super Pal.')
+
+    @commands.hybrid_command(name="spotw")
+    @commands.has_role('super pal of the week')
+    async def add_super_pal(self, ctx: commands.Context, new_super_pal: discord.Member) -> None:
+        # Get IDs.
+        await bot.wait_until_ready()
+        channel = bot.get_channel(CHANNEL_ID)
+        announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
+        role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
+        current_super_pal = ctx.message.author
+        # Promote new user and remove current super pal.
+        if role not in new_super_pal.roles:
+            await new_super_pal.add_roles(role)
+            await current_super_pal.remove_roles(role)
+            print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
+            await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
+                                f'you have been promoted to super pal of the week by {current_super_pal.name}.')
+            await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
+
+    # Command : Surprise images (AI)
+    @commands.hybrid_command(name='surprise')
+    @commands.has_role('super pal of the week')
+    async def surprise(self, ctx: commands.Context, your_text_here: str):
+        # Get IDs.
+        await bot.wait_until_ready()
+        channel = bot.get_channel(CHANNEL_ID)
+        current_super_pal = ctx.message.author
+        print(f'{current_super_pal.name} used surprise command.')
+        print(ctx.message.content)
+        # Talk to DALL-E 2 AI (beta) for surprise images
+        response = openai.Image.create(
+            prompt=your_text_here,
+            n=4,
+            response_format="b64_json",
+            size="1024x1024"
+        )
+        if response['data']:
+            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img['b64_json'])),
+                                filename='{random.randrange(1000)}.jpg') for img in response['data']])
+        else:
+            await channel.send('Failed to create surprise image. Everyone boo Adam.')
 
 # Weekly Task: Choose "Super Pal of the Week"
 @tasks.loop(hours=24*7)
@@ -92,6 +150,8 @@ async def on_command_error(ctx, error):
 # Event: Start loop once bot is ready
 @bot.event
 async def on_ready():
+    tree = app_commands.CommandTree(bot)
+    await tree.sync(guild=GUILD_ID)
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
 
@@ -248,6 +308,7 @@ async def meow(ctx):
 
 # Command : Surprise images (AI)
 @bot.command(name='surprise', pass_context=True)
+@commands.has_role('super pal of the week')
 async def surprise(ctx):
     # Get IDs.
     await bot.wait_until_ready()
@@ -284,5 +345,8 @@ async def unsurprise(ctx):
     random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
                       + random_image_type + str(random.randrange(0,10)) + ".jpg"
     await channel.send(file=discord.File(random_path))
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(SuperPalCog(bot))
 
 bot.run(TOKEN)
