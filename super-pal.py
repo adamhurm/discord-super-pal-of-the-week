@@ -6,7 +6,10 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
-# Load environmental variables.
+################
+# Env. variables
+################
+
 load_dotenv()
 TOKEN = os.getenv('SUPERPAL_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
@@ -16,7 +19,11 @@ ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 openai.api_key = os.getenv("OPENAI_API_KEY")
 VOICE_CHANNELS = "\U0001F50A | General,Classified,\U0001F3AE | Games,\U0001F464 | AFK"
 
-# Define text strings for re-use.
+
+##############
+# Text strings
+##############
+
 COMMANDS_MSG = (f'**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.\n'
     f'**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.'
     f'**!cacaw**\n\tSpam the channel with party parrots.\n'
@@ -35,71 +42,83 @@ WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
     f'Use super pal commands by posting commands in chat. Examples:\n'
     f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
 
-# Required to list all users in a guild.
+
+###########
+# Bot setup
+###########
+
 intents = discord.Intents.default()
+# Required to list all users in a guild.
 intents.members = True
+# Required to use spin-the-wheel and grab winner.
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-class SuperPalCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
-        self.bot: commands.Bot = bot
-    
-    @app_commands.command(name='bet')
-    @app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
-    async def bet_on_super_pal(self, interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
-        # Get IDs.
-        await bot.wait_until_ready()
-        betting_user = interaction.message.author
-        user_already_bet = 0 #fetch this dynamically from local file
-        if user_already_bet:
-            await interaction.response.send_message(f'Hi {betting_user.mention}, you have already placed your bet for this week.')
-            return
-        await interaction.response.send_message(f'Hi {betting_user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.')
 
-    @app_commands.command(name='spotw')
-    @app_commands.describe(new_super_pal='the member you want to promote to super pal')
-    @commands.has_role('super pal of the week')
-    async def add_super_pal(self, interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
-        # Get IDs.
-        await bot.wait_until_ready()
-        channel = bot.get_channel(CHANNEL_ID)
-        announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
-        role = discord.utils.get(interaction.guild.roles, name='super pal of the week')
-        current_super_pal = interaction.message.author
-        # Promote new user and remove current super pal.
-        if role not in new_super_pal.roles:
-            await new_super_pal.add_roles(role)
-            await current_super_pal.remove_roles(role)
-            print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-            await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
-                                f'you have been promoted to super pal of the week by {current_super_pal.name}.')
-            await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
+################
+# Slash commands
+################
 
-    # Command : Surprise images (AI)
-    @app_commands.command(name='surprise')
-    @app_commands.describe(your_text_here='text prompt for DALL-E AI image generator')
-    @commands.has_role('super pal of the week')
-    async def surprise(self, interaction: discord.Interaction, your_text_here: str):
-        # Get IDs.
-        await bot.wait_until_ready()
-        channel = bot.get_channel(CHANNEL_ID)
-        current_super_pal = interaction.message.author
-        print(f'{current_super_pal.name} used surprise command.')
-        print(interaction.message.content)
-        # Talk to DALL-E 2 AI (beta) for surprise images
-        response = openai.Image.create(
-            prompt=your_text_here,
-            n=4,
-            response_format="b64_json",
-            size="1024x1024"
-        )
-        if response['data']:
-            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img['b64_json'])),
-                                filename='{random.randrange(1000)}.jpg') for img in response['data']])
-        else:
-            await channel.send('Failed to create surprise image. Everyone boo Adam.')
+@app_commands.command(name='bet')
+@app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
+async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
+    # Get IDs.
+    await bot.wait_until_ready()
+    betting_user = interaction.message.author
+    user_already_bet = 0 #fetch this dynamically from local file
+    if user_already_bet:
+        await interaction.response.send_message(f'Hi {betting_user.mention}, you have already placed your bet for this week.')
+        return
+    await interaction.response.send_message(f'Hi {betting_user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.')
+
+@app_commands.command(name='spotw')
+@app_commands.describe(new_super_pal='the member you want to promote to super pal')
+@commands.has_role('super pal of the week')
+async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
+    # Get IDs.
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
+    role = discord.utils.get(interaction.guild.roles, name='super pal of the week')
+    current_super_pal = interaction.message.author
+    # Promote new user and remove current super pal.
+    if role not in new_super_pal.roles:
+        await new_super_pal.add_roles(role)
+        await current_super_pal.remove_roles(role)
+        print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
+        await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
+                            f'you have been promoted to super pal of the week by {current_super_pal.name}.')
+        await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
+
+# Command : Surprise images (AI)
+@app_commands.command(name='surprise')
+@app_commands.describe(your_text_here='text prompt for DALL-E AI image generator')
+@commands.has_role('super pal of the week')
+async def surprise(interaction: discord.Interaction, your_text_here: str):
+    # Get IDs.
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    current_super_pal = interaction.message.author
+    print(f'{current_super_pal.name} used surprise command.')
+    print(interaction.message.content)
+    # Talk to DALL-E 2 AI (beta) for surprise images
+    response = openai.Image.create(
+        prompt=your_text_here,
+        n=4,
+        response_format="b64_json",
+        size="1024x1024"
+    )
+    if response['data']:
+        await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img['b64_json'])),
+                            filename='{random.randrange(1000)}.jpg') for img in response['data']])
+    else:
+        await channel.send('Failed to create surprise image. Everyone boo Adam.')
+
+
+#############
+# Looped task
+#############
 
 # Weekly Task: Choose "Super Pal of the Week"
 @tasks.loop(hours=24*7)
@@ -143,6 +162,11 @@ async def before_super_pal_of_the_week():
     print(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).total_seconds())
 
+
+############
+# Bot events
+############
+
 # Event: Avoid printing errors message for commands that aren't related to Super Pal Bot.
 @bot.event
 async def on_command_error(ctx, error):
@@ -181,6 +205,11 @@ async def on_message(message):
             await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
+
+
+##############
+# Bot commands
+##############
 
 # Command: Spin the wheel for a random "Super Pal of the Week"
 @bot.command(name='spinthewheel', pass_context=True)
@@ -330,7 +359,6 @@ async def surprise(ctx):
     else:
         await channel.send('Failed to create surprise image. Everyone boo Adam.')
 
-# Command: Unsurprise images
 @bot.command(name='unsurprise', pass_context=True)
 @commands.has_role('super pal of the week')
 async def unsurprise(ctx):
@@ -346,7 +374,5 @@ async def unsurprise(ctx):
                       + random_image_type + str(random.randrange(0,10)) + ".jpg"
     await channel.send(file=discord.File(random_path))
 
-async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(SuperPalCog(bot))
 
 bot.run(TOKEN)
