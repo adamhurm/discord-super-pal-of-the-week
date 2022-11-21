@@ -89,7 +89,7 @@ Recommended settings for OAuth Invite Link:
 <br/>
 
 The settings listed above would result in the following link, where [CLIENT\_ID] is substituted with your bot's CLIENT\_ID:
-`https://discord.com/api/oauth2/authorize?client_id=[CLIENT_ID]&permissions=268437504&redirect_uri=https%3A%2F%2Fdiscord.com%2Fapi%2Foauth2%2Fauthorize&response_type=code&scope=guilds%20guilds.members.read%20bot`
+`https://discord.com/api/oauth2/authorize?client_id=[CLIENT_ID]&permissions=268437504&redirect_uri=https%3A%2F%2Fdiscord.com%2Fapi%2Foauth2%2Fauthorize&response_type=code&scope=guilds%20guilds.members.read%20bot%20applications.commands`
 
 <br/>
 
