@@ -359,6 +359,7 @@ async def surprise(ctx):
     else:
         await channel.send('Failed to create surprise image. Everyone boo Adam.')
 
+# Command : Old "surprise" images (predetermined)
 @bot.command(name='unsurprise', pass_context=True)
 @commands.has_role('super pal of the week')
 async def unsurprise(ctx):
