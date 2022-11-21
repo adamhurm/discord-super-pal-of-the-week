@@ -274,7 +274,7 @@ async def karate_chop(ctx):
         for voice_channel in VOICE_CHANNELS
     ]
     # Kick random user from voice channel.
-    if not any(voice_channels[x].members for x in voice_channels):
+    if not any(x.members for x in voice_channels):
         print(f'{current_super_pal.name} used karate chop, but no one is in the voice channels')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
