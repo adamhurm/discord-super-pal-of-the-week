@@ -37,7 +37,6 @@ WHEEL_TOKEN=
 GUILD_ID=
 EMOJI_GUILD_ID=
 CHANNEL_ID=
-ANNOUNCEMENTS_CHANNEL_ID=
 OPENAI_API_KEY=
 ```
 <br/>
@@ -49,7 +48,6 @@ OPENAI_API_KEY=
 | GUILD\_ID        | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
 | EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
 | CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
-| ANNOUNCEMENTS\_CHANNEL\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[ANNOUNCEMENTS_CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want announcements from super-pal-of-the-week-manager and select `Copy ID` |
 | OPENAI\_API\_KEY   | Create an OpenAI account and create an [API key](https://beta.openai.com/account/api-keys). |
 
 **Bot token warning:** The discord bot token can only be copied once so you may have to reset your token if you do not know it. <br/>

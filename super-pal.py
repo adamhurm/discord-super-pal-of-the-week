@@ -20,9 +20,9 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 VOICE_CHANNELS = "\U0001F50A | General,Classified,\U0001F3AE | Games,\U0001F464 | AFK"
 
 
-##############
-# Text strings
-##############
+#################
+# Message strings
+#################
 
 COMMANDS_MSG = (f'**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.\n'
     f'**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.'
@@ -81,17 +81,15 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
     # Get IDs.
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
-    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='super pal of the week')
     current_super_pal = interaction.message.author
     # Promote new user and remove current super pal.
     if role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
-        print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-        await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
-                            f'you have been promoted to super pal of the week by {current_super_pal.name}.')
-        await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
+        print(f'{new_super_pal.name} promoted by {current_super_pal.name}')                        
+        await channel.send(f'Congratulations {new_super_pal.mention}! '
+            f'You have been promoted to super pal of the week by {current_super_pal.name}. {WELCOME_MSG}')
 
 # Command: Surprise images (AI)
 @app_commands.command(name='surprise')
@@ -129,7 +127,6 @@ async def super_pal_of_the_week():
     await bot.wait_until_ready()
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
-    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='super pal of the week')
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
@@ -147,8 +144,8 @@ async def super_pal_of_the_week():
         elif member == spotw:
             await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
-            await announcements_channel.send(f'Congratulations to {spotw.mention}, the super pal of the week!')
-            await channel.send(f'Congratulations {spotw.mention}! {WELCOME_MSG}')
+            await channel.send(f'Congratulations to {spotw.mention}, '
+                f'the super pal of the week! {WELCOME_MSG}')
 
 # Before Loop: Wait until Sunday at noon.
 @super_pal_of_the_week.before_loop
@@ -194,7 +191,6 @@ async def on_message(message):
             await bot.wait_until_ready()
             guild = bot.get_guild(GUILD_ID)
             channel = bot.get_channel(CHANNEL_ID)
-            announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
             role = discord.utils.get(guild.roles, name='super pal of the week')
             # Grab winner name from Spin the Wheel message.
             winner = embed.description[12:-2]
@@ -202,9 +198,8 @@ async def on_message(message):
             # Add new winner to Super Pal of the Week.
             print(f'{new_super_pal.name} was chosen by the wheel spin.')
             await new_super_pal.add_roles(role)
-            await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
-                            f'you have been promoted to super pal of the week by wheel spin.')
-            await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
+            await channel.send(f'Congratulations {new_super_pal.mention}!'
+                f'you have been promoted to super pal of the week by wheel spin. {WELCOME_MSG}')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
@@ -240,7 +235,6 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
     # Get IDs.
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
-    announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
     role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
     current_super_pal = ctx.message.author
     # Promote new user and remove current super pal.
@@ -248,9 +242,8 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
         print(f'{new_super_pal.name} promoted by {current_super_pal.name}')
-        await announcements_channel.send(f'Congratulations {new_super_pal.mention}, '
-                            f'you have been promoted to super pal of the week by {current_super_pal.name}.')
-        await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
+        await channel.send(f'Congratulations {new_super_pal.mention}, '
+            f'you have been promoted to super pal of the week by {current_super_pal.name}. {WELCOME_MSG}')
 
 # Command: Display more information about commands.
 @bot.command(name='commands', pass_context=True)
