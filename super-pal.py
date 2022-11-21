@@ -60,6 +60,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Slash commands
 ################
 
+# Command: Bet on who will be the next "Super Pal of the Week"
 @app_commands.command(name='bet')
 @app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
 async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
@@ -72,6 +73,7 @@ async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member
         return
     await interaction.response.send_message(f'Hi {betting_user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.')
 
+# Command: Promote users to "Super Pal of the Week"
 @app_commands.command(name='spotw')
 @app_commands.describe(new_super_pal='the member you want to promote to super pal')
 @commands.has_role('super pal of the week')
@@ -91,7 +93,7 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
                             f'you have been promoted to super pal of the week by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
 
-# Command : Surprise images (AI)
+# Command: Surprise images (AI)
 @app_commands.command(name='surprise')
 @app_commands.describe(your_text_here='text prompt for DALL-E AI image generator')
 @commands.has_role('super pal of the week')
@@ -335,7 +337,7 @@ async def meow(ctx):
     print(f'{current_super_pal.name} used meow command.')
     await channel.send(str(partymeow)*50)
 
-# Command : Surprise images (AI)
+# Command: Surprise images (AI)
 @bot.command(name='surprise', pass_context=True)
 @commands.has_role('super pal of the week')
 async def surprise(ctx):
@@ -359,7 +361,7 @@ async def surprise(ctx):
     else:
         await channel.send('Failed to create surprise image. Everyone boo Adam.')
 
-# Command : Old "surprise" images (predetermined)
+# Command: Old "surprise" images (predetermined)
 @bot.command(name='unsurprise', pass_context=True)
 @commands.has_role('super pal of the week')
 async def unsurprise(ctx):
