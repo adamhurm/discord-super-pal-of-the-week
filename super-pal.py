@@ -46,27 +46,28 @@ class SuperPalCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: commands.Bot = bot
     
-    @commands.hybrid_command(name="bet")
-    async def bet_on_super_pal(self, ctx: commands.Context, user: discord.Member, amount: int) -> None:
+    @app_commands.command(name='bet')
+    @app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
+    async def bet_on_super_pal(self, interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
         # Get IDs.
         await bot.wait_until_ready()
-        channel = bot.get_channel(CHANNEL_ID)
-        betting_user = ctx.message.author
+        betting_user = interaction.message.author
         user_already_bet = 0 #fetch this dynamically from local file
         if user_already_bet:
-            await channel.send(f'Hi {betting_user.mention}, you have already placed your bet for this week.')
+            await interaction.response.send_message(f'Hi {betting_user.mention}, you have already placed your bet for this week.')
             return
-        await channel.send(f'Hi {betting_user.mention}, you have bet {amount} points that {user.name} will be Super Pal.')
+        await interaction.response.send_message(f'Hi {betting_user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.')
 
-    @commands.hybrid_command(name="spotw")
+    @app_commands.command(name='spotw')
+    @app_commands.describe(new_super_pal='the member you want to promote to super pal')
     @commands.has_role('super pal of the week')
-    async def add_super_pal(self, ctx: commands.Context, new_super_pal: discord.Member) -> None:
+    async def add_super_pal(self, interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
         # Get IDs.
         await bot.wait_until_ready()
         channel = bot.get_channel(CHANNEL_ID)
         announcements_channel = bot.get_channel(ANNOUNCEMENTS_CHANNEL_ID)
-        role = discord.utils.get(ctx.guild.roles, name='super pal of the week')
-        current_super_pal = ctx.message.author
+        role = discord.utils.get(interaction.guild.roles, name='super pal of the week')
+        current_super_pal = interaction.message.author
         # Promote new user and remove current super pal.
         if role not in new_super_pal.roles:
             await new_super_pal.add_roles(role)
@@ -77,15 +78,16 @@ class SuperPalCog(commands.Cog):
             await channel.send(f'Congratulations {new_super_pal.mention}! {WELCOME_MSG}')
 
     # Command : Surprise images (AI)
-    @commands.hybrid_command(name='surprise')
+    @app_commands.command(name='surprise')
+    @app_commands.describe(your_text_here='text prompt for DALL-E AI image generator')
     @commands.has_role('super pal of the week')
-    async def surprise(self, ctx: commands.Context, your_text_here: str):
+    async def surprise(self, interaction: discord.Interaction, your_text_here: str):
         # Get IDs.
         await bot.wait_until_ready()
         channel = bot.get_channel(CHANNEL_ID)
-        current_super_pal = ctx.message.author
+        current_super_pal = interaction.message.author
         print(f'{current_super_pal.name} used surprise command.')
-        print(ctx.message.content)
+        print(interaction.message.content)
         # Talk to DALL-E 2 AI (beta) for surprise images
         response = openai.Image.create(
             prompt=your_text_here,
@@ -151,8 +153,7 @@ async def on_command_error(ctx, error):
 # Event: Start loop once bot is ready
 @bot.event
 async def on_ready():
-    tree = app_commands.CommandTree(bot)
-    await tree.sync(guild=GUILD_ID)
+    await bot.tree.sync()
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
 
@@ -247,8 +248,8 @@ async def cacaw(ctx):
     await channel.send(str(partyparrot)*50)
 
 # Command: Get more info about gambling
-@bot.command(name="gamble")
-async def gamble():
+@bot.command(name="gamble", pass_context=True)
+async def gamble(ctx):
     # Get IDs.
     await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
