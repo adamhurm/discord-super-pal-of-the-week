@@ -109,8 +109,8 @@ First clone this repository: `git clone git@github.com:adamhurm/discord-super-pa
 Next, follow [Step 2 above](https://github.com/adamhurm/discord-super-pal-of-the-week#step-2-create-a-local-file-named-env-to-hold-your-tokens-and-ids) to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
 
 Once the .env file is in place, build the images:
-- `docker build -t adamhurm/discord-super-pal -f Dockerfile.super-pal`
-- `docker build -t adamhurm/discord-spin-the-wheel -f Dockerfile.spin-the-wheel`
+- `docker build -t adamhurm/discord-super-pal -f Dockerfile.super-pal .`
+- `docker build -t adamhurm/discord-spin-the-wheel -f Dockerfile.spin-the-wheel .`
 
 
 Now you can just deploy and run the images anywhere: 
