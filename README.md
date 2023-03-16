@@ -37,6 +37,7 @@ WHEEL_TOKEN=
 GUILD_ID=
 EMOJI_GUILD_ID=
 CHANNEL_ID=
+ART_CHANNEL_ID=
 OPENAI_API_KEY=
 ```
 <br/>
@@ -45,9 +46,10 @@ OPENAI_API_KEY=
 | ---------------- | ------------------------ |
 | SUPERPAL\_TOKEN  | Create a Super Pal of the Week bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
 | WHEEL\_TOKEN     | Create a Spin the Wheel bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
-| GUILD\_ID        | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
-| EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
-| CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
+| GUILD\_ID        | **In-browser**: <br/> Click on any text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
+| EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on any text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
+| CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel where you want to send Super Pal of the Week commands in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
+| ART\_CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel where you want to store AI Art in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to store AI Art and select `Copy ID` |
 | OPENAI\_API\_KEY   | Create an OpenAI account and create an [API key](https://beta.openai.com/account/api-keys). |
 
 **Bot token warning:** The discord bot token can only be copied once so you may have to reset your token if you do not know it. <br/>
@@ -106,9 +108,20 @@ First clone this repository: `git clone git@github.com:adamhurm/discord-super-pa
 
 Next, follow [Step 2 above](https://github.com/adamhurm/discord-super-pal-of-the-week#step-2-create-a-local-file-named-env-to-hold-your-tokens-and-ids) to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
 
-Once the .env file is in place, build the image: `docker build -t discord-super-pal-of-the-week .`
+Once the .env file is in place, build the images:
+- `docker build -t adamhurm/discord-super-pal -f Dockerfile.super-pal`
+- `docker build -t adamhurm/discord-spin-the-wheel -f Dockerfile.spin-the-wheel`
 
-Now you can just deploy and run the image anywhere: `docker run -d discord-super-pal-of-the-week`
+
+Now you can just deploy and run the images anywhere: 
+- `docker run -d adamhurm/discord-super-pal`
+- `docker run -d adamhurm/discord-spin-the-wheel`
 
 *WARNING: This iteration of the project does not use any docker secrets or secure storage for discord tokens. Your tokens will all be in plaintext, so -- Please do not publicly upload your container until this notice is removed.*
 
+<br/>
+
+## Kubernetes installation instructions:
+
+Once you have built and distributed the docker images locally, use the following command to create the super pal pod:
+- `kubectl apply -f create-super-pal.yml`
