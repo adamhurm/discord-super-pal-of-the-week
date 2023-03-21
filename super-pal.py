@@ -78,7 +78,7 @@ async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member
 @commands.has_role('Super Pal of the Week')
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
     # Get IDs.
-    bot.get_channel(CHANNEL_ID)
+    channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
     current_super_pal = interaction.message.author
     # Promote new user and remove current super pal.
