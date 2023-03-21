@@ -17,7 +17,7 @@ EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ART_CHANNEL_ID = int(os.getenv('ART_CHANNEL_ID'))
 openai.api_key = os.getenv("OPENAI_API_KEY")
-VOICE_CHANNELS = "\U0001F50A | General,Classified,\U0001F3AE | Games,\U0001F464 | AFK"
+VOICE_CHANNELS = (os.getenv("VOICE_CHANNELS")).encode('utf-8').decode('unicode-escape')
 
 
 #################
