@@ -60,9 +60,9 @@ OPENAI_API_KEY=
 
 ### Step 3: Configure Super Pal roles in your channel:
 
-Create a role named `super pal of the week` and add your desired elevated permissions (if any).
+Create a role named `Super Pal of the Week` (case sensitive) and add your desired elevated permissions (if any).
 
-Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `super pal of the week` role.
+Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `Super Pal of the Week` role.
 
 <br/>
 
