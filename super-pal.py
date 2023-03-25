@@ -64,7 +64,6 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 @app_commands.command(name='bet')
 @app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
 async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
-    # Get IDs.
     betting_user = interaction.message.author
     user_already_bet = 0 #fetch this dynamically from local file
     if user_already_bet:
@@ -77,10 +76,10 @@ async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member
 @app_commands.describe(new_super_pal='the member you want to promote to super pal')
 @commands.has_role('Super Pal of the Week')
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
-    # Get IDs.
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
     current_super_pal = interaction.message.author
+    
     # Promote new user and remove current super pal.
     if role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
@@ -94,9 +93,9 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
 @app_commands.describe(your_text_here='text prompt for DALL-E AI image generator')
 @commands.has_role('Super Pal of the Week')
 async def surprise(interaction: discord.Interaction, your_text_here: str):
-    # Get IDs.
     channel = bot.get_channel(ART_CHANNEL_ID)
     current_super_pal = interaction.message.author
+
     print(f'{current_super_pal.name} used surprise command.')
     print(interaction.message.content)
     # Talk to DALL-E 2 AI (beta) for surprise images.
@@ -126,13 +125,12 @@ async def surprise(interaction: discord.Interaction, your_text_here: str):
 # Weekly Task: Choose "Super Pal of the Week"
 @tasks.loop(hours=24*7)
 async def super_pal_of_the_week():
-    # Get IDs
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    # Get list of members and filter out bots.
+    
+    # Get list of members and filter out bots. Pick random member.
     true_member_list = [m for m in guild.members if not m.bot]
-    # Choose random "Super Pal of the Week" from list.
     spotw = random.choice(true_member_list)
     print(f'\nPicking new super pal of the week.')
     # Add super pal, remove current super pal, avoid duplicates.
@@ -144,8 +142,8 @@ async def super_pal_of_the_week():
             print(f'{member.name} has been removed from super pal of the week role.')
             await member.remove_roles(role)
         elif member == spotw:
-            await spotw.add_roles(role)
             print(f'{member.name} has been added to super pal of the week role.')
+            await spotw.add_roles(role)
             await channel.send(f'Congratulations to {spotw.mention}, '
                 f'the super pal of the week! {WELCOME_MSG}')
 
@@ -186,26 +184,25 @@ async def on_ready():
 # Event: Check Spin The Wheel rich message
 @bot.event
 async def on_message(message):
-    # Only check embedded messages from Spin The Wheel Bot.
     spin_the_wheel_role = discord.utils.get(message.guild.roles, name='Spin The Wheel')
-    if message.author.get_role(spin_the_wheel_role.id) is not None:
+    # Only check embedded messages from Spin The Wheel Bot.
+    if spin_the_wheel_role in message.author.roles:
         embeds = message.embeds
         for embed in embeds:
             # Wait until message contains Spin the Wheel winner.
             if embed.description is None: continue
             elif embed.description[0] == '🏆':
-                role = discord.utils.get(message.guild.roles, name='Super Pal of the Week')
+                super_pal_role = discord.utils.get(message.guild.roles, name='Super Pal of the Week')
                 # Grab winner name from Spin the Wheel message.
-                winner = embed.description[12:-2]
-                new_super_pal = discord.utils.get(message.guild.members, name=winner)
+                new_super_pal_name = embed.description[12:-2]
+                new_super_pal = discord.utils.get(message.guild.members, name=new_super_pal_name)
                 # Add new winner to Super Pal of the Week.
                 print(f'{new_super_pal.name} was chosen by the wheel spin.')
-                await new_super_pal.add_roles(role)
+                await new_super_pal.add_roles(super_pal_role)
                 await message.channel.send(f'Congratulations {new_super_pal.mention}! '
                     f'You have been promoted to super pal of the week by wheel spin. {WELCOME_MSG}')
-    else:
-        # Handle commands if the message was not from Spin the Wheel.
-        await bot.process_commands(message)
+    # Handle commands if the message was not from Spin the Wheel.
+    await bot.process_commands(message)
 
 
 ##############
@@ -216,11 +213,11 @@ async def on_message(message):
 @bot.command(name='spinthewheel', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def spinthewheel(ctx):
-    # Get IDs.
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='Super Pal of the Week')
     current_super_pal = ctx.message.author
+
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
     true_name_list = [member.name for member in true_member_list]
@@ -235,11 +232,11 @@ async def spinthewheel(ctx):
 @bot.command(name='spotw', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def add_super_pal(ctx, new_super_pal: discord.Member):
-    # Get IDs.
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='Super Pal of the Week')
     current_super_pal = ctx.message.author
+
     # Promote new user and remove current super pal.
     if role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
@@ -252,10 +249,9 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
 @bot.command(name='commands', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def list_commands(ctx):
-    # Get IDs.
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
-    # Print help message.
+
     print(f'{current_super_pal.name} used help command.')
     await channel.send(COMMANDS_MSG)
 
@@ -263,23 +259,21 @@ async def list_commands(ctx):
 @bot.command(name='cacaw', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def cacaw(ctx):
-    # Get IDs.
     channel = bot.get_channel(CHANNEL_ID)
     emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
-    partyparrot = discord.utils.get(emoji_guild.emojis, name='partyparrot')
+    partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
     current_super_pal = ctx.message.author
-    # Send message.
+
     print(f'{current_super_pal.name} used cacaw command.')
-    await channel.send(str(partyparrot)*50)
+    await channel.send(str(partyparrot_emoji)*50)
 
 # Command: Get more info about gambling.
 @bot.command(name="gamble", pass_context=True)
 async def gamble(ctx):
-    # Get IDs.
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
-    await channel.send(GAMBLE_MSG)
 
+    await channel.send(GAMBLE_MSG)
     true_member_list = [m for m in guild.members if not m.bot]
     true_name_list = [member.name for member in true_member_list]
     true_name_str = ", ".join(true_name_list)
@@ -289,11 +283,11 @@ async def gamble(ctx):
 @bot.command(name='karatechop', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def karate_chop(ctx):
-    # Get IDs.
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
-    # Use list of hard-coded voice channels.
+
+    # Grab voice channels from env file values.
     voice_channels = [
         discord.utils.get(guild.voice_channels, name=voice_channel, type=discord.ChannelType.voice)
         for voice_channel in VOICE_CHANNELS
@@ -312,30 +306,29 @@ async def karate_chop(ctx):
 
         true_member_list = [m for m in voice_channel.members if not m.bot]
         chopped_member = random.choice(true_member_list)
-        await chopped_member.move_to(voice_channels[3])
         print(f'{chopped_member.name} karate chopped by {current_super_pal.name}.')
+        await chopped_member.move_to(voice_channels[3])
         await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def meow(ctx):
-    # Get IDs.
     channel = bot.get_channel(CHANNEL_ID)
     emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
-    partymeow = discord.utils.get(emoji_guild.emojis, name='partymeow')
+    partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
     current_super_pal = ctx.message.author
-    # Send message.
+
     print(f'{current_super_pal.name} used meow command.')
-    await channel.send(str(partymeow)*50)
+    await channel.send(str(partymeow_emoji)*50)
 
 # Command: Surprise images (AI)
 @bot.command(name='surprise', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def surprise(ctx):
-    # Get IDs.
     channel = bot.get_channel(ART_CHANNEL_ID)
     current_super_pal = ctx.message.author
+
     print(f'{current_super_pal.name} used surprise command.')
     print(ctx.message.content)
     # Talk to DALL-E 2 AI (beta) for surprise images.
@@ -362,9 +355,9 @@ async def surprise(ctx):
 @bot.command(name='unsurprise', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def unsurprise(ctx):
-    # Get IDs.
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
+
     # Grab random image from assets folder and send message.
     print(f'{current_super_pal.name} used unsurprise command.')
     image_types = ["bucket", "nails", "mantis"]
