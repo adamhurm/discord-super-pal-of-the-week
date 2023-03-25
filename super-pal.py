@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import asyncio, base64, io, os, random
+import asyncio, base64, io, logging, os, random
 import discord, openai
 from datetime import date, datetime
 from discord import app_commands
@@ -18,6 +18,19 @@ CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ART_CHANNEL_ID = int(os.getenv('ART_CHANNEL_ID'))
 openai.api_key = os.getenv("OPENAI_API_KEY")
 VOICE_CHANNELS = (os.getenv("VOICE_CHANNELS")).encode('utf-8').decode('unicode-escape')
+
+
+#########
+# Logging
+#########
+
+log = logging.getLogger('super-pal')
+log.setLevel(logging.INFO)
+log_handler = logging.FileHandler(filename='discord-super-pal.log', encoding='utf-8', mode='w')
+dt_fmt = '%Y-%m-%d %H:%M:%S'
+formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
+log_handler.setFormatter(formatter)
+log.addHandler(log_handler)
 
 
 #################
@@ -79,12 +92,12 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
     current_super_pal = interaction.message.author
-    
+
     # Promote new user and remove current super pal.
     if role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
-        print(f'{new_super_pal.name} promoted by {current_super_pal.name}.')                        
+        log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}.')                        
         await channel.send(f'Congratulations {new_super_pal.mention}! '
             f'You have been promoted to super pal of the week by {current_super_pal.name}. {WELCOME_MSG}')
 
@@ -96,8 +109,8 @@ async def surprise(interaction: discord.Interaction, your_text_here: str):
     channel = bot.get_channel(ART_CHANNEL_ID)
     current_super_pal = interaction.message.author
 
-    print(f'{current_super_pal.name} used surprise command.')
-    print(interaction.message.content)
+    log.info(f'{current_super_pal.name} used surprise command.')
+    log.info(interaction.message.content)
     # Talk to DALL-E 2 AI (beta) for surprise images.
     try:
         response = openai.Image.create(
@@ -132,17 +145,17 @@ async def super_pal_of_the_week():
     # Get list of members and filter out bots. Pick random member.
     true_member_list = [m for m in guild.members if not m.bot]
     spotw = random.choice(true_member_list)
-    print(f'\nPicking new super pal of the week.')
+    log.info(f'\nPicking new super pal of the week.')
     # Add super pal, remove current super pal, avoid duplicates.
     for member in true_member_list:
         if role in member.roles and member == spotw:
-            print(f'{member.name} is already super pal of the week. Re-rolling.')
+            log.info(f'{member.name} is already super pal of the week. Re-rolling.')
             return await super_pal_of_the_week()
         elif role in member.roles:
-            print(f'{member.name} has been removed from super pal of the week role.')
+            log.info(f'{member.name} has been removed from super pal of the week role.')
             await member.remove_roles(role)
         elif member == spotw:
-            print(f'{member.name} has been added to super pal of the week role.')
+            log.info(f'{member.name} has been added to super pal of the week role.')
             await spotw.add_roles(role)
             await channel.send(f'Congratulations to {spotw.mention}, '
                 f'the super pal of the week! {WELCOME_MSG}')
@@ -159,7 +172,7 @@ async def before_super_pal_of_the_week():
         days_until_sunday = 7
     future = datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
     # Sleep task until Sunday at noon.
-    print(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
+    log.info(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).total_seconds())
 
 
@@ -197,7 +210,7 @@ async def on_message(message):
                 new_super_pal_name = embed.description[12:-2]
                 new_super_pal = discord.utils.get(message.guild.members, name=new_super_pal_name)
                 # Add new winner to Super Pal of the Week.
-                print(f'{new_super_pal.name} was chosen by the wheel spin.')
+                log.info(f'{new_super_pal.name} was chosen by the wheel spin.')
                 await new_super_pal.add_roles(super_pal_role)
                 await message.channel.send(f'Congratulations {new_super_pal.mention}! '
                     f'You have been promoted to super pal of the week by wheel spin. {WELCOME_MSG}')
@@ -224,7 +237,7 @@ async def spinthewheel(ctx):
     true_name_str = ", ".join(true_name_list)
     # Send Spin the Wheel command.
     await channel.send(f'?pick {true_name_str}')
-    print(f'\nSpinning the wheel for new super pal of the week.')
+    log.info(f'\nSpinning the wheel for new super pal of the week.')
     # Remove current super pal.
     await current_super_pal.remove_roles(role)
 
@@ -241,7 +254,7 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
     if role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
-        print(f'{new_super_pal.name} promoted by {current_super_pal.name}.')
+        log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! '
             f'You have been promoted to super pal of the week by {current_super_pal.name}. {WELCOME_MSG}')
 
@@ -252,7 +265,7 @@ async def list_commands(ctx):
     channel = bot.get_channel(CHANNEL_ID)
     current_super_pal = ctx.message.author
 
-    print(f'{current_super_pal.name} used help command.')
+    log.info(f'{current_super_pal.name} used help command.')
     await channel.send(COMMANDS_MSG)
 
 # Command: Send party parrot discord emoji.
@@ -264,7 +277,7 @@ async def cacaw(ctx):
     partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
     current_super_pal = ctx.message.author
 
-    print(f'{current_super_pal.name} used cacaw command.')
+    log.info(f'{current_super_pal.name} used cacaw command.')
     await channel.send(str(partyparrot_emoji)*50)
 
 # Command: Get more info about gambling.
@@ -294,7 +307,7 @@ async def karate_chop(ctx):
     ]
     # Kick random user from voice channel.
     if not any(x.members for x in voice_channels):
-        print(f'{current_super_pal.name} used karate chop, but no one is in the voice channels.')
+        log.info(f'{current_super_pal.name} used karate chop, but no one is in the voice channels.')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
         # Grab the first channel with users in it.
@@ -306,7 +319,7 @@ async def karate_chop(ctx):
 
         true_member_list = [m for m in voice_channel.members if not m.bot]
         chopped_member = random.choice(true_member_list)
-        print(f'{chopped_member.name} karate chopped by {current_super_pal.name}.')
+        log.info(f'{chopped_member.name} karate chopped by {current_super_pal.name}.')
         await chopped_member.move_to(voice_channels[3])
         await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
 
@@ -319,7 +332,7 @@ async def meow(ctx):
     partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
     current_super_pal = ctx.message.author
 
-    print(f'{current_super_pal.name} used meow command.')
+    log.info(f'{current_super_pal.name} used meow command.')
     await channel.send(str(partymeow_emoji)*50)
 
 # Command: Surprise images (AI)
@@ -329,8 +342,7 @@ async def surprise(ctx):
     channel = bot.get_channel(ART_CHANNEL_ID)
     current_super_pal = ctx.message.author
 
-    print(f'{current_super_pal.name} used surprise command.')
-    print(ctx.message.content)
+    log.info(f'{current_super_pal.name} used surprise command:\n\t{ctx.message.content}')
     # Talk to DALL-E 2 AI (beta) for surprise images.
     your_text_here = ctx.message.content.removeprefix('!surprise ')
     try:
@@ -359,7 +371,7 @@ async def unsurprise(ctx):
     current_super_pal = ctx.message.author
 
     # Grab random image from assets folder and send message.
-    print(f'{current_super_pal.name} used unsurprise command.')
+    log.info(f'{current_super_pal.name} used unsurprise command.')
     image_types = ["bucket", "nails", "mantis"]
     random_image_type = image_types[random.randrange(0,3)]
     random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
@@ -367,4 +379,4 @@ async def unsurprise(ctx):
     await channel.send(file=discord.File(random_path))
 
 
-bot.run(TOKEN)
+bot.run(TOKEN, log_handler=log_handler)
