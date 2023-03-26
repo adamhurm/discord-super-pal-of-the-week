@@ -73,48 +73,49 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Slash commands
 ################
 
+'''
 # Command: Bet on who will be the next "Super Pal of the Week"
-@app_commands.command(name='bet')
+@bot.tree.command(name='bet')
 @app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
 async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
-    betting_user = interaction.message.author
     user_already_bet = 0 #fetch this dynamically from local file
     if user_already_bet:
-        await interaction.response.send_message(f'Hi {betting_user.mention}, you have already placed your bet for this week.')
-        return
-    await interaction.response.send_message(f'Hi {betting_user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.')
+        return await interaction.response.send_message(f'Hi {interaction.user.mention}, you have already placed your bet for this week.',
+                                                ephemeral=True)
+    await interaction.response.send_message(f'Hi {interaction.user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.', 
+                                            ephemeral=True)
+'''
 
 # Command: Promote users to "Super Pal of the Week"
-@app_commands.command(name='spotw')
+@bot.tree.command(name='spotw')
 @app_commands.describe(new_super_pal='the member you want to promote to super pal')
 @commands.has_role('Super Pal of the Week')
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
-    current_super_pal = interaction.message.author
-
     # Promote new user and remove current super pal.
     if role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
-        await current_super_pal.remove_roles(role)
-        log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}.')                        
+        await interaction.user.remove_roles(role)
+        log.info(f'{new_super_pal.name} promoted by {interaction.user.name}.')
+        await interaction.response.send_message(f'You have promoted {new_super_pal.mention} to super pal of the week!',
+            ephemeral=True)                    
         await channel.send(f'Congratulations {new_super_pal.mention}! '
-            f'You have been promoted to super pal of the week by {current_super_pal.name}. {WELCOME_MSG}')
+            f'You have been promoted to super pal of the week by {interaction.user.name}. {WELCOME_MSG}')
 
+'''
 # Command: Surprise images (AI)
-@app_commands.command(name='surprise')
-@app_commands.describe(your_text_here='text prompt for DALL-E AI image generator')
+@bot.tree.command(name='surprise')
+@app_commands.describe(text_prompt='text prompt for DALL-E AI image generator')
 @commands.has_role('Super Pal of the Week')
-async def surprise(interaction: discord.Interaction, your_text_here: str):
+async def surprise(interaction: discord.Interaction, text_prompt: str):
     channel = bot.get_channel(ART_CHANNEL_ID)
-    current_super_pal = interaction.message.author
-
-    log.info(f'{current_super_pal.name} used surprise command.')
+    log.info(f'{interaction.user.name} used surprise command.')
     log.info(interaction.message.content)
     # Talk to DALL-E 2 AI (beta) for surprise images.
     try:
         response = openai.Image.create(
-            prompt=your_text_here,
+            prompt=text_prompt,
             n=4,
             response_format="b64_json",
             size="1024x1024"
@@ -129,8 +130,9 @@ async def surprise(interaction: discord.Interaction, your_text_here: str):
             await channel.send('Woah there nasty nelly, you asked for something too fucking silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
         elif str(err) == 'Billing hard limit has been reached':
             await channel.send('Adam is broke and can\'t afford this request.')
+'''
 
-
+            
 #############
 # Looped task
 #############
