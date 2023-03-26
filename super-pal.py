@@ -76,7 +76,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 '''
 # Command: Bet on who will be the next "Super Pal of the Week"
 @bot.tree.command(name='bet')
-@app_commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
+@commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
 async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
     user_already_bet = 0 #fetch this dynamically from local file
     if user_already_bet:
@@ -94,14 +94,22 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
     # Promote new user and remove current super pal.
-    if role not in new_super_pal.roles:
+    # NOTE: I have to check for user role because commands.has_role() does not seem to work with app_commands
+    if (role in interaction.user.roles) and (role not in new_super_pal.roles):
         await new_super_pal.add_roles(role)
         await interaction.user.remove_roles(role)
         log.info(f'{new_super_pal.name} promoted by {interaction.user.name}.')
         await interaction.response.send_message(f'You have promoted {new_super_pal.mention} to super pal of the week!',
-            ephemeral=True)                    
+            ephemeral=True)
         await channel.send(f'Congratulations {new_super_pal.mention}! '
             f'You have been promoted to super pal of the week by {interaction.user.name}. {WELCOME_MSG}')
+    elif role in new_super_pal.roles:
+        await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
+            ephemeral=True)
+    else:
+        await interaction.response.send_message(f'{interaction.user.mention}, you can\'t use this command.'
+                                                f'You are not super pal of the week.', ephemeral=True)
+            
 
 '''
 # Command: Surprise images (AI)
@@ -200,7 +208,8 @@ async def on_ready():
 # Event: Check Spin The Wheel rich message
 @bot.event
 async def on_message(message):
-    spin_the_wheel_role = discord.utils.get(message.guild.roles, name='Spin The Wheel')
+    guild = bot.get_channel(GUILD_ID)
+    spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
     # Only check embedded messages from Spin The Wheel Bot.
     if spin_the_wheel_role in message.author.roles:
         embeds = message.embeds
