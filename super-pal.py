@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio, base64, io, logging, os, random
 import discord, openai
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
@@ -172,7 +172,8 @@ async def before_super_pal_of_the_week():
     # If it's past noon on Sunday, add 7 days to timer.
     if date.today().isoweekday() == 7 and now.hour > 12:
         days_until_sunday = 7
-    future = datetime(now.year, now.month, now.day+days_until_sunday, 12, 0)
+    time_diff = now + timedelta(days = days_until_sunday)
+    future = datetime(time_diff.year, time_diff.month, time_diff.day, 12, 0)
     # Sleep task until Sunday at noon.
     log.info(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).total_seconds())
