@@ -87,15 +87,15 @@ async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member
 '''
 
 # Command: Promote users to "Super Pal of the Week"
-@bot.tree.command(name='spotw')
+@bot.tree.command(name='superpal')
 @app_commands.describe(new_super_pal='the member you want to promote to super pal')
-@commands.has_role('Super Pal of the Week')
+@app_commands.checks.has_role('Super Pal of the Week')
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
     # Promote new user and remove current super pal.
     # NOTE: I have to check for user role because commands.has_role() does not seem to work with app_commands
-    if (role in interaction.user.roles) and (role not in new_super_pal.roles):
+    if  role not in new_super_pal.roles:
         await new_super_pal.add_roles(role)
         await interaction.user.remove_roles(role)
         log.info(f'{new_super_pal.name} promoted by {interaction.user.name}.')
@@ -103,19 +103,16 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
             ephemeral=True)
         await channel.send(f'Congratulations {new_super_pal.mention}! '
             f'You have been promoted to super pal of the week by {interaction.user.name}. {WELCOME_MSG}')
-    elif role in new_super_pal.roles:
+    else:
         await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
             ephemeral=True)
-    else:
-        await interaction.response.send_message(f'{interaction.user.mention}, you can\'t use this command.'
-                                                f'You are not super pal of the week.', ephemeral=True)
             
 
 '''
 # Command: Surprise images (AI)
 @bot.tree.command(name='surprise')
 @app_commands.describe(text_prompt='text prompt for DALL-E AI image generator')
-@commands.has_role('Super Pal of the Week')
+@app_commands.checks.has_role('Super Pal of the Week')
 async def surprise(interaction: discord.Interaction, text_prompt: str):
     channel = bot.get_channel(ART_CHANNEL_ID)
     log.info(f'{interaction.user.name} used surprise command.')
@@ -208,7 +205,7 @@ async def on_ready():
 # Event: Check Spin The Wheel rich message
 @bot.event
 async def on_message(message):
-    guild = bot.get_channel(GUILD_ID)
+    guild = bot.get_guild(GUILD_ID)
     spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
     # Only check embedded messages from Spin The Wheel Bot.
     if spin_the_wheel_role in message.author.roles:
@@ -217,10 +214,10 @@ async def on_message(message):
             # Wait until message contains Spin the Wheel winner.
             if embed.description is None: continue
             elif embed.description[0] == '🏆':
-                super_pal_role = discord.utils.get(message.guild.roles, name='Super Pal of the Week')
+                super_pal_role = discord.utils.get(guild.roles, name='Super Pal of the Week')
                 # Grab winner name from Spin the Wheel message.
                 new_super_pal_name = embed.description[12:-2]
-                new_super_pal = discord.utils.get(message.guild.members, name=new_super_pal_name)
+                new_super_pal = discord.utils.get(guild.members, name=new_super_pal_name)
                 # Add new winner to Super Pal of the Week.
                 log.info(f'{new_super_pal.name} was chosen by the wheel spin.')
                 await new_super_pal.add_roles(super_pal_role)
