@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+ name: discord-super-pal-pod
+ namespace: default
+spec:
+ containers:
+ - name: discord-super-pal-container
+   image: adamhurm/discord-super-pal:latest
+   imagePullPolicy: Never
+ - name: discord-spin-the-wheel-container
+   image: adamhurm/discord-spin-the-wheel:latest
+   imagePullPolicy: Never
