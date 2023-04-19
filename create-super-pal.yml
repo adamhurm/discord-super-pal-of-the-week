@@ -1,13 +1,21 @@
 apiVersion: v1
 kind: Pod
 metadata:
- name: discord-super-pal-pod
- namespace: default
+ name: super-pal-pod
+ namespace: discord
 spec:
  containers:
- - name: discord-super-pal-container
+ - name: super-pal-container
    image: adamhurm/discord-super-pal:latest
    imagePullPolicy: Never
- - name: discord-spin-the-wheel-container
+   resources:
+     limits:
+       cpu: 1.0
+       memory: 128Mi
+ - name: spin-the-wheel-container
    image: adamhurm/discord-spin-the-wheel:latest
    imagePullPolicy: Never
+   resources:
+     limits:
+       cpu: 1.0
+       memory: 128Mi

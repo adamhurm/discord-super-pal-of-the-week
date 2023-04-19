@@ -209,7 +209,7 @@ async def on_message(message):
     spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
     member = guild.get_member(message.author.id)
     # Only check embedded messages from Spin The Wheel Bot.
-    if spin_the_wheel_role in member.roles:
+    if member is not None and spin_the_wheel_role in member.roles:
         embeds = message.embeds
         for embed in embeds:
             # Wait until message contains Spin the Wheel winner.
