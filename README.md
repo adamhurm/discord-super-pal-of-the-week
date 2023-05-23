@@ -124,4 +124,4 @@ Now you can just deploy and run the images anywhere:
 ## Kubernetes installation instructions:
 
 Once you have built and distributed the docker images locally, use the following command to create the super pal pod:
-- `kubectl apply -f create-super-pal.yml`
+- `kubectl create -f super-pal.yml`
