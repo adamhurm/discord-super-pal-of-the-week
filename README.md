@@ -20,7 +20,7 @@ Currently this supports commands and the looped task.
 ## Local Installation
 
 ### Step 1: Clone this repository and install dependencies
-First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
+First clone this repository: `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
 Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv openai`
 
@@ -104,7 +104,7 @@ Now you'll need to run the bots:
 
 ## Docker installation instructions:
 
-First clone this repository: `git clone git@github.com:adamhurm/discord-super-pal-of-the-week.git`
+First clone this repository: `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
 Next, follow [Step 2 above](https://github.com/adamhurm/discord-super-pal-of-the-week#step-2-create-a-local-file-named-env-to-hold-your-tokens-and-ids) to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
 
