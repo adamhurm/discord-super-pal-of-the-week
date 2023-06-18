@@ -121,7 +121,7 @@ async def spinthewheel(ctx):
     true_name_list = [member.name for member in true_member_list]
     true_name_str = ", ".join(true_name_list)
     # Send Spin the Wheel command.
-    await channel.send(f'!pick {true_name_str}')
+    await channel.send(f'?pick {true_name_str}')
     print(f'\nSpinning the wheel for new super pal of the week.')
     # Remove current super pal.
     await current_super_pal.remove_roles(role)
