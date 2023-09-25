@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: super-pal-env
+  namespace: discord
+data:
+  super-pal-discord-key: ""
+  spin-the-wheel-discord-key: ""
+  openai-api-key: ""
+  guild-id: ""
+  channel-id: ""
+  emoji-guild-id: ""
+  art-channel-id: ""
+  voice-channels: ""
+  # to get from .env to secrets file, I used these commands:
+  # head -1 .env | python -c 'import re, sys; r = re.compile(r"^.*=(.+)$"); m = r.match(sys.stdin.read()); print(m.group(1))' | base64 -w 0
+  # head -2 .env | tail +2 | python -c 'import re, sys; r = re.compile(r"^.*=(.+)$"); m = r.match(sys.stdin.read()); print(m.group(1))' | base64 -w 0
