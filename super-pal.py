@@ -3,10 +3,26 @@ import asyncio, base64, datetime, io, logging, os, random
 import discord, openai
 from discord import app_commands
 from discord.ext import commands, tasks
+from dotenv import load_dotenv
 
-###########
-# Logging #
-###########
+################
+# Env. variables
+################
+
+load_dotenv()
+TOKEN = os.getenv('SUPERPAL_TOKEN')
+GUILD_ID = int(os.getenv('GUILD_ID'))
+EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
+CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
+ART_CHANNEL_ID = int(os.getenv('ART_CHANNEL_ID'))
+openai.api_key = os.getenv("OPENAI_API_KEY")
+VOICE_CHANNELS = (os.getenv("VOICE_CHANNELS")).encode('utf-8').decode('unicode-escape')
+
+
+#########
+# Logging
+#########
+
 log = logging.getLogger('super-pal')
 log.setLevel(logging.INFO)
 log_handler = logging.FileHandler(filename='discord-super-pal.log', encoding='utf-8', mode='w')
@@ -45,7 +61,6 @@ COMMANDS_MSG = (f'**!spotw @name**\n\tPromote another user to super pal of the w
     f'**!cacaw**\n\tSpam the channel with party parrots.\n'
     f'**!meow**\n\tSpam the channel with party cats.\n'
     f'**!surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.\n'
-    f'**!unsurprise**\n\tReceive a surprise image in the channel.\n'
     f'**!karatechop**\n\tMove a random user to AFK voice channel.' )
 GAMBLE_MSG = ( f'Respond to the two polly polls to participate in Super Pal of the Week Gambling™.\n'
     f'- Choose your challenger\n'
@@ -305,25 +320,27 @@ async def karate_chop(ctx):
     # Grab voice channels from env file values.
     voice_channels = [
         discord.utils.get(guild.voice_channels, name=voice_channel, type=discord.ChannelType.voice)
-        for voice_channel in VOICE_CHANNELS.split(',')
+        for voice_channel in VOICE_CHANNELS
     ]
     # Kick random user from voice channel.
     if not any(x.members for x in voice_channels):
         log.info(f'{current_super_pal.name} used karate chop, but no one is in the voice channels.')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
-        # Grab the first channel with users in it.
-        voice_channel = None
-        for channel in voice_channels:
-            if channel.members:
-                voice_channel = channel
-                break
-
-        true_member_list = [m for m in voice_channel.members if not m.bot]
+        # Flatten user list, filter out bots, and choose random user
+        flatten = lambda l: [x for y in l for x in y]
+        true_member_list = [m for m in flatten(active_members) if not m.bot]
         chopped_member = random.choice(true_member_list)
-        log.info(f'{chopped_member.name} karate chopped by {current_super_pal.name}.')
-        await chopped_member.move_to(voice_channels[3])
-        await channel.send(f'{current_super_pal.mention} karate chopped {chopped_member.mention}!')
+
+        # Check that an 'AFK' channel exists and choose the first one we see
+        afk_channels = [c.name for c in guild.voice_channels if 'AFK' in c.name]
+        if any(afk_channels):
+            await chopped_member.move_to(guild.voice_channels[afk_channels[0]])
+            await channel.send(f'karate chopped {chopped_member.mention}!')
+        else:
+            await channel.send(f'{chopped_member.mention} would have been chopped, but an AFK channel was not found.\n'
+                               f'Please complain to the server owner.')
+        log.info(f'{chopped_member.name} karate chopped')
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
@@ -364,21 +381,5 @@ async def surprise(ctx):
             await channel.send('Woah there nasty nelly, you asked for something too fucking silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
         elif str(err) == 'Billing hard limit has been reached':
             await channel.send('Adam is broke and can\'t afford this request.')
-
-# Command: Old "surprise" images (predetermined)
-@bot.command(name='unsurprise', pass_context=True)
-@commands.has_role('Super Pal of the Week')
-async def unsurprise(ctx):
-    channel = bot.get_channel(CHANNEL_ID)
-    current_super_pal = ctx.message.author
-
-    # Grab random image from assets folder and send message.
-    log.info(f'{current_super_pal.name} used unsurprise command.')
-    image_types = ["bucket", "nails", "mantis"]
-    random_image_type = image_types[random.randrange(0,3)]
-    random_path = "/home/discord-super-pal-of-the-week/assets/surprise_images/" \
-                      + random_image_type + str(random.randrange(0,10)) + ".jpg"
-    await channel.send(file=discord.File(random_path))
-
 
 bot.run(TOKEN, log_handler=log_handler)
