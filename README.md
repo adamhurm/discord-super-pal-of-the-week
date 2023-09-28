@@ -22,7 +22,7 @@ Currently this supports commands and the looped task.
 ### Step 1: Clone this repository and install dependencies
 First clone this repository: `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py python-dotenv openai`
+Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py openai`
 
 Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
 

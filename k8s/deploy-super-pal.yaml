@@ -28,7 +28,7 @@ spec:
       containers:
       - name: super-pal
         image: adamhurm/discord-super-pal:latest
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         resources:
           limits:
             cpu: 1.0
@@ -78,9 +78,9 @@ spec:
             memory: 128Mi
         env:
           - name: WHEEL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: super-pal-env
-                  key: spin-the-wheel-discord-key
+            valueFrom:
+              secretKeyRef:
+                name: super-pal-env
+                key: spin-the-wheel-discord-key
       restartPolicy: Always
       terminationGracePeriodSeconds: 30

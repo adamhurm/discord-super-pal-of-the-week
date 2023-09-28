@@ -3,13 +3,11 @@ import asyncio, base64, datetime, io, logging, os, random
 import discord, openai
 from discord import app_commands
 from discord.ext import commands, tasks
-from dotenv import load_dotenv
 
 ################
 # Env. variables
 ################
 
-load_dotenv()
 TOKEN = os.getenv('SUPERPAL_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
 EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
@@ -378,7 +376,7 @@ async def surprise(ctx):
             await channel.send('Failed to create surprise image. Everyone boo Adam.')
     except openai.error.InvalidRequestError as err:
         if str(err) == 'Your request was rejected as a result of our safety system.':
-            await channel.send('Woah there nasty nelly, you asked for something too fucking silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
+            await channel.send('Woah there nasty nelly, you asked for something too silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
         elif str(err) == 'Billing hard limit has been reached':
             await channel.send('Adam is broke and can\'t afford this request.')
 
