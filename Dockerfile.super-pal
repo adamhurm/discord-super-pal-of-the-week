@@ -3,7 +3,6 @@ LABEL MAINTAINER="Adam Hurm" INFO="Discord Super Pal of the Week"
 
 WORKDIR /super-pal
 COPY super-pal.py super-pal.py
-COPY assets assets
 
 RUN pip install discord.py python-dotenv openai
 
