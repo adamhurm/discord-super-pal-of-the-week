@@ -4,7 +4,6 @@ LABEL MAINTAINER="Adam Hurm" INFO="Discord Spin The Wheel"
 WORKDIR /super-pal
 
 COPY discord-spin-the-wheel spin-the-wheel
-COPY .env .env
 
 WORKDIR /super-pal/spin-the-wheel
 
