@@ -1,7 +1,5 @@
 # super-pal-of-the-week
-Discord mod that promotes users to Super Pal of the Week role.
-
-This can just run in a tmux session on a raspberry pi. If you want a more portable build, however, you can use the docker image.
+Discord bot that promotes users to Super Pal of the Week role. This is a k8s deployment that uses [discord-super-pal](https://hub.docker.com/r/adamhurm/discord-super-pal) and [discord-spin-the-wheel](https://hub.docker.com/r/adamhurm/discord-spin-the-wheel) docker images.
 
 Currently this supports commands and the looped task.
 - **Commands:**
@@ -16,31 +14,18 @@ Currently this supports commands and the looped task.
 - **Looped Task:**
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
 
---------
-## Local Installation
+## Setup Instructions
 
 ### Step 1: Clone this repository and install dependencies
 First clone this repository: `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py openai`
+### Step 2: Create k8s secrets for the following values:
 
-Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
-
-<br/>
-
-### Step 2: Create a local file named `.env` to hold your tokens and IDs:
-
-#### .env
+```bash
+# Copy the example file and edit to add your secrets.
+cp k8s/env-super-pal.yaml.example k8s/env-super-pal.yaml
+kubectl apply -f k8s/env-super-pal.yaml
 ```
-SUPERPAL_TOKEN=
-WHEEL_TOKEN=
-GUILD_ID=
-EMOJI_GUILD_ID=
-CHANNEL_ID=
-ART_CHANNEL_ID=
-OPENAI_API_KEY=
-```
-<br/>
 
 | Token / ID       | How do I get this value? |
 | ---------------- | ------------------------ |
@@ -56,7 +41,6 @@ OPENAI_API_KEY=
 **In-browser:** In a web browser, open the [web application](https://discord.com/app). <br/>
 **Desktop Client:** In the [desktop application](https://discord.com/download), turn on **Developer Mode** in Settings -> Advanced. <br/>
 
-<br/>
 
 ### Step 3: Configure Super Pal roles in your channel:
 
@@ -64,7 +48,6 @@ Create a role named `Super Pal of the Week` (case sensitive) and add your desire
 
 Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `Super Pal of the Week` role.
 
-<br/>
 
 ### Step 4: Create an invite link to add the Super Pal Bot to your channel.
 
@@ -86,42 +69,22 @@ Recommended settings for OAuth Invite Link:
   - Send Messages
   - Manage Messages
   - Attach Files
-<br/>
 
-The settings listed above would result in the following link, where [CLIENT\_ID] is substituted with your bot's CLIENT\_ID:
+The settings listed above would result in the following link, where [CLIENT\_ID] is substituted with your bot's CLIENT\_ID: \
 `https://discord.com/api/oauth2/authorize?client_id=[CLIENT_ID]&permissions=268437504&redirect_uri=https%3A%2F%2Fdiscord.com%2Fapi%2Foauth2%2Fauthorize&response_type=code&scope=guilds%20guilds.members.read%20bot%20applications.commands`
 
-<br/>
-
 ### Run the bots!
-Now you'll need to run the bots:
- - Super Pal Bot: `python3 super-pal.py`
- - Spin the Wheel Bot: `cd discord-spin-the-wheel && yarn start`
-
-(I suggest keeping the script running in a tmux session so that you can easily attach if you want to view the bot status.)
-
+Now you'll need to run the deployment!
+```bash
+kubectl apply -f k8s/deploy-super-pal.yaml
+```
 <br/>
 
-## Docker installation instructions:
+## Docker build instructions:
 
-First clone this repository: `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
+First clone this repository:
+- `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
-Next, follow [Step 2 above](https://github.com/adamhurm/discord-super-pal-of-the-week#step-2-create-a-local-file-named-env-to-hold-your-tokens-and-ids) to create a local file named .env in the discord-super-pal-of-the-week directory. Add all your tokens to the file.
-
-Once the .env file is in place, build the images:
+Local build commands:
 - `docker build -t adamhurm/discord-super-pal -f Dockerfile.super-pal .`
 - `docker build -t adamhurm/discord-spin-the-wheel -f Dockerfile.spin-the-wheel .`
-
-
-Now you can just deploy and run the images anywhere: 
-- `docker run -d adamhurm/discord-super-pal`
-- `docker run -d adamhurm/discord-spin-the-wheel`
-
-*WARNING: This iteration of the project does not use any docker secrets or secure storage for discord tokens. Your tokens will all be in plaintext, so -- Please do not publicly upload your container until this notice is removed.*
-
-<br/>
-
-## Kubernetes installation instructions:
-
-Once you have built and distributed the docker images locally, use the following command to create the super pal pod:
-- `kubectl create -f super-pal.yml`
