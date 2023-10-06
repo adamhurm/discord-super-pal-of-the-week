@@ -5,7 +5,7 @@ metadata:
     deployment.kubernetes.io/revision: "1"
   generation: 1
   labels:
-    app: super-pal
+    app.kubernetes.io/instance: super-pal
   name: super-pal
   namespace: discord
 spec:
@@ -14,7 +14,7 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: super-pal
+      app.kubernetes.io/instance: super-pal
   strategy:
     rollingUpdate:
       maxSurge: 25%
@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       labels:
-        app: super-pal
+        app.kubernetes.io/instance: super-pal
     spec:
       containers:
       - name: super-pal
