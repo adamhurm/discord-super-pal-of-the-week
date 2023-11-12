@@ -63,7 +63,6 @@ intents.members = True         # Required to list all users in a guild.
 intents.message_content = True # Required to use spin-the-wheel and grab winner.
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-
 ##################
 # Slash commands #
 ##################
@@ -132,7 +131,6 @@ async def before_super_pal_of_the_week():
     log.info(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).total_seconds())
 
-
 ##############
 # Bot events #
 ##############
@@ -179,7 +177,6 @@ async def on_message(message):
                     f'You have been promoted to super pal of the week by wheel spin. {WELCOME_MSG}')
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
-
 
 ################
 # Bot commands #
@@ -280,7 +277,6 @@ async def karate_chop(ctx):
         else:
             await channel.send(f'{chopped_member.mention} would have been chopped, but an AFK channel was not found.\n'
                                f'Please complain to the server owner.')
-        
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
