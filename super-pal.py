@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-import asyncio, base64, datetime, io, logging, os, random
+import asyncio, base64, datetime, io, json, logging, os, random
 import discord, openai
 from discord import app_commands
 from discord.ext import commands, tasks
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 ###########
 # Logging #
@@ -52,8 +52,110 @@ GAMBLE_MSG = ( f'Respond to the two polly polls to participate in Super Pal of t
     f'You will be given 100 points weekly so feel free to go all-in.\n\n'
     f'*The National Problem Gambling Helpline (1-800-522-4700) is available 24/7 and is 100% confidential.*' )
 WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
-    f'Use super pal commands by posting commands in chat. Examples:\n'
-    f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
+                f'Use super pal commands by posting commands in chat. Examples:\n'
+                f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
+GPT_PROMPT_MSG = ( f'You are a helpful assistant named Super Pal Bot. '
+                    f'You help the members of a small Discord community called Bringus. '
+                    f'Each week a new super pal is chosen at random from the list of Bringus members.' )
+# Define available tools for this assistant.
+GPT_ASSISTANT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "is_member_super_pal",
+            "description": "Check if the given member is currently super pal",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member": {
+                        "type": "string",
+                        "description": "The member name, e.g. clippy",
+                    },
+                },
+                "required": ["member"],
+            }
+        }
+    }
+]
+
+################
+# OpenAI setup #
+################
+async def is_member_super_pal(member: str):
+    guild = bot.get_guild(GUILD_ID)
+    member = discord.utils.get(guild.members, name=member)
+    super_pal_role = discord.utils.get(guild.roles, name='Super Pal of the Week')
+    if super_pal_role in member.roles:
+        return f"Yes, {member} is the super pal."
+    else:
+        return f"No, {member} is not the super pal."
+
+async def respond_to_user(message: discord.Message):
+    log.info(f"{message.author.name} said \"{message.content}\"")
+    # Create OpenAI client and assistant.
+    client = await AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    assistant = await client.beta.assistants.create(
+        name="Super Pal Bot",
+        instructions=GPT_PROMPT_MSG,
+        tools=GPT_ASSISTANT_TOOLS,
+        model="gpt-3.5-turbo-1106"
+    )
+    # Create thread, send message, run thread.
+    thread = await client.beta.threads.create()
+    await client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=message.content
+    )
+    await client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=assistant.id
+    )
+    # Check if assistant requires action.
+    run = await client.beta.threads.runs.retrieve(
+        thread_id=thread.id,
+        run_id=run.id
+    )
+    if run.status == 'required_action':
+        # array of available tools for this assistant
+        avail_tools = { "is_member_super_pal": is_member_super_pal }
+
+        # retrieve tool function name, arguments, and call id
+        tool_fn = avail_tools[run.required_action.
+                            submit_tool_outputs.tool_calls[0].
+                            function.name]
+        tool_args = json.loads(run.required_action.
+                            submit_tool_outputs.tool_calls[0].
+                            function.arguments)
+        tool_call_id = run.required_action.submit_tool_outputs.tool_calls[0].id
+
+        # call tool function and save output
+        tool_output = tool_fn(member=dict(tool_args).get('member'))
+
+        # submit tools output
+        run = await client.beta.threads.runs.submit_tool_outputs(
+                thread_id=thread.id,
+                run_id=run.id,
+                tool_outputs=[
+                    {
+                        "tool_call_id": tool_call_id,
+                        "output": tool_output,
+                    }
+                ]
+        )
+        # check if assistant requires action again
+        run = await client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+    if run.status == 'completed':
+        # get most recent message from thread and post to discord channel
+        messages = await client.beta.threads.messages.list(
+            thread_id=thread.id
+        )
+        gpt_assistant_response = messages.data[0].content[0].text.value
+        channel = bot.get_channel(CHANNEL_ID)
+        channel.send(gpt_assistant_response)
 
 #############
 # Bot setup #
@@ -150,10 +252,14 @@ async def on_ready():
 
 # Event: Check Spin The Wheel rich message
 @bot.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     guild = bot.get_guild(GUILD_ID)
     spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
     member = guild.get_member(message.author.id)
+    # Reply to messages in Super Pal channel if they aren't commands.
+    if message.channel == CHANNEL_ID and message.content['0'] != '!':
+        gpt_response_msg = await respond_to_user(message)
+        await message.channel.send(gpt_response_msg)
     # Only check embedded messages from Spin The Wheel Bot.
     if member is not None and spin_the_wheel_role in member.roles:
         embeds = message.embeds
@@ -297,9 +403,9 @@ async def surprise(ctx):
     your_text_here = ctx.message.content.removeprefix('!surprise ')
     
     # Talk to DALL-E 2 AI (beta) for surprise images.
-    client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    client = await AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
     try:
-        response = client.images.generate(
+        response = await client.images.generate(
             prompt=your_text_here,
             n=4,
             response_format="b64_json",
