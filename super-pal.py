@@ -25,6 +25,7 @@ EMOJI_GUILD_ID = GUILD_ID if os.environ['EMOJI_GUILD_ID'] is None else int(os.en
 CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 ART_CHANNEL_ID = CHANNEL_ID if os.environ['ART_CHANNEL_ID'] is None else int(os.environ['ART_CHANNEL_ID'])
 VOICE_CHANNELS = os.environ['VOICE_CHANNELS']
+GPT_ASSISTANT_THREAD_ID = os.environ['GPT_ASSISTANT_THREAD_ID']
 
 (base_reqnotmet,karatechop_reqnotmet,ai_reqnotmet) = (TOKEN is None or GUILD_ID is None or CHANNEL_ID is None, 
                                                       VOICE_CHANNELS is None,
@@ -90,8 +91,8 @@ async def is_member_super_pal(member: str):
     else:
         return f"No, {member} is not the super pal."
 
-async def respond_to_user(message: discord.Message):
-    log.info(f"{message.author.name} said \"{message.content}\"")
+async def respond_to_user(user_message: discord.Message):
+    log.info(f"{user_message.author.name} said \"{user_message.content}\"")
     # Create OpenAI client and assistant.
     client = await AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
     assistant = await client.beta.assistants.create(
@@ -100,13 +101,23 @@ async def respond_to_user(message: discord.Message):
         tools=GPT_ASSISTANT_TOOLS,
         model="gpt-3.5-turbo-1106"
     )
-    # Create thread, send message, run thread.
-    thread = await client.beta.threads.create()
+    try: # Try to get existing thread.
+        thread = await client.beta.threads.retrieve(
+            thread_id=GPT_ASSISTANT_THREAD_ID
+        )
+    except openai.NotFoundError as e: # Thread not found. We will create thread.
+        log.warn(f"Thread ID not found. Creating new thread. Error\n{e}")
+        thread = await client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id
+        )
+    # Create a thread message.
     await client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
-        content=message.content
+        content=user_message.content
     )
+    # Create a thread run.
     await client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=assistant.id
