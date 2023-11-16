@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-import asyncio, base64, datetime, io, json, logging, os, random
+import asyncio, base64, datetime, io, json, logging, os, random, time
 import discord, openai
 from discord import app_commands
 from discord.ext import commands, tasks
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 ###########
@@ -19,12 +20,14 @@ log.addHandler(log_handler)
 ##################
 # Env. variables #
 ##################
+load_dotenv()
 TOKEN = os.environ['SUPERPAL_TOKEN']
 GUILD_ID = int(os.environ['GUILD_ID'])
 EMOJI_GUILD_ID = GUILD_ID if os.environ['EMOJI_GUILD_ID'] is None else int(os.environ['EMOJI_GUILD_ID'])
 CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 ART_CHANNEL_ID = CHANNEL_ID if os.environ['ART_CHANNEL_ID'] is None else int(os.environ['ART_CHANNEL_ID'])
 VOICE_CHANNELS = os.environ['VOICE_CHANNELS']
+GPT_ASSISTANT_ID = os.environ['GPT_ASSISTANT_ID']
 GPT_ASSISTANT_THREAD_ID = os.environ['GPT_ASSISTANT_THREAD_ID']
 
 (base_reqnotmet,karatechop_reqnotmet,ai_reqnotmet) = (TOKEN is None or GUILD_ID is None or CHANNEL_ID is None, 
@@ -94,19 +97,25 @@ async def is_member_super_pal(member: str):
 async def respond_to_user(user_message: discord.Message):
     log.info(f"{user_message.author.name} said \"{user_message.content}\"")
     # Create OpenAI client and assistant.
-    client = await AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    assistant = await client.beta.assistants.create(
-        name="Super Pal Bot",
-        instructions=GPT_PROMPT_MSG,
-        tools=GPT_ASSISTANT_TOOLS,
-        model="gpt-3.5-turbo-1106"
-    )
+    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    try: # Try to get existing assistant.
+        assistant = await client.beta.assistants.retrieve(
+            assistant_id=GPT_ASSISTANT_ID
+        )
+    except openai.NotFoundError as e: # Assistant not found. We will create thread.
+        log.warn(f"Assistant ID not found. Creating new Assistant.\nError: {e}")
+        assistant = await client.beta.assistants.create(
+            name="Super Pal Bot",
+            instructions=GPT_PROMPT_MSG,
+            tools=GPT_ASSISTANT_TOOLS,
+            model="gpt-3.5-turbo-1106"
+        )
     try: # Try to get existing thread.
         thread = await client.beta.threads.retrieve(
             thread_id=GPT_ASSISTANT_THREAD_ID
         )
     except openai.NotFoundError as e: # Thread not found. We will create thread.
-        log.warn(f"Thread ID not found. Creating new thread. Error\n{e}")
+        log.warn(f"Thread ID not found. Creating new Thread.\nError: {e}")
         thread = await client.beta.threads.runs.create(
             thread_id=thread.id,
             assistant_id=assistant.id
@@ -118,7 +127,7 @@ async def respond_to_user(user_message: discord.Message):
         content=user_message.content
     )
     # Create a thread run.
-    await client.beta.threads.runs.create(
+    run = await client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=assistant.id
     )
@@ -127,7 +136,7 @@ async def respond_to_user(user_message: discord.Message):
         thread_id=thread.id,
         run_id=run.id
     )
-    if run.status == 'required_action':
+    if run.status == 'requires_action':
         # array of available tools for this assistant
         avail_tools = { "is_member_super_pal": is_member_super_pal }
 
@@ -154,7 +163,16 @@ async def respond_to_user(user_message: discord.Message):
                     }
                 ]
         )
+        # Give 1 second for assistant to complete before first attempt.
+        time.sleep(1)
         # check if assistant requires action again
+        run = await client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+    # Retry every second.
+    while run.status == 'in_progress' or run.status == 'queued':
+        time.sleep(1)
         run = await client.beta.threads.runs.retrieve(
             thread_id=thread.id,
             run_id=run.id
@@ -165,8 +183,10 @@ async def respond_to_user(user_message: discord.Message):
             thread_id=thread.id
         )
         gpt_assistant_response = messages.data[0].content[0].text.value
-        channel = bot.get_channel(CHANNEL_ID)
-        channel.send(gpt_assistant_response)
+        log.info(f"Super Pal Bot said \"{gpt_assistant_response}\"")
+        return gpt_assistant_response
+    else:
+        log.info(f"Run status: {run.status}")
 
 #############
 # Bot setup #
@@ -267,8 +287,8 @@ async def on_message(message: discord.Message):
     guild = bot.get_guild(GUILD_ID)
     spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
     member = guild.get_member(message.author.id)
-    # Reply to messages in Super Pal channel if they aren't commands.
-    if message.channel == CHANNEL_ID and message.content['0'] != '!':
+    # Reply to messages in Super Pal channel if they aren't commands and they aren't from a bot.
+    if message.channel.id == CHANNEL_ID and message.content[0] != '!' and message.author.bot is False:
         gpt_response_msg = await respond_to_user(message)
         await message.channel.send(gpt_response_msg)
     # Only check embedded messages from Spin The Wheel Bot.
