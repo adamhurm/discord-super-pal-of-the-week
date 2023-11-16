@@ -17,7 +17,7 @@ Currently this supports commands and the looped task.
 ## Setup Instructions
 
 ### Step 1: Clone this repository and install dependencies
-First clone this repository: `git clone --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
+First clone this repository: `git clone --recursive --recursive git@github.com:adamhurm/discord-super-pal-of-the-week.git`
 
 ### Step 2: Create k8s secrets for the following values:
 
@@ -26,11 +26,34 @@ First clone this repository: `git clone --recursive git@github.com:adamhurm/disc
 cp k8s/env-super-pal.yaml.example k8s/env-super-pal.yaml
 kubectl apply -f k8s/env-super-pal.yaml
 ```
+Then after ensuring python3 is on your system, install dependencies: `pip install -U discord.py openai`
+
+Follow the [spin-the-wheel](https://github.com/adamhurm/wheel-of-names-discord-bot/tree/main#how-to-use) installation instructions: `cd discord-spin-the-wheel && yarn install`
+
+<br/>
+
+### Step 2: Create a local file named `.env` to hold your tokens and IDs:
+
+#### .env
+```
+SUPERPAL_TOKEN=
+WHEEL_TOKEN=
+GUILD_ID=
+EMOJI_GUILD_ID=
+CHANNEL_ID=
+ART_CHANNEL_ID=
+OPENAI_API_KEY=
+```
+<br/>
 
 | Token / ID       | How do I get this value? |
 | ---------------- | ------------------------ |
 | SUPERPAL\_TOKEN  | Create a Super Pal of the Week bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
 | WHEEL\_TOKEN     | Create a Spin the Wheel bot in the [Discord developer portal](https://discord.com/developers/applications/). <br/> Choose your application -> Go to Bot section -> Look under "Token" section |
+| GUILD\_ID        | **In-browser**: <br/> Click on any text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
+| EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on any text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
+| CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel where you want to send Super Pal of the Week commands in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
+| ART\_CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel where you want to store AI Art in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to store AI Art and select `Copy ID` |
 | GUILD\_ID        | **In-browser**: <br/> Click on any text channel in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on your server icon and select `Copy ID` |
 | EMOJI\_GUILD\_ID | **In-browser**: <br/> Click on any text channel in your server. Your URL will be in the form of `https://discord.com/channels/[EMOJI_GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the server icon where party emojis are hosted and select `Copy ID` |
 | CHANNEL\_ID      | **In-browser**: <br/> Click on the text channel where you want to send Super Pal of the Week commands in your server. Your URL will be in the form of `https://discord.com/channels/[GUILD_ID]/[CHANNEL_ID]` <br/><br/> **Desktop Client**: <br/> Right-click on the text channel where you want to send Super Pal of the Week commands and select `Copy ID` |
@@ -45,7 +68,9 @@ kubectl apply -f k8s/env-super-pal.yaml
 ### Step 3: Configure Super Pal roles in your channel:
 
 Create a role named `Super Pal of the Week` (case sensitive) and add your desired elevated permissions (if any).
+Create a role named `Super Pal of the Week` (case sensitive) and add your desired elevated permissions (if any).
 
+Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `Super Pal of the Week` role.
 Create a role that is one tier higher named `spotw-bot` and apply it to the Super Pal Bot. This is required in order for the Super Pal Bot to apply the `Super Pal of the Week` role.
 
 

@@ -229,7 +229,7 @@ async def super_pal_of_the_week():
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    
+
     # Get list of members and filter out bots. Pick random member.
     true_member_list = [m for m in guild.members if not m.bot]
     spotw = random.choice(true_member_list)
@@ -325,6 +325,7 @@ async def spinthewheel(ctx):
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
 
+    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
     true_name_list = [member.name for member in true_member_list]
@@ -368,25 +369,13 @@ async def cacaw(ctx):
     partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
     await channel.send(str(partyparrot_emoji)*50)
 
-# Command: Get more info about gambling.
-@bot.command(name="gamble", pass_context=True)
-async def gamble(ctx):
-    guild = bot.get_guild(GUILD_ID)
-    channel = bot.get_channel(CHANNEL_ID)
-
-    await channel.send(GAMBLE_MSG)
-    true_member_list = [m for m in guild.members if not m.bot]
-    true_name_list = [member.name for member in true_member_list]
-    true_name_str = ", ".join(true_name_list)
-    await channel.send(f'/poll {true_name_str}')
-
 # Command: Randomly remove one user from voice chat
 @bot.command(name='karatechop', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def karate_chop(ctx):
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
-    current_super_pal = ctx.message.author 
+    current_super_pal = ctx.message.author
 
     # Grab voice channels from env file values.
     voice_channels = [
@@ -432,9 +421,8 @@ async def surprise(ctx):
     log.info(f'{ctx.message.author.name} used surprise command:\n\t{ctx.message.content}')
     channel = bot.get_channel(ART_CHANNEL_ID)
     your_text_here = ctx.message.content.removeprefix('!surprise ')
-    
-    # Talk to DALL-E 2 AI (beta) for surprise images.
-    client = await AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    # Talk to OpenAI image generation API.
+    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
     try:
         response = await client.images.generate(
             prompt=your_text_here,
