@@ -1,26 +1,14 @@
 #!/usr/bin/env python3
-import asyncio, base64, datetime, io, logging, os, random
+import asyncio, base64, datetime, io, json, logging, os, random, time
 import discord, openai
 from discord import app_commands
 from discord.ext import commands, tasks
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
-################
-# Env. variables
-################
-
-TOKEN = os.getenv('SUPERPAL_TOKEN')
-GUILD_ID = int(os.getenv('GUILD_ID'))
-EMOJI_GUILD_ID = int(os.getenv('EMOJI_GUILD_ID'))
-CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
-ART_CHANNEL_ID = int(os.getenv('ART_CHANNEL_ID'))
-openai.api_key = os.getenv("OPENAI_API_KEY")
-VOICE_CHANNELS = (os.getenv("VOICE_CHANNELS")).encode('utf-8').decode('unicode-escape')
-
-
-#########
-# Logging
-#########
-
+###########
+# Logging #
+########### 
 log = logging.getLogger('super-pal')
 log.setLevel(logging.INFO)
 log_handler = logging.FileHandler(filename='discord-super-pal.log', encoding='utf-8', mode='w')
@@ -32,24 +20,26 @@ log.addHandler(log_handler)
 ##################
 # Env. variables #
 ##################
+load_dotenv()
 TOKEN = os.environ['SUPERPAL_TOKEN']
 GUILD_ID = int(os.environ['GUILD_ID'])
 EMOJI_GUILD_ID = GUILD_ID if os.environ['EMOJI_GUILD_ID'] is None else int(os.environ['EMOJI_GUILD_ID'])
 CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 ART_CHANNEL_ID = CHANNEL_ID if os.environ['ART_CHANNEL_ID'] is None else int(os.environ['ART_CHANNEL_ID'])
-openai.api_key = os.environ['OPENAI_API_KEY']
 VOICE_CHANNELS = os.environ['VOICE_CHANNELS']
+GPT_ASSISTANT_ID = os.environ['GPT_ASSISTANT_ID']
+GPT_ASSISTANT_THREAD_ID = os.environ['GPT_ASSISTANT_THREAD_ID']
 
 (base_reqnotmet,karatechop_reqnotmet,ai_reqnotmet) = (TOKEN is None or GUILD_ID is None or CHANNEL_ID is None, 
                                                       VOICE_CHANNELS is None,
-                                                      openai.api_key is None)
+                                                      os.environ['OPENAI_API_KEY'] is None)
 RUNTIME_WARN_MSG = 'WARN: Super Pal will still run but you are very likely to encounter run-time errors.'
 if base_reqnotmet:
-    log.info(f'Base requirements not fulfilled. Please provide TOKEN, GUILD_ID, CHANNEL_ID.\n{RUNTIME_WARN_MSG}\n')
+    log.warn(f'Base requirements not fulfilled. Please provide TOKEN, GUILD_ID, CHANNEL_ID.\n{RUNTIME_WARN_MSG}\n')
 if karatechop_reqnotmet:
-    log.info(f'Karate chop requirements not fulfilled. Please provide VOICE_CHANNELS.\n{RUNTIME_WARN_MSG}\n')
+    log.warn(f'Karate chop requirements not fulfilled. Please provide VOICE_CHANNELS.\n{RUNTIME_WARN_MSG}\n')
 if ai_reqnotmet:
-    log.info(f'OpenAI requirements not fulfilled. Please provide api key.\n{RUNTIME_WARN_MSG}\n')
+    log.warn(f'OpenAI requirements not fulfilled. Please provide api key.\n{RUNTIME_WARN_MSG}\n')
 
 ###################
 # Message strings #
@@ -66,8 +56,137 @@ GAMBLE_MSG = ( f'Respond to the two polly polls to participate in Super Pal of t
     f'You will be given 100 points weekly so feel free to go all-in.\n\n'
     f'*The National Problem Gambling Helpline (1-800-522-4700) is available 24/7 and is 100% confidential.*' )
 WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
-    f'Use super pal commands by posting commands in chat. Examples:\n'
-    f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
+                f'Use super pal commands by posting commands in chat. Examples:\n'
+                f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
+GPT_PROMPT_MSG = ( f'You are a helpful assistant named Super Pal Bot. '
+                    f'You help the members of a small Discord community called Bringus. '
+                    f'Each week a new super pal is chosen at random from the list of Bringus members.' )
+# Define available tools for this assistant.
+GPT_ASSISTANT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "is_member_super_pal",
+            "description": "Check if the given member is currently super pal",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member": {
+                        "type": "string",
+                        "description": "The member name, e.g. clippy",
+                    },
+                },
+                "required": ["member"],
+            }
+        }
+    }
+]
+
+################
+# OpenAI setup #
+################
+async def is_member_super_pal(member: str):
+    guild = bot.get_guild(GUILD_ID)
+    member = discord.utils.get(guild.members, name=member)
+    super_pal_role = discord.utils.get(guild.roles, name='Super Pal of the Week')
+    if super_pal_role in member.roles:
+        return f"Yes, {member} is the super pal."
+    else:
+        return f"No, {member} is not the super pal."
+
+async def respond_to_user(user_message: discord.Message):
+    log.info(f"{user_message.author.name} said \"{user_message.content}\"")
+    # Create OpenAI client and assistant.
+    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    try: # Try to get existing assistant.
+        assistant = await client.beta.assistants.retrieve(
+            assistant_id=GPT_ASSISTANT_ID
+        )
+    except openai.NotFoundError as e: # Assistant not found. We will create thread.
+        log.warn(f"Assistant ID not found. Creating new Assistant.\nError: {e}")
+        assistant = await client.beta.assistants.create(
+            name="Super Pal Bot",
+            instructions=GPT_PROMPT_MSG,
+            tools=GPT_ASSISTANT_TOOLS,
+            model="gpt-3.5-turbo-1106"
+        )
+    try: # Try to get existing thread.
+        thread = await client.beta.threads.retrieve(
+            thread_id=GPT_ASSISTANT_THREAD_ID
+        )
+    except openai.NotFoundError as e: # Thread not found. We will create thread.
+        log.warn(f"Thread ID not found. Creating new Thread.\nError: {e}")
+        thread = await client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id
+        )
+    # Create a thread message.
+    await client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=user_message.content
+    )
+    # Create a thread run.
+    run = await client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=assistant.id
+    )
+    # Check if assistant requires action.
+    run = await client.beta.threads.runs.retrieve(
+        thread_id=thread.id,
+        run_id=run.id
+    )
+    if run.status == 'requires_action':
+        # array of available tools for this assistant
+        avail_tools = { "is_member_super_pal": is_member_super_pal }
+
+        # retrieve tool function name, arguments, and call id
+        tool_fn = avail_tools[run.required_action.
+                            submit_tool_outputs.tool_calls[0].
+                            function.name]
+        tool_args = json.loads(run.required_action.
+                            submit_tool_outputs.tool_calls[0].
+                            function.arguments)
+        tool_call_id = run.required_action.submit_tool_outputs.tool_calls[0].id
+
+        # call tool function and save output
+        tool_output = tool_fn(member=dict(tool_args).get('member'))
+
+        # submit tools output
+        run = await client.beta.threads.runs.submit_tool_outputs(
+                thread_id=thread.id,
+                run_id=run.id,
+                tool_outputs=[
+                    {
+                        "tool_call_id": tool_call_id,
+                        "output": tool_output,
+                    }
+                ]
+        )
+        # Give 1 second for assistant to complete before first attempt.
+        time.sleep(1)
+        # check if assistant requires action again
+        run = await client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+    # Retry every second.
+    while run.status == 'in_progress' or run.status == 'queued':
+        time.sleep(1)
+        run = await client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+    if run.status == 'completed':
+        # get most recent message from thread and post to discord channel
+        messages = await client.beta.threads.messages.list(
+            thread_id=thread.id
+        )
+        gpt_assistant_response = messages.data[0].content[0].text.value
+        log.info(f"Super Pal Bot said \"{gpt_assistant_response}\"")
+        return gpt_assistant_response
+    else:
+        log.info(f"Run status: {run.status}")
 
 #############
 # Bot setup #
@@ -77,51 +196,9 @@ intents.members = True         # Required to list all users in a guild.
 intents.message_content = True # Required to use spin-the-wheel and grab winner.
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-
 ##################
 # Slash commands #
 ##################
-'''
-# Command: Bet on who will be the next "Super Pal of the Week"
-@bot.tree.command(name='bet')
-@commands.describe(pal='the pal you want to bet on', amount='the amount of points you want to bet')
-async def bet_on_super_pal(interaction: discord.Interaction, pal: discord.Member, amount: int) -> None:
-    user_already_bet = 0 #fetch this dynamically from local file
-    if user_already_bet:
-        return await interaction.response.send_message(f'Hi {interaction.user.mention}, you have already placed your bet for this week.',
-                                                ephemeral=True)
-    await interaction.response.send_message(f'Hi {interaction.user.mention}, you have bet {amount} points that {pal.name} will be Super Pal.', 
-                                            ephemeral=True)
-'''
-'''
-# Command: Surprise images (AI)
-@bot.tree.command(name='surprise')
-@app_commands.describe(text_prompt='text prompt for DALL-E AI image generator')
-@app_commands.checks.has_role('Super Pal of the Week')
-async def surprise(interaction: discord.Interaction, text_prompt: str):
-    channel = bot.get_channel(ART_CHANNEL_ID)
-    log.info(f'{interaction.user.name} used surprise command.')
-    log.info(interaction.message.content)
-    # Talk to DALL-E 2 AI (beta) for surprise images.
-    try:
-        response = openai.Image.create(
-            prompt=text_prompt,
-            n=4,
-            response_format="b64_json",
-            size="1024x1024"
-        )
-        if response['data']:
-            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img['b64_json'])),
-                            filename='{random.randrange(1000)}.jpg') for img in response['data']])
-        else:
-            await channel.send('Failed to create surprise image. Everyone boo Adam.')
-    except openai.error.InvalidRequestError as err:
-        if str(err) == 'Your request was rejected as a result of our safety system.':
-            await channel.send('Woah there nasty nelly, you asked for something too fucking silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
-        elif str(err) == 'Billing hard limit has been reached':
-            await channel.send('Adam is broke and can\'t afford this request.')
-'''
-
 # Command: Promote users to "Super Pal of the Week"
 @bot.tree.command(name='superpal')
 @app_commands.describe(new_super_pal='the member you want to promote to super pal')
@@ -152,7 +229,7 @@ async def super_pal_of_the_week():
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    
+
     # Get list of members and filter out bots. Pick random member.
     true_member_list = [m for m in guild.members if not m.bot]
     spotw = random.choice(true_member_list)
@@ -187,7 +264,6 @@ async def before_super_pal_of_the_week():
     log.info(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
     await asyncio.sleep((future-now).total_seconds())
 
-
 ##############
 # Bot events #
 ##############
@@ -207,10 +283,14 @@ async def on_ready():
 
 # Event: Check Spin The Wheel rich message
 @bot.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     guild = bot.get_guild(GUILD_ID)
     spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
     member = guild.get_member(message.author.id)
+    # Reply to messages in Super Pal channel if they aren't commands and they aren't from a bot.
+    if message.channel.id == CHANNEL_ID and message.content[0] != '!' and message.author.bot is False:
+        gpt_response_msg = await respond_to_user(message)
+        await message.channel.send(gpt_response_msg)
     # Only check embedded messages from Spin The Wheel Bot.
     if member is not None and spin_the_wheel_role in member.roles:
         embeds = message.embeds
@@ -235,7 +315,6 @@ async def on_message(message):
     # Handle commands if the message was not from Spin the Wheel.
     await bot.process_commands(message)
 
-
 ################
 # Bot commands #
 ################
@@ -245,9 +324,8 @@ async def on_message(message):
 async def spinthewheel(ctx):
     guild = bot.get_guild(GUILD_ID)
     channel = bot.get_channel(CHANNEL_ID)
-    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    current_super_pal = ctx.message.author
 
+    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
     true_name_list = [member.name for member in true_member_list]
@@ -267,9 +345,9 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
 
     # Promote new user and remove current super pal.
     if role not in new_super_pal.roles:
+        log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}.')
         await new_super_pal.add_roles(role)
         await current_super_pal.remove_roles(role)
-        log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}.')
         await channel.send(f'Congratulations {new_super_pal.mention}! '
             f'You have been promoted to super pal of the week by {current_super_pal.name}. {WELCOME_MSG}')
 
@@ -277,35 +355,19 @@ async def add_super_pal(ctx, new_super_pal: discord.Member):
 @bot.command(name='commands', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def list_commands(ctx):
+    log.info(f'{ctx.message.author.name} used help command.')
     channel = bot.get_channel(CHANNEL_ID)
-    current_super_pal = ctx.message.author
-
-    log.info(f'{current_super_pal.name} used help command.')
     await channel.send(COMMANDS_MSG)
 
 # Command: Send party parrot discord emoji.
 @bot.command(name='cacaw', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def cacaw(ctx):
+    log.info(f'{ctx.message.author.name} used cacaw command.')
     channel = bot.get_channel(CHANNEL_ID)
     emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
     partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
-    current_super_pal = ctx.message.author
-
-    log.info(f'{current_super_pal.name} used cacaw command.')
     await channel.send(str(partyparrot_emoji)*50)
-
-# Command: Get more info about gambling.
-@bot.command(name="gamble", pass_context=True)
-async def gamble(ctx):
-    guild = bot.get_guild(GUILD_ID)
-    channel = bot.get_channel(CHANNEL_ID)
-
-    await channel.send(GAMBLE_MSG)
-    true_member_list = [m for m in guild.members if not m.bot]
-    true_name_list = [member.name for member in true_member_list]
-    true_name_str = ", ".join(true_name_list)
-    await channel.send(f'/poll {true_name_str}')
 
 # Command: Randomly remove one user from voice chat
 @bot.command(name='karatechop', pass_context=True)
@@ -320,11 +382,14 @@ async def karate_chop(ctx):
         discord.utils.get(guild.voice_channels, name=voice_channel, type=discord.ChannelType.voice)
         for voice_channel in VOICE_CHANNELS
     ]
+    active_members = [voice_channel.members for voice_channel in voice_channels]
+
     # Kick random user from voice channel.
-    if not any(x.members for x in voice_channels):
+    if not any(active_members):
         log.info(f'{current_super_pal.name} used karate chop, but no one is in the voice channels.')
         await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
     else:
+        log.info(f'{chopped_member.name} karate chopped')
         # Flatten user list, filter out bots, and choose random user
         flatten = lambda l: [x for y in l for x in y]
         true_member_list = [m for m in flatten(active_members) if not m.bot]
@@ -338,32 +403,28 @@ async def karate_chop(ctx):
         else:
             await channel.send(f'{chopped_member.mention} would have been chopped, but an AFK channel was not found.\n'
                                f'Please complain to the server owner.')
-        log.info(f'{chopped_member.name} karate chopped')
 
 # Command: Send party cat discord emoji
 @bot.command(name='meow', pass_context=True)
 @commands.has_role('Super Pal of the Week')
 async def meow(ctx):
+    log.info(f'{ctx.message.author.name} used meow command.')
     channel = bot.get_channel(CHANNEL_ID)
     emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
     partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
-    current_super_pal = ctx.message.author
-
-    log.info(f'{current_super_pal.name} used meow command.')
     await channel.send(str(partymeow_emoji)*50)
 
 # Command: Surprise images (AI)
 @bot.command(name='surprise', pass_context=True)
 #@commands.has_role('Super Pal of the Week')
 async def surprise(ctx):
+    log.info(f'{ctx.message.author.name} used surprise command:\n\t{ctx.message.content}')
     channel = bot.get_channel(ART_CHANNEL_ID)
-    current_super_pal = ctx.message.author
-
-    log.info(f'{current_super_pal.name} used surprise command:\n\t{ctx.message.content}')
-    # Talk to DALL-E 2 AI (beta) for surprise images.
     your_text_here = ctx.message.content.removeprefix('!surprise ')
+    # Talk to OpenAI image generation API.
+    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
     try:
-        response = openai.Image.create(
+        response = await client.images.generate(
             prompt=your_text_here,
             n=4,
             response_format="b64_json",
@@ -374,7 +435,8 @@ async def surprise(ctx):
                             filename='{random.randrange(1000)}.jpg') for img in response['data']])
         else:
             await channel.send('Failed to create surprise image. Everyone boo Adam.')
-    except openai.error.InvalidRequestError as err:
+    except openai.APIError as err:
+        log.warn(err)
         if str(err) == 'Your request was rejected as a result of our safety system.':
             await channel.send('Woah there nasty nelly, you asked for something too silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
         elif str(err) == 'Billing hard limit has been reached':
