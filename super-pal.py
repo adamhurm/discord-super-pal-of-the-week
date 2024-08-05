@@ -44,11 +44,11 @@ if ai_reqnotmet:
 ###################
 # Message strings #
 ###################
-COMMANDS_MSG = (f'**!spotw @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.\n'
-    f'**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.'
+COMMANDS_MSG = (f'**/superpal @name**\n\tPromote another user to super pal of the week. Be sure to @mention the user.\n'
+    f'**/surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.\n'
+    f'**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.\n'
     f'**!cacaw**\n\tSpam the channel with party parrots.\n'
     f'**!meow**\n\tSpam the channel with party cats.\n'
-    f'**!surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.\n'
     f'**!karatechop**\n\tMove a random user to AFK voice channel.' )
 GAMBLE_MSG = ( f'Respond to the two polly polls to participate in Super Pal of the Week Gambling™.\n'
     f'- Choose your challenger\n'
@@ -57,7 +57,7 @@ GAMBLE_MSG = ( f'Respond to the two polly polls to participate in Super Pal of t
     f'*The National Problem Gambling Helpline (1-800-522-4700) is available 24/7 and is 100% confidential.*' )
 WELCOME_MSG = ( f'Welcome to the super pal channel.\n\n'
                 f'Use super pal commands by posting commands in chat. Examples:\n'
-                f'( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )' )
+                f'( !commands (for full list) | /surprise your text here | !karatechop | /superpal @name | !meow | !spinthewheel )' )
 GPT_PROMPT_MSG = ( f'You are a helpful assistant named Super Pal Bot. '
                     f'You help the members of a small Discord community called Bringus. '
                     f'Each week a new super pal is chosen at random from the list of Bringus members.' )
@@ -218,7 +218,35 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
             f'You have been promoted to super pal of the week by {interaction.user.name}. {WELCOME_MSG}')
     else:
         await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
-            ephemeral=True)      
+            ephemeral=True)
+
+# Command: Surprise images (AI)
+@bot.tree.command(name='surprise')
+@app_commands.describe(description='describe the image you want to generate')
+#@app_commands.has_role('Super Pal of the Week')
+async def surprise(interaction: discord.Interaction, description: str) -> None:
+    log.info(f'{interaction.user.name} used surprise command:\n\t{description}')
+    channel = bot.get_channel(ART_CHANNEL_ID)
+    # Talk to OpenAI image generation API.
+    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    try:
+        response = await client.images.generate(
+            prompt=description,
+            n=4,
+            response_format="b64_json",
+            size="1024x1024"
+        )
+        if response.data:
+            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img.b64_json)),
+                            filename='{random.randrange(1000)}.jpg') for img in response.data])
+        else:
+            await channel.send('Failed to create surprise image. Everyone boo Adam.')
+    except openai.APIError as err:
+        log.warn(err)
+        if str(err) == 'Your request was rejected as a result of our safety system.':
+            await channel.send('Woah there nasty nelly, you asked for something too silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
+        elif str(err) == 'Billing hard limit has been reached':
+            await channel.send('Adam is broke and can\'t afford this request.')
  
 ###############
 # Looped task #
@@ -413,33 +441,5 @@ async def meow(ctx):
     emoji_guild = bot.get_guild(EMOJI_GUILD_ID)
     partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
     await channel.send(str(partymeow_emoji)*50)
-
-# Command: Surprise images (AI)
-@bot.command(name='surprise', pass_context=True)
-#@commands.has_role('Super Pal of the Week')
-async def surprise(ctx):
-    log.info(f'{ctx.message.author.name} used surprise command:\n\t{ctx.message.content}')
-    channel = bot.get_channel(ART_CHANNEL_ID)
-    your_text_here = ctx.message.content.removeprefix('!surprise ')
-    # Talk to OpenAI image generation API.
-    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    try:
-        response = await client.images.generate(
-            prompt=your_text_here,
-            n=4,
-            response_format="b64_json",
-            size="1024x1024"
-        )
-        if response['data']:
-            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img['b64_json'])),
-                            filename='{random.randrange(1000)}.jpg') for img in response['data']])
-        else:
-            await channel.send('Failed to create surprise image. Everyone boo Adam.')
-    except openai.APIError as err:
-        log.warn(err)
-        if str(err) == 'Your request was rejected as a result of our safety system.':
-            await channel.send('Woah there nasty nelly, you asked for something too silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
-        elif str(err) == 'Billing hard limit has been reached':
-            await channel.send('Adam is broke and can\'t afford this request.')
 
 bot.run(TOKEN, log_handler=log_handler)

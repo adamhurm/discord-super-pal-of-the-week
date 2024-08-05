@@ -5,12 +5,12 @@ Discord bot that promotes users to Super Pal of the Week role. Go to the [wiki h
 
 Super Pal Bot currently supports these commands and the looped task:
 - **Commands:**
-  - `!spotw @user` : add another person to super pal of the week.
+  - `/superpal @user` : add another person to super pal of the week.
+  - `/surprise your text here` : receive a surprise image in the channel based on the text you provide.
   - `!spinthewheel` : pick a new super pal of the week at random.
   - `!commands` : list all supported commands.
   - `!cacaw` : spam chat with partyparrot emojis.
   - `!meow` : spam chat with partycat emojis.
-  - `!surprise your text here` : receive a surprise image in the channel based on the text you provide.
   - `!unsurprise` : receive a surprise image in the channel.
   - `!karatechop` : move a random user to AFK voice channel.
 - **Looped Task:**
