@@ -18,7 +18,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: adamhurm/discord-bard
+          images: adamhurm/discord-super-pal
           tags: type=semver,pattern={{version}}
 
       - name: Set up QEMU
