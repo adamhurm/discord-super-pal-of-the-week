@@ -1,5 +1,5 @@
 # standard library
-import base64, io, json, os, time
+import base64, io, json, time
 
 # 3rd-party library
 import discord, openai
@@ -28,7 +28,7 @@ async def is_member_super_pal(bot: commands.Bot, member: str):
 async def respond_to_user(user_message: discord.Message):
     log.info(f"{user_message.author.name} said \"{user_message.content}\"")
     # Create OpenAI client and assistant.
-    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    client = AsyncOpenAI(api_key=superpal_env.OPENAI_API_KEY)
     try: # Try to get existing assistant.
         assistant = await client.beta.assistants.retrieve(
             assistant_id=superpal_env.GPT_ASSISTANT_ID
@@ -121,7 +121,7 @@ async def respond_to_user(user_message: discord.Message):
 
 async def generate_surprise_image_and_send(your_text_here: str, channel: discord.TextChannel):
     # Talk to DALL-E 2 AI (beta) for surprise images.
-    client = await AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    client = await AsyncOpenAI(api_key=superpal_env.OPENAI_API_KEY)
     try:
         response = await client.images.generate(
             prompt=your_text_here,
