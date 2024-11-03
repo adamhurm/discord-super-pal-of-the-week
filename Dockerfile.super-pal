@@ -1,11 +1,11 @@
-FROM python:3.10-slim-buster
+FROM python:3.13-slim-bookworm
 LABEL MAINTAINER="Adam Hurm" INFO="Discord Super Pal of the Week"
 
 WORKDIR /super-pal
 
-COPY super-pal.py super-pal.py
-COPY requirements.txt requirements.txt
+COPY ./src/ .
+COPY requirements.txt .
 
 RUN pip install -r requirements.txt
 
-CMD ["python", "/super-pal/super-pal.py"]
+CMD ["python", "/super-pal/src/bot.py"]
