@@ -25,6 +25,7 @@ ART_CHANNEL_ID = CHANNEL_ID if os.environ['ART_CHANNEL_ID'] is None else int(os.
 VOICE_CHANNELS = os.environ['VOICE_CHANNELS']
 GPT_ASSISTANT_ID = os.environ['GPT_ASSISTANT_ID']
 GPT_ASSISTANT_THREAD_ID = os.environ['GPT_ASSISTANT_THREAD_ID']
+OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
 
 base_reqnotmet = TOKEN is None or GUILD_ID is None or CHANNEL_ID is None
 karatechop_reqnotmet = VOICE_CHANNELS is None

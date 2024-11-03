@@ -5,8 +5,6 @@ import asyncio, datetime, random
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
 
 # super pal library
 import superpal.static as superpal_static
@@ -54,27 +52,8 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
 #@app_commands.has_role('Super Pal of the Week')
 async def surprise(interaction: discord.Interaction, description: str) -> None:
     log.info(f'{interaction.user.name} used surprise command:\n\t{description}')
-    channel = bot.get_channel(ART_CHANNEL_ID)
-    # Talk to OpenAI image generation API.
-    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    try:
-        response = await client.images.generate(
-            prompt=description,
-            n=4,
-            response_format="b64_json",
-            size="1024x1024"
-        )
-        if response.data:
-            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img.b64_json)),
-                            filename='{random.randrange(1000)}.jpg') for img in response.data])
-        else:
-            await channel.send('Failed to create surprise image. Everyone boo Adam.')
-    except openai.APIError as err:
-        log.warn(err)
-        if str(err) == 'Your request was rejected as a result of our safety system.':
-            await channel.send('Woah there nasty nelly, you asked for something too silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
-        elif str(err) == 'Billing hard limit has been reached':
-            await channel.send('Adam is broke and can\'t afford this request.')
+    channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
+    await superpal_ai.generate_surprise_image_and_send(description, channel)
  
 ###############
 # Looped task #
@@ -245,12 +224,7 @@ async def karate_chop(ctx):
     channel = bot.get_channel(superpal_env.CHANNEL_ID)
     current_super_pal = ctx.message.author 
 
-    # Grab voice channels from env file values.
-    voice_channels = [
-        discord.utils.get(guild.voice_channels, name=voice_channel, type=discord.ChannelType.voice)
-        for voice_channel in superpal_env.VOICE_CHANNELS
-    ]
-    active_members = [voice_channel.members for voice_channel in voice_channels]
+    active_members = [voice_channel.members for voice_channel in guild.voice_channels]
 
     # Kick random user from voice channel.
     if not any(active_members):
@@ -289,8 +263,6 @@ async def surprise(ctx):
     log.info(f'{ctx.message.author.name} used surprise command:\n\t{ctx.message.content}')
     channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
     your_text_here = ctx.message.content.removeprefix('!surprise ')
-    
-    # call helper function to generate image
     await superpal_ai.generate_surprise_image_and_send(your_text_here, channel)
 
 bot.run(superpal_env.TOKEN, log_handler=superpal_env.log_handler)
