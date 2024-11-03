@@ -3,9 +3,9 @@ LABEL MAINTAINER="Adam Hurm" INFO="Discord Super Pal of the Week"
 
 WORKDIR /super-pal
 
-COPY ./src/ .
-COPY requirements.txt .
+ADD src /super-pal
+ADD requirements.txt /super-pal
 
 RUN pip install -r requirements.txt
 
-CMD ["python", "/super-pal/src/bot.py"]
+CMD ["python", "bot.py"]
