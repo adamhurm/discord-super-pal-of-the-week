@@ -5,6 +5,7 @@ annotated-types>=0.7.0
 anyio>=4.6.2.post1
 async-timeout>=5.0.0
 attrs>=24.2.0
+audioop-lts>=0.2.1
 certifi>=2024.8.30
 charset-normalizer>=3.4.0
 colorama>=0.4.6
