@@ -1,6 +1,6 @@
 import logging, os                # standard
 from dotenv import load_dotenv    # 3rd-party
-import static as superpal_static  # super pal
+from . import static as superpal_static  # super pal
 
 ###########
 # Logging #

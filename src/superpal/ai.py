@@ -7,8 +7,8 @@ from discord.ext import commands
 from openai import AsyncOpenAI
 
 # super pal library
-import static as superpal_static
-import env as superpal_env
+from . import static as superpal_static
+from . import env as superpal_env
 
 # get logger from super pal library
 log = superpal_env.log
