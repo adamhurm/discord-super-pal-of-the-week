@@ -5,6 +5,8 @@ import asyncio, datetime, random
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
 # super pal library
 import superpal.static as superpal_static
@@ -44,7 +46,35 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
             f'You have been promoted to super pal of the week by {interaction.user.name}. {superpal_static.WELCOME_MSG}')
     else:
         await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
-            ephemeral=True)      
+            ephemeral=True)
+
+# Command: Surprise images (AI)
+@bot.tree.command(name='surprise')
+@app_commands.describe(description='describe the image you want to generate')
+#@app_commands.has_role('Super Pal of the Week')
+async def surprise(interaction: discord.Interaction, description: str) -> None:
+    log.info(f'{interaction.user.name} used surprise command:\n\t{description}')
+    channel = bot.get_channel(ART_CHANNEL_ID)
+    # Talk to OpenAI image generation API.
+    client = AsyncOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    try:
+        response = await client.images.generate(
+            prompt=description,
+            n=4,
+            response_format="b64_json",
+            size="1024x1024"
+        )
+        if response.data:
+            await channel.send(files=[discord.File(io.BytesIO(base64.b64decode(img.b64_json)),
+                            filename='{random.randrange(1000)}.jpg') for img in response.data])
+        else:
+            await channel.send('Failed to create surprise image. Everyone boo Adam.')
+    except openai.APIError as err:
+        log.warn(err)
+        if str(err) == 'Your request was rejected as a result of our safety system.':
+            await channel.send('Woah there nasty nelly, you asked for something too silly. OpenAI rejected your request due to "Safety". Please try again and be more polite next time.')
+        elif str(err) == 'Billing hard limit has been reached':
+            await channel.send('Adam is broke and can\'t afford this request.')
  
 ###############
 # Looped task #
@@ -55,7 +85,7 @@ async def super_pal_of_the_week():
     guild = bot.get_guild(superpal_env.GUILD_ID)
     channel = bot.get_channel(superpal_env.CHANNEL_ID)
     role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    
+
     # Get list of members and filter out bots. Pick random member.
     true_member_list = [m for m in guild.members if not m.bot]
     spotw = random.choice(true_member_list)
@@ -151,6 +181,7 @@ async def spinthewheel(ctx):
     guild = bot.get_guild(superpal_env.GUILD_ID)
     channel = bot.get_channel(superpal_env.CHANNEL_ID)
 
+    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
     # Get list of members and filter out bots.
     true_member_list = [m for m in guild.members if not m.bot]
     true_name_list = [member.name for member in true_member_list]

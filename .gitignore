@@ -1,4 +1,5 @@
 assets/*
+.venv
 .env*
 .DS_Store
 discord-super-pal.log

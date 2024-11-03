@@ -69,6 +69,16 @@ spec:
               secretKeyRef:
                 name: super-pal-env
                 key: voice-channels
+          - name: GPT_ASSISTANT_ID
+            valueFrom:
+              secretKeyRef:
+                name: super-pal-env
+                key: gpt-assistant-id
+          - name: GPT_ASSISTANT_THREAD_ID
+            valueFrom:
+              secretKeyRef:
+                name: super-pal-env
+                key: gpt-assistant-thread-id
       - name: spin-the-wheel
         image: adamhurm/discord-spin-the-wheel:latest
         imagePullPolicy: Always
