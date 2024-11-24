@@ -29,10 +29,6 @@ spec:
       - name: super-pal
         image: adamhurm/discord-super-pal:latest
         imagePullPolicy: Always
-        resources:
-          limits:
-            cpu: 1.0
-            memory: 128Mi
         env:
           - name: SUPERPAL_TOKEN
             valueFrom:
@@ -82,10 +78,6 @@ spec:
       - name: spin-the-wheel
         image: adamhurm/discord-spin-the-wheel:latest
         imagePullPolicy: Always
-        resources:
-          limits:
-            cpu: 1.0
-            memory: 128Mi
         env:
           - name: WHEEL_TOKEN
             valueFrom:
