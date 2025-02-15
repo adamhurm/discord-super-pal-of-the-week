@@ -23,7 +23,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Slash commands #
 ##################
 # Command: Promote users to "Super Pal of the Week"
-@bot.tree.command(name='superpal')
+@bot.tree.command(name='superpal', description='promote a new super pal of the week')
 @app_commands.describe(new_super_pal='the member you want to promote to super pal')
 @app_commands.checks.has_role('Super Pal of the Week')
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
@@ -43,10 +43,24 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
             ephemeral=True)
 
+# Command: Spin the wheel for a random "Super Pal of the Week"
+@bot.tree.command(name='spinthewheel', description='spin the wheel to get a random super pal of the week')
+@commands.has_role('Super Pal of the Week')
+async def spinthewheel():
+    guild = bot.get_guild(superpal_env.GUILD_ID)
+    channel = bot.get_channel(superpal_env.CHANNEL_ID)
+
+    # Get list of members and filter out bots.
+    true_member_list = [m for m in guild.members if not m.bot]
+    true_name_list = [member.name for member in true_member_list]
+    true_name_str = ", ".join(true_name_list)
+    # Send Spin the Wheel command.
+    await channel.send(f'?pick {true_name_str}')
+    print(f'\nSpinning the wheel for new super pal of the week.')
+
 # Command: Surprise images (AI)
-@bot.tree.command(name='surprise')
+@bot.tree.command(name='surprise', description='generate a surprise image (backed by OpenAI DALL-E)')
 @app_commands.describe(description='describe the image you want to generate')
-#@app_commands.has_role('Super Pal of the Week')
 async def surprise(interaction: discord.Interaction, description: str) -> None:
     print(f'{interaction.user.name} used surprise command:\n\t{description}')
     channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
@@ -99,9 +113,9 @@ async def before_super_pal_of_the_week():
 ##############
 # Bot events #
 ##############
-# Event: Avoid printing errors message for commands that aren't related to Super Pal Bot.
+# Event: Suppress error messages for commands that aren't related to Super Pal Bot.
 @bot.event
-async def on_command_error(ctx, error):
+async def on_command_error(error):
     if isinstance(error, commands.errors.CommandNotFound):
         return
     raise error
@@ -200,18 +214,6 @@ async def cacaw(ctx):
     emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
     partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
     await channel.send(str(partyparrot_emoji)*50)
-
-# Command: Get more info about gambling.
-@bot.command(name="gamble", pass_context=True)
-async def gamble(ctx):
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-
-    await channel.send(superpal_static.GAMBLE_MSG)
-    true_member_list = [m for m in guild.members if not m.bot]
-    true_name_list = [member.name for member in true_member_list]
-    true_name_str = ", ".join(true_name_list)
-    await channel.send(f'/poll {true_name_str}')
 
 # Command: Randomly remove one user from voice chat
 @bot.command(name='karatechop', pass_context=True)
