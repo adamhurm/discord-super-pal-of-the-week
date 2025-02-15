@@ -47,24 +47,6 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
             ephemeral=True)
 
-# Command: Spin the wheel for a random "Super Pal of the Week"
-@bot.tree.command(name='spinthewheel')
-@commands.has_role('Super Pal of the Week')
-async def spinthewheel():
-    """Spin the wheel to randomly choose a new super pal of the week!
-    
-    """
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-
-    # Get list of members and filter out bots.
-    true_member_list = [m for m in guild.members if not m.bot]
-    true_name_list = [member.name for member in true_member_list]
-    true_name_str = ", ".join(true_name_list)
-    # Send Spin the Wheel command.
-    await channel.send(f'?pick {true_name_str}')
-    print(f'\nSpinning the wheel for new super pal of the week.')
-
 # Command: Surprise images (AI)
 @bot.tree.command(name='surprise')
 @app_commands.describe(description='describe the image you want to generate')
