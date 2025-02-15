@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: super-pal
-        image: adamhurm/discord-super-pal:1.3.2
+        image: adamhurm/discord-super-pal:1.3.3
         imagePullPolicy: Always
         env:
           - name: SUPERPAL_TOKEN
