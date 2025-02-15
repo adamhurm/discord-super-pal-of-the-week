@@ -11,9 +11,6 @@ import superpal.static as superpal_static
 import superpal.env as superpal_env
 import superpal.ai as superpal_ai
 
-# get logger from super pal library
-log = superpal_env.log
-
 #############
 # Bot setup #
 #############
@@ -265,4 +262,4 @@ async def surprise(ctx):
     your_text_here = ctx.message.content.removeprefix('!surprise ')
     await superpal_ai.generate_surprise_image_and_send(your_text_here, channel)
 
-bot.run(superpal_env.TOKEN, log_handler=superpal_env.log_handler)
+bot.run(superpal_env.TOKEN)
