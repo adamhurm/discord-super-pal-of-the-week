@@ -23,10 +23,14 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Slash commands #
 ##################
 # Command: Promote users to "Super Pal of the Week"
-@bot.tree.command(name='superpal', description='promote a new super pal of the week')
-@app_commands.describe(new_super_pal='the member you want to promote to super pal')
+@bot.tree.command(name='superpal')
 @app_commands.checks.has_role('Super Pal of the Week')
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
+    """Promote a user to Super Pal of the Week role.
+    
+    Args:
+        new_super_pal (discord.Member): choose the member you want to promote to super pal
+    """
     channel = bot.get_channel(superpal_env.CHANNEL_ID)
     role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
     # Promote new user and remove current super pal.
@@ -44,9 +48,12 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
             ephemeral=True)
 
 # Command: Spin the wheel for a random "Super Pal of the Week"
-@bot.tree.command(name='spinthewheel', description='spin the wheel to get a random super pal of the week')
+@bot.tree.command(name='spinthewheel')
 @commands.has_role('Super Pal of the Week')
 async def spinthewheel():
+    """Spin the wheel to randomly choose a new super pal of the week!
+    
+    """
     guild = bot.get_guild(superpal_env.GUILD_ID)
     channel = bot.get_channel(superpal_env.CHANNEL_ID)
 
@@ -59,9 +66,14 @@ async def spinthewheel():
     print(f'\nSpinning the wheel for new super pal of the week.')
 
 # Command: Surprise images (AI)
-@bot.tree.command(name='surprise', description='generate a surprise image (backed by OpenAI DALL-E)')
+@bot.tree.command(name='surprise')
 @app_commands.describe(description='describe the image you want to generate')
 async def surprise(interaction: discord.Interaction, description: str) -> None:
+    """Generate a surprise image! (backed by OpenAI DALL-E)
+    
+    Args:
+        description (str): describe the image
+    """
     print(f'{interaction.user.name} used surprise command:\n\t{description}')
     channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
     await superpal_ai.generate_surprise_image_and_send(description, channel)
