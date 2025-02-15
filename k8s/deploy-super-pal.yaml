@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: super-pal
-        image: adamhurm/discord-super-pal:latest
+        image: adamhurm/discord-super-pal:1.4.0
         imagePullPolicy: Always
         env:
           - name: SUPERPAL_TOKEN
@@ -76,7 +76,7 @@ spec:
                 name: super-pal-env
                 key: gpt-assistant-thread-id
       - name: spin-the-wheel
-        image: adamhurm/discord-spin-the-wheel:latest
+        image: adamhurm/discord-spin-the-wheel:1.0.0
         imagePullPolicy: Always
         env:
           - name: WHEEL_TOKEN
