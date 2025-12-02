@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.14-slim-bookworm
 LABEL MAINTAINER="Adam Hurm" INFO="Discord Super Pal of the Week"
 
 WORKDIR /super-pal
