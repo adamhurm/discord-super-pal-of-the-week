@@ -61,7 +61,7 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=docker,dest=/tmp/super-pal-image.tar
+          outputs: type=oci,dest=/tmp/super-pal-image.tar
 
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
@@ -122,7 +122,7 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=docker,dest=/tmp/spin-the-wheel-image.tar
+          outputs: type=oci,dest=/tmp/spin-the-wheel-image.tar
 
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
