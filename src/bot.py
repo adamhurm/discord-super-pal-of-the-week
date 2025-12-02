@@ -1,261 +1,596 @@
 #!/usr/bin/env python3
-import asyncio, datetime, random
+"""Discord Super Pal of the Week Bot.
 
-# 3rd-party library
+This bot manages weekly "Super Pal of the Week" promotions in a Discord server,
+featuring AI-powered image generation, automated role management, and fun commands.
+"""
+
+import asyncio
+import datetime
+import random
+from typing import List, Optional
+
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-# super pal library
 import superpal.static as superpal_static
 import superpal.env as superpal_env
 import superpal.ai as superpal_ai
+
+# Get logger
+log = superpal_env.log
 
 #############
 # Bot setup #
 #############
 intents = discord.Intents.default()
-intents.members = True         # Required to list all users in a guild.
-intents.message_content = True # Required to use spin-the-wheel and grab winner.
+intents.members = True  # Required to list all users in a guild
+intents.message_content = True  # Required to use spin-the-wheel and grab winner
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+
+##################
+# Helper Functions
+##################
+def get_non_bot_members(guild: discord.Guild) -> List[discord.Member]:
+    """Get list of non-bot members from a guild.
+
+    Args:
+        guild: Discord guild to get members from
+
+    Returns:
+        List of non-bot members
+    """
+    return [m for m in guild.members if not m.bot]
+
+
+def get_super_pal_role(guild: discord.Guild) -> Optional[discord.Role]:
+    """Get the Super Pal of the Week role from a guild.
+
+    Args:
+        guild: Discord guild to get role from
+
+    Returns:
+        Super Pal role or None if not found
+    """
+    role = discord.utils.get(guild.roles, name=superpal_static.SUPER_PAL_ROLE_NAME)
+    if not role:
+        log.error(f"Super Pal role '{superpal_static.SUPER_PAL_ROLE_NAME}' not found in guild")
+    return role
+
+
+async def promote_super_pal(
+    new_super_pal: discord.Member,
+    old_super_pal: Optional[discord.Member],
+    role: discord.Role,
+    channel: discord.TextChannel,
+    promoted_by: str
+) -> None:
+    """Promote a new super pal and demote the old one.
+
+    Args:
+        new_super_pal: Member to promote
+        old_super_pal: Current super pal to demote (if any)
+        role: Super Pal role
+        channel: Channel to send announcement
+        promoted_by: Name of person/process that triggered promotion
+    """
+    try:
+        # Remove role from old super pal if exists
+        if old_super_pal and role in old_super_pal.roles:
+            await old_super_pal.remove_roles(role)
+            log.info(f"{old_super_pal.name} removed from Super Pal role")
+
+        # Add role to new super pal
+        if role not in new_super_pal.roles:
+            await new_super_pal.add_roles(role)
+            log.info(f"{new_super_pal.name} promoted to Super Pal by {promoted_by}")
+
+            await channel.send(
+                f'Congratulations {new_super_pal.mention}! '
+                f'You have been promoted to super pal of the week by {promoted_by}. '
+                f'{superpal_static.WELCOME_MSG}'
+            )
+        else:
+            log.info(f"{new_super_pal.name} already has Super Pal role")
+
+    except Exception as e:
+        log.error(f"Error promoting super pal: {e}")
+        await channel.send(f"Sorry, there was an error promoting {new_super_pal.mention}.")
+
 
 ##################
 # Slash commands #
 ##################
-# Command: Promote users to "Super Pal of the Week"
 @bot.tree.command(name='superpal')
-@app_commands.checks.has_role('Super Pal of the Week')
+@app_commands.checks.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
     """Promote a user to Super Pal of the Week role.
-    
+
     Args:
-        new_super_pal (discord.Member): choose the member you want to promote to super pal
+        new_super_pal: choose the member you want to promote to super pal
     """
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    role = discord.utils.get(interaction.guild.roles, name='Super Pal of the Week')
-    # Promote new user and remove current super pal.
-    # NOTE: I have to check for user role because commands.has_role() does not seem to work with app_commands
-    if  role not in new_super_pal.roles:
+    try:
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        if not channel:
+            await interaction.response.send_message(
+                'Error: Could not find configured channel.',
+                ephemeral=True
+            )
+            return
+
+        role = get_super_pal_role(interaction.guild)
+        if not role:
+            await interaction.response.send_message(
+                'Error: Super Pal role not found.',
+                ephemeral=True
+            )
+            return
+
+        # Check if new super pal already has the role
+        if role in new_super_pal.roles:
+            await interaction.response.send_message(
+                f'{new_super_pal.mention} is already super pal of the week.',
+                ephemeral=True
+            )
+            return
+
+        # Promote new super pal and remove current super pal
         await new_super_pal.add_roles(role)
         await interaction.user.remove_roles(role)
-        print(f'{new_super_pal.name} promoted by {interaction.user.name}.')
-        await interaction.response.send_message(f'You have promoted {new_super_pal.mention} to super pal of the week!',
-            ephemeral=True)
-        await channel.send(f'Congratulations {new_super_pal.mention}! '
-            f'You have been promoted to super pal of the week by {interaction.user.name}. {superpal_static.WELCOME_MSG}')
-    else:
-        await interaction.response.send_message(f'{new_super_pal.mention} is already super pal of the week.',
-            ephemeral=True)
 
-# Command: Surprise images (AI)
+        log.info(f'{new_super_pal.name} promoted by {interaction.user.name}')
+
+        await interaction.response.send_message(
+            f'You have promoted {new_super_pal.mention} to super pal of the week!',
+            ephemeral=True
+        )
+
+        await channel.send(
+            f'Congratulations {new_super_pal.mention}! '
+            f'You have been promoted to super pal of the week by {interaction.user.name}. '
+            f'{superpal_static.WELCOME_MSG}'
+        )
+
+    except Exception as e:
+        log.error(f"Error in add_super_pal command: {e}")
+        await interaction.response.send_message(
+            'Sorry, there was an error processing your request.',
+            ephemeral=True
+        )
+
+
 @bot.tree.command(name='surprise')
 @app_commands.describe(description='describe the image you want to generate')
 async def surprise(interaction: discord.Interaction, description: str) -> None:
     """Generate a surprise image! (backed by OpenAI DALL-E)
-    
+
     Args:
-        description (str): describe the image
+        description: describe the image
     """
-    print(f'{interaction.user.name} used surprise command:\n\t{description}')
-    channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
-    await superpal_ai.generate_surprise_image_and_send(description, channel)
- 
+    try:
+        log.info(f'{interaction.user.name} used surprise command: {description}')
+
+        # Defer response since image generation takes time
+        await interaction.response.defer()
+
+        channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
+        if not channel:
+            await interaction.followup.send('Error: Could not find art channel.')
+            return
+
+        await superpal_ai.generate_surprise_image_and_send(description, channel)
+        await interaction.followup.send('Images sent to art channel!', ephemeral=True)
+
+    except Exception as e:
+        log.error(f"Error in surprise command: {e}")
+        await interaction.followup.send('Sorry, there was an error generating your image.')
+
+
 ###############
 # Looped task #
 ###############
-# Weekly Task: Choose "Super Pal of the Week"
 @tasks.loop(hours=24*7)
 async def super_pal_of_the_week():
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
+    """Weekly task to choose a new Super Pal of the Week."""
+    try:
+        guild = bot.get_guild(superpal_env.GUILD_ID)
+        if not guild:
+            log.error(f"Could not find guild with ID {superpal_env.GUILD_ID}")
+            return
 
-    # Get list of members and filter out bots. Pick random member.
-    true_member_list = [m for m in guild.members if not m.bot]
-    spotw = random.choice(true_member_list)
-    print(f'\nPicking new super pal of the week.')
-    # Add super pal, remove current super pal, avoid duplicates.
-    for member in true_member_list:
-        if role in member.roles and member == spotw:
-            print(f'{member.name} is already super pal of the week. Re-rolling.')
-            return await super_pal_of_the_week()
-        elif role in member.roles:
-            print(f'{member.name} has been removed from super pal of the week role.')
-            await member.remove_roles(role)
-        elif member == spotw:
-            print(f'{member.name} has been added to super pal of the week role.')
-            await spotw.add_roles(role)
-            await channel.send(f'Congratulations to {spotw.mention}, '
-                f'the super pal of the week! {superpal_static.WELCOME_MSG}')
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        if not channel:
+            log.error(f"Could not find channel with ID {superpal_env.CHANNEL_ID}")
+            return
 
-# Before Loop: Wait until Sunday at noon.
+        role = get_super_pal_role(guild)
+        if not role:
+            return
+
+        # Get list of non-bot members and pick random member
+        true_member_list = get_non_bot_members(guild)
+        if not true_member_list:
+            log.error("No non-bot members found in guild")
+            return
+
+        new_super_pal = random.choice(true_member_list)
+        log.info(f'Picking new super pal of the week: {new_super_pal.name}')
+
+        # Check if chosen member already has role (avoid duplicates)
+        if role in new_super_pal.roles:
+            log.info(f'{new_super_pal.name} is already super pal. Re-rolling.')
+            await super_pal_of_the_week()
+            return
+
+        # Remove role from all current super pals
+        for member in true_member_list:
+            if role in member.roles:
+                await member.remove_roles(role)
+                log.info(f'{member.name} removed from super pal role')
+
+        # Add role to new super pal
+        await new_super_pal.add_roles(role)
+        log.info(f'{new_super_pal.name} promoted to super pal')
+
+        await channel.send(
+            f'Congratulations to {new_super_pal.mention}, '
+            f'the super pal of the week! {superpal_static.WELCOME_MSG}'
+        )
+
+    except Exception as e:
+        log.error(f"Error in super_pal_of_the_week task: {e}")
+
+
 @super_pal_of_the_week.before_loop
 async def before_super_pal_of_the_week():
+    """Wait until Sunday at noon before starting the weekly task."""
     await bot.wait_until_ready()
-    # Find amount of time until Sunday at noon.
-    now = datetime.datetime.now()
-    days_until_sunday = 7 - datetime.date.today().isoweekday()
-    # If it's past noon on Sunday, add 7 days to timer.
-    if datetime.date.today().isoweekday() == 7 and now.hour > 12:
-        days_until_sunday = 7
-    time_diff = now + datetime.timedelta(days = days_until_sunday)
-    future = datetime.datetime(time_diff.year, time_diff.month, time_diff.day, 12, 0)
-    # Sleep task until Sunday at noon.
-    print(f'Sleeping for {(future-now)}. Will wake up Sunday at 12PM Eastern Time.')
-    await asyncio.sleep((future-now).total_seconds())
+
+    try:
+        # Find amount of time until Sunday at noon
+        now = datetime.datetime.now()
+        current_day = datetime.date.today().isoweekday()
+        days_until_sunday = 7 - current_day
+
+        # If it's past noon on Sunday, add 7 days to timer
+        if current_day == 7 and now.hour > 12:
+            days_until_sunday = 7
+
+        time_diff = now + datetime.timedelta(days=days_until_sunday)
+        future = datetime.datetime(time_diff.year, time_diff.month, time_diff.day, 12, 0)
+
+        # Sleep task until Sunday at noon
+        sleep_duration = (future - now).total_seconds()
+        log.info(f'Sleeping for {future - now}. Will wake up Sunday at 12PM.')
+        await asyncio.sleep(sleep_duration)
+
+    except Exception as e:
+        log.error(f"Error in before_super_pal_of_the_week: {e}")
+
 
 ##############
 # Bot events #
 ##############
-# Event: Suppress error messages for commands that aren't related to Super Pal Bot.
 @bot.event
-async def on_command_error(error):
+async def on_command_error(ctx, error):
+    """Suppress error messages for commands that aren't related to Super Pal Bot."""
     if isinstance(error, commands.errors.CommandNotFound):
         return
+    if isinstance(error, commands.errors.MissingRole):
+        await ctx.send("You don't have permission to use this command.")
+        return
+    log.error(f"Command error: {error}")
     raise error
 
-# Event: Start loop once bot is ready
+
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
+    """Initialize bot when ready."""
+    log.info(f'Bot logged in as {bot.user}')
+    log.info(f'Connected to {len(bot.guilds)} guilds')
+
+    try:
+        await bot.tree.sync()
+        log.info('Slash commands synced')
+    except Exception as e:
+        log.error(f'Error syncing slash commands: {e}')
+
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
+        log.info('Weekly task started')
 
-# Event: Check Spin The Wheel rich message
+
 @bot.event
 async def on_message(message: discord.Message):
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    spin_the_wheel_role = discord.utils.get(guild.roles, name='Spin The Wheel')
-    member = guild.get_member(message.author.id)
-    # Reply to messages in Super Pal channel if they aren't commands and they aren't from a bot.
-    #if message.channel.id == superpal_env.CHANNEL_ID and message.content[0] != '!' and message.author.bot is False:
-    #    gpt_response_msg = await superpal_ai.respond_to_user(message)
-    #    await message.channel.send(gpt_response_msg)
-    # Only check embedded messages from Spin The Wheel Bot.
-    if member is not None and spin_the_wheel_role in member.roles:
-        embeds = message.embeds
-        for embed in embeds:
-            # Wait until message contains Spin the Wheel winner.
-            if embed.description is None: continue
-            elif embed.description[0] == '🏆':
-                super_pal_role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-                # Grab winner name from Spin the Wheel message.
+    """Handle incoming messages, including Spin The Wheel integration."""
+    try:
+        # Skip bot messages
+        if message.author.bot:
+            # Check if this is from Spin The Wheel bot
+            guild = bot.get_guild(superpal_env.GUILD_ID)
+            if not guild:
+                await bot.process_commands(message)
+                return
+
+            spin_the_wheel_role = discord.utils.get(guild.roles, name=superpal_static.SPIN_THE_WHEEL_ROLE_NAME)
+            member = guild.get_member(message.author.id)
+
+            # Only check embedded messages from Spin The Wheel Bot
+            if member and spin_the_wheel_role and spin_the_wheel_role in member.roles:
+                await handle_spin_the_wheel_message(message, guild)
+
+            await bot.process_commands(message)
+            return
+
+        # Process commands for non-bot messages
+        await bot.process_commands(message)
+
+    except Exception as e:
+        log.error(f"Error in on_message: {e}")
+
+
+async def handle_spin_the_wheel_message(message: discord.Message, guild: discord.Guild):
+    """Handle messages from Spin The Wheel bot to detect winners.
+
+    Args:
+        message: Message from Spin The Wheel bot
+        guild: Discord guild
+    """
+    try:
+        for embed in message.embeds:
+            # Wait until message contains Spin the Wheel winner
+            if embed.description is None:
+                continue
+
+            if len(embed.description) > 0 and embed.description[0] == '🏆':
+                super_pal_role = get_super_pal_role(guild)
+                if not super_pal_role:
+                    return
+
+                # Grab winner name from Spin the Wheel message
                 new_super_pal_name = embed.description[12:-2]
                 new_super_pal = discord.utils.get(guild.members, name=new_super_pal_name)
-                print(f'{new_super_pal.name} was chosen by the wheel spin.')
+
+                if not new_super_pal:
+                    log.error(f"Could not find member: {new_super_pal_name}")
+                    return
+
+                log.info(f'{new_super_pal.name} was chosen by wheel spin')
+
                 # Remove existing Super Pal of the Week
-                true_member_list = [m for m in guild.members if not m.bot]
+                true_member_list = get_non_bot_members(guild)
                 for member in true_member_list:
                     if super_pal_role in member.roles:
                         await member.remove_roles(super_pal_role)
-                # Add new winner to Super Pal of the Week.
+
+                # Add new winner to Super Pal of the Week
                 await new_super_pal.add_roles(super_pal_role)
-                await message.channel.send(f'Congratulations {new_super_pal.mention}! '
-                    f'You have been promoted to super pal of the week by wheel spin. {superpal_static.WELCOME_MSG}')
-    # Handle commands if the message was not from Spin the Wheel.
-    await bot.process_commands(message)
+
+                await message.channel.send(
+                    f'Congratulations {new_super_pal.mention}! '
+                    f'You have been promoted to super pal of the week by wheel spin. '
+                    f'{superpal_static.WELCOME_MSG}'
+                )
+
+    except Exception as e:
+        log.error(f"Error handling spin the wheel message: {e}")
+
 
 ################
 # Bot commands #
 ################
-# Command: Spin the wheel for a random "Super Pal of the Week"
-@bot.command(name='spinthewheel', pass_context=True)
-@commands.has_role('Super Pal of the Week')
-async def spinthewheel(ctx):
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-
-    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    # Get list of members and filter out bots.
-    true_member_list = [m for m in guild.members if not m.bot]
-    true_name_list = [member.name for member in true_member_list]
-    true_name_str = ", ".join(true_name_list)
-    # Send Spin the Wheel command.
-    await channel.send(f'?pick {true_name_str}')
-    print(f'\nSpinning the wheel for new super pal of the week.')
-
-# Command: Promote users to "Super Pal of the Week"
 @bot.command(name='spotw', pass_context=True)
-@commands.has_role('Super Pal of the Week')
-async def add_super_pal(ctx, new_super_pal: discord.Member):
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    role = discord.utils.get(guild.roles, name='Super Pal of the Week')
-    current_super_pal = ctx.message.author
+@commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+async def spotw_command(ctx, new_super_pal: discord.Member):
+    """Promote users to Super Pal of the Week (legacy command)."""
+    try:
+        guild = bot.get_guild(superpal_env.GUILD_ID)
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
 
-    # Promote new user and remove current super pal.
-    if role not in new_super_pal.roles:
-        print(f'{new_super_pal.name} promoted by {current_super_pal.name}.')
-        await new_super_pal.add_roles(role)
-        await current_super_pal.remove_roles(role)
-        await channel.send(f'Congratulations {new_super_pal.mention}! '
-            f'You have been promoted to super pal of the week by {current_super_pal.name}. {superpal_static.WELCOME_MSG}')
+        if not guild or not channel:
+            await ctx.send("Error: Could not find guild or channel.")
+            return
 
-# Command: Display more information about commands.
+        role = get_super_pal_role(guild)
+        if not role:
+            await ctx.send("Error: Super Pal role not found.")
+            return
+
+        current_super_pal = ctx.message.author
+
+        # Promote new user and remove current super pal
+        if role not in new_super_pal.roles:
+            log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}')
+            await new_super_pal.add_roles(role)
+            await current_super_pal.remove_roles(role)
+            await channel.send(
+                f'Congratulations {new_super_pal.mention}! '
+                f'You have been promoted to super pal of the week by {current_super_pal.name}. '
+                f'{superpal_static.WELCOME_MSG}'
+            )
+        else:
+            await ctx.send(f'{new_super_pal.mention} is already super pal of the week.')
+
+    except Exception as e:
+        log.error(f"Error in spotw command: {e}")
+        await ctx.send("Sorry, there was an error processing your request.")
+
+
+@bot.command(name='spinthewheel', pass_context=True)
+@commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+async def spinthewheel(ctx):
+    """Spin the wheel for a random Super Pal of the Week."""
+    try:
+        guild = bot.get_guild(superpal_env.GUILD_ID)
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+
+        if not guild or not channel:
+            await ctx.send("Error: Could not find guild or channel.")
+            return
+
+        # Get list of non-bot members
+        true_member_list = get_non_bot_members(guild)
+        if not true_member_list:
+            await ctx.send("Error: No members found.")
+            return
+
+        true_name_list = [member.name for member in true_member_list]
+        true_name_str = ", ".join(true_name_list)
+
+        # Send Spin the Wheel command
+        await channel.send(f'?pick {true_name_str}')
+        log.info('Spinning the wheel for new super pal')
+
+    except Exception as e:
+        log.error(f"Error in spinthewheel command: {e}")
+        await ctx.send("Sorry, there was an error spinning the wheel.")
+
+
 @bot.command(name='commands', pass_context=True)
-@commands.has_role('Super Pal of the Week')
+@commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def list_commands(ctx):
-    print(f'{ctx.message.author.name} used help command.')
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    await channel.send(superpal_static.COMMANDS_MSG)
+    """Display information about available commands."""
+    try:
+        log.info(f'{ctx.message.author.name} used help command')
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        if channel:
+            await channel.send(superpal_static.COMMANDS_MSG)
+        else:
+            await ctx.send(superpal_static.COMMANDS_MSG)
 
-# Command: Send party parrot discord emoji.
+    except Exception as e:
+        log.error(f"Error in commands command: {e}")
+        await ctx.send("Sorry, there was an error displaying commands.")
+
+
 @bot.command(name='cacaw', pass_context=True)
-@commands.has_role('Super Pal of the Week')
+@commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def cacaw(ctx):
-    print(f'{ctx.message.author.name} used cacaw command.')
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
-    partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
-    await channel.send(str(partyparrot_emoji)*50)
+    """Send party parrot discord emoji."""
+    try:
+        log.info(f'{ctx.message.author.name} used cacaw command')
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
 
-# Command: Randomly remove one user from voice chat
+        if not emoji_guild:
+            await ctx.send("Error: Emoji guild not found.")
+            return
+
+        partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
+
+        if partyparrot_emoji:
+            await channel.send(str(partyparrot_emoji) * superpal_static.EMOJI_SPAM_COUNT)
+        else:
+            await ctx.send("Partyparrot emoji not found!")
+
+    except Exception as e:
+        log.error(f"Error in cacaw command: {e}")
+        await ctx.send("Sorry, there was an error.")
+
+
+@bot.command(name='meow', pass_context=True)
+@commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+async def meow(ctx):
+    """Send party cat discord emoji."""
+    try:
+        log.info(f'{ctx.message.author.name} used meow command')
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
+
+        if not emoji_guild:
+            await ctx.send("Error: Emoji guild not found.")
+            return
+
+        partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
+
+        if partymeow_emoji:
+            await channel.send(str(partymeow_emoji) * superpal_static.EMOJI_SPAM_COUNT)
+        else:
+            await ctx.send("Partymeow emoji not found!")
+
+    except Exception as e:
+        log.error(f"Error in meow command: {e}")
+        await ctx.send("Sorry, there was an error.")
+
+
+@bot.command(name='surprise', pass_context=True)
+async def surprise_command(ctx):
+    """Generate surprise images using AI (legacy command)."""
+    try:
+        log.info(f'{ctx.message.author.name} used surprise command: {ctx.message.content}')
+        channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
+
+        if not channel:
+            await ctx.send("Error: Art channel not found.")
+            return
+
+        your_text_here = ctx.message.content.removeprefix('!surprise ').strip()
+        await superpal_ai.generate_surprise_image_and_send(your_text_here, channel)
+
+    except Exception as e:
+        log.error(f"Error in surprise command: {e}")
+        await ctx.send("Sorry, there was an error generating your image.")
+
+
 @bot.command(name='karatechop', pass_context=True)
-@commands.has_role('Super Pal of the Week')
+@commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def karate_chop(ctx):
-    guild = bot.get_guild(superpal_env.GUILD_ID)
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    current_super_pal = ctx.message.author 
+    """Randomly remove one user from voice chat."""
+    try:
+        guild = bot.get_guild(superpal_env.GUILD_ID)
+        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        current_super_pal = ctx.message.author
 
-    active_members = [voice_channel.members for voice_channel in guild.voice_channels]
+        if not guild or not channel:
+            await ctx.send("Error: Could not find guild or channel.")
+            return
 
-    # Kick random user from voice channel.
-    if not any(active_members):
-        print(f'{current_super_pal.name} used karate chop, but no one is in the voice channels.')
-        await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
-    else:
-        print(f'{chopped_member.name} karate chopped')
+        active_members = [voice_channel.members for voice_channel in guild.voice_channels]
+
+        # Check if anyone is in voice channels
+        if not any(active_members):
+            log.info(f'{current_super_pal.name} used karate chop, but no one is in voice channels')
+            await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
+            return
+
         # Flatten user list, filter out bots, and choose random user
         flatten = lambda l: [x for y in l for x in y]
         true_member_list = [m for m in flatten(active_members) if not m.bot]
-        chopped_member = random.choice(true_member_list)
 
-        # Check that an 'AFK' channel exists and choose the first one we see
-        afk_channels = [c.name for c in guild.voice_channels if 'AFK' in c.name]
-        if any(afk_channels):
-            await chopped_member.move_to(guild.voice_channels[afk_channels[0]])
+        if not true_member_list:
+            await channel.send('No users found in voice channels!')
+            return
+
+        chopped_member = random.choice(true_member_list)
+        log.info(f'{chopped_member.name} karate chopped')
+
+        # Check that an 'AFK' channel exists
+        afk_channels = [c for c in guild.voice_channels if superpal_static.AFK_CHANNEL_KEYWORD in c.name]
+
+        if afk_channels:
+            await chopped_member.move_to(afk_channels[0])
             await channel.send(f'karate chopped {chopped_member.mention}!')
         else:
-            await channel.send(f'{chopped_member.mention} would have been chopped, but an AFK channel was not found.\n'
-                               f'Please complain to the server owner.')
+            await channel.send(
+                f'{chopped_member.mention} would have been chopped, but an AFK channel was not found.\n'
+                'Please complain to the server owner.'
+            )
 
-# Command: Send party cat discord emoji
-@bot.command(name='meow', pass_context=True)
-@commands.has_role('Super Pal of the Week')
-async def meow(ctx):
-    print(f'{ctx.message.author.name} used meow command.')
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
-    emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
-    partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
-    await channel.send(str(partymeow_emoji)*50)
+    except Exception as e:
+        log.error(f"Error in karate_chop command: {e}")
+        await ctx.send("Sorry, there was an error processing karate chop.")
 
-# Command: Surprise images (AI)
-@bot.command(name='surprise', pass_context=True)
-#@commands.has_role('Super Pal of the Week')
-async def surprise(ctx):
-    print(f'{ctx.message.author.name} used surprise command:\n\t{ctx.message.content}')
-    channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
-    your_text_here = ctx.message.content.removeprefix('!surprise ')
-    await superpal_ai.generate_surprise_image_and_send(your_text_here, channel)
 
-bot.run(superpal_env.TOKEN)
+################
+# Start the bot
+################
+if __name__ == '__main__':
+    if not superpal_env.TOKEN:
+        log.error("Bot token not configured. Cannot start bot.")
+    else:
+        try:
+            bot.run(superpal_env.TOKEN)
+        except Exception as e:
+            log.error(f"Fatal error running bot: {e}")

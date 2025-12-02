@@ -4,3 +4,10 @@ assets/*
 .DS_Store
 discord-super-pal.log
 env-super-pal.yaml
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
