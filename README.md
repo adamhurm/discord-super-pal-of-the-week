@@ -22,7 +22,7 @@ Super Pal Bot currently supports these commands and the looped task:
 
 ## Building Native Binaries
 
-Native binaries for macOS and Windows are automatically built on each release using GitHub Actions. You can also build them manually:
+Native binaries for macOS, Windows, and Linux are automatically built on each release using GitHub Actions. You can also build them manually:
 
 ### Automated Builds (GitHub Actions)
 
@@ -55,4 +55,4 @@ Binaries are automatically built when:
 
 - **macOS**: The binary supports both Intel (x86_64) and Apple Silicon (arm64) architectures
 - **Windows**: The binary is built for x64 architecture
-- **Linux**: Use Docker for deployment (see Dockerfile.super-pal)
+- **Linux**: The binary is built for x86_64 architecture. For containerized deployment, see Dockerfile.super-pal
