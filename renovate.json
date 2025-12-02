@@ -1,29 +1,43 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base"
+    "config:recommended"
   ],
   "packageRules": [
     {
-      "matchDatasources": ["pypi"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "Python dependencies (non-major)"
     },
     {
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "Docker base images (non-major)"
     }
   ],
   "pip_requirements": {
-    "fileMatch": ["(^|/)requirements.*\\.txt$"]
+    "managerFilePatterns": [
+      "/(^|/)requirements.*\\.txt$/"
+    ]
   },
   "prHourlyLimit": 2,
   "prConcurrentLimit": 10,
   "schedule": [
     "before 6am on Monday"
   ],
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "dependencyDashboard": true,
   "separateMajorMinor": true,
   "separateMultipleMajor": true
