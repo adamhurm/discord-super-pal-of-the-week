@@ -15,7 +15,6 @@ async def test_is_member_super_pal_true(mock_env):
     from superpal import ai as superpal_ai
 
     # Create mocks
-    mock_bot = Mock(spec=commands.Bot)
     mock_guild = Mock(spec=discord.Guild)
     mock_member = Mock(spec=discord.Member)
     mock_role = Mock(spec=discord.Role)
@@ -25,12 +24,9 @@ async def test_is_member_super_pal_true(mock_env):
     mock_guild.members = [mock_member]
     mock_guild.roles = [mock_role]
 
-    mock_bot.get_guild = Mock(return_value=mock_guild)
     discord.utils.get = Mock(side_effect=[mock_member, mock_role])
 
-    with patch('superpal.ai.superpal_env') as mock_superpal_env:
-        mock_superpal_env.GUILD_ID = 123456789
-        result = await superpal_ai.is_member_super_pal(mock_bot, "TestUser")
+    result = await superpal_ai.is_member_super_pal(mock_guild, "TestUser")
 
     assert "Yes" in result
     assert "TestUser" in result
@@ -42,7 +38,6 @@ async def test_is_member_super_pal_false(mock_env):
     from superpal import ai as superpal_ai
 
     # Create mocks
-    mock_bot = Mock(spec=commands.Bot)
     mock_guild = Mock(spec=discord.Guild)
     mock_member = Mock(spec=discord.Member)
     mock_role = Mock(spec=discord.Role)
@@ -52,12 +47,9 @@ async def test_is_member_super_pal_false(mock_env):
     mock_guild.members = [mock_member]
     mock_guild.roles = [mock_role]
 
-    mock_bot.get_guild = Mock(return_value=mock_guild)
     discord.utils.get = Mock(side_effect=[mock_member, mock_role])
 
-    with patch('superpal.ai.superpal_env') as mock_superpal_env:
-        mock_superpal_env.GUILD_ID = 123456789
-        result = await superpal_ai.is_member_super_pal(mock_bot, "TestUser")
+    result = await superpal_ai.is_member_super_pal(mock_guild, "TestUser")
 
     assert "No" in result
     assert "TestUser" in result

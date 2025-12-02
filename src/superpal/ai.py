@@ -23,20 +23,19 @@ from . import env as superpal_env
 log = superpal_env.log
 
 
-async def is_member_super_pal(bot: commands.Bot, member: str) -> str:
+async def is_member_super_pal(guild: discord.Guild, member: str) -> str:
     """Check if a member currently has the Super Pal of the Week role.
 
     Args:
-        bot: The Discord bot instance
+        guild: The Discord guild instance
         member: Member name to check
 
     Returns:
         String indicating whether member is super pal
     """
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
         if not guild:
-            log.error(f"Could not find guild with ID {superpal_env.GUILD_ID}")
+            log.error("Guild not provided")
             return "Error: Could not find guild"
 
         member_obj = discord.utils.get(guild.members, name=member)

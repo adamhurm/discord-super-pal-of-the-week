@@ -163,53 +163,90 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
 ###############
 # Looped task #
 ###############
-@tasks.loop(hours=24*7)
-async def super_pal_of_the_week():
-    """Weekly task to choose a new Super Pal of the Week."""
-    try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
-        if not guild:
-            log.error(f"Could not find guild with ID {superpal_env.GUILD_ID}")
-            return
+async def pick_super_pal_for_guild(guild: discord.Guild):
+    """Pick a new Super Pal of the Week for a specific guild.
 
+    Args:
+        guild: Discord guild to pick super pal for
+    """
+    try:
+        log.info(f"Processing super pal selection for guild: {guild.name} (ID: {guild.id})")
+
+        # Get the designated channel for this guild
         channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        if not channel or channel.guild.id != guild.id:
+            # If the configured channel doesn't belong to this guild,
+            # try to find a suitable channel in the guild
+            channel = discord.utils.find(
+                lambda c: isinstance(c, discord.TextChannel) and c.permissions_for(guild.me).send_messages,
+                guild.channels
+            )
+
         if not channel:
-            log.error(f"Could not find channel with ID {superpal_env.CHANNEL_ID}")
+            log.error(f"Could not find a suitable channel in guild {guild.name}")
             return
 
         role = get_super_pal_role(guild)
         if not role:
+            log.warning(f"Super Pal role not found in guild {guild.name}")
             return
 
         # Get list of non-bot members and pick random member
         true_member_list = get_non_bot_members(guild)
         if not true_member_list:
-            log.error("No non-bot members found in guild")
+            log.error(f"No non-bot members found in guild {guild.name}")
             return
 
         new_super_pal = random.choice(true_member_list)
-        log.info(f'Picking new super pal of the week: {new_super_pal.name}')
+        log.info(f'Picking new super pal of the week in {guild.name}: {new_super_pal.name}')
 
         # Check if chosen member already has role (avoid duplicates)
         if role in new_super_pal.roles:
-            log.info(f'{new_super_pal.name} is already super pal. Re-rolling.')
-            await super_pal_of_the_week()
-            return
+            log.info(f'{new_super_pal.name} is already super pal in {guild.name}. Re-rolling.')
+            # Try again with a different member
+            remaining_members = [m for m in true_member_list if role not in m.roles]
+            if remaining_members:
+                new_super_pal = random.choice(remaining_members)
+            else:
+                log.info(f"All members in {guild.name} have been super pal. Keeping current.")
+                return
 
         # Remove role from all current super pals
         for member in true_member_list:
             if role in member.roles:
                 await member.remove_roles(role)
-                log.info(f'{member.name} removed from super pal role')
+                log.info(f'{member.name} removed from super pal role in {guild.name}')
 
         # Add role to new super pal
         await new_super_pal.add_roles(role)
-        log.info(f'{new_super_pal.name} promoted to super pal')
+        log.info(f'{new_super_pal.name} promoted to super pal in {guild.name}')
 
         await channel.send(
             f'Congratulations to {new_super_pal.mention}, '
             f'the super pal of the week! {superpal_static.WELCOME_MSG}'
         )
+
+    except Exception as e:
+        log.error(f"Error picking super pal for guild {guild.name}: {e}")
+
+
+@tasks.loop(hours=24*7)
+async def super_pal_of_the_week():
+    """Weekly task to choose a new Super Pal of the Week for all guilds."""
+    try:
+        log.info(f"Running weekly super pal selection across {len(bot.guilds)} guilds")
+
+        # If GUILD_ID is configured, only process that specific guild (backward compatibility)
+        if superpal_env.GUILD_ID:
+            guild = bot.get_guild(superpal_env.GUILD_ID)
+            if guild:
+                await pick_super_pal_for_guild(guild)
+            else:
+                log.error(f"Could not find configured guild with ID {superpal_env.GUILD_ID}")
+        else:
+            # Process all guilds the bot is in
+            for guild in bot.guilds:
+                await pick_super_pal_for_guild(guild)
 
     except Exception as e:
         log.error(f"Error in super_pal_of_the_week task: {e}")
@@ -281,7 +318,7 @@ async def on_message(message: discord.Message):
         # Skip bot messages
         if message.author.bot:
             # Check if this is from Spin The Wheel bot
-            guild = bot.get_guild(superpal_env.GUILD_ID)
+            guild = message.guild
             if not guild:
                 await bot.process_commands(message)
                 return
@@ -358,7 +395,7 @@ async def handle_spin_the_wheel_message(message: discord.Message, guild: discord
 async def spotw_command(ctx, new_super_pal: discord.Member):
     """Promote users to Super Pal of the Week (legacy command)."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
+        guild = ctx.guild
         channel = bot.get_channel(superpal_env.CHANNEL_ID)
 
         if not guild or not channel:
@@ -395,7 +432,7 @@ async def spotw_command(ctx, new_super_pal: discord.Member):
 async def spinthewheel(ctx):
     """Spin the wheel for a random Super Pal of the Week."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
+        guild = ctx.guild
         channel = bot.get_channel(superpal_env.CHANNEL_ID)
 
         if not guild or not channel:
@@ -492,7 +529,7 @@ async def meow(ctx):
 async def karate_chop(ctx):
     """Randomly remove one user from voice chat."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
+        guild = ctx.guild
         channel = bot.get_channel(superpal_env.CHANNEL_ID)
         current_super_pal = ctx.message.author
 
