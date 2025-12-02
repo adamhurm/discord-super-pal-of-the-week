@@ -1,6 +1,8 @@
 # Super Pal of the Week
 Discord bot that promotes users to Super Pal of the Week role. Go to the [wiki home page](https://github.com/adamhurm/discord-super-pal-of-the-week/wiki) to get started!
 
+> Hey! Over here! Just a heads up: I (Adam) created this bot a while ago and stopped maintaining it, so I'm trying out Claude after this [last release (1.3.3)](https://github.com/adamhurm/discord-super-pal-of-the-week/tree/1.3.3). Please let this serve as a warning that the repo contains AI-generated content. 
+
 <br />
 
 Super Pal Bot currently supports these commands and the looped task:
