@@ -12,7 +12,6 @@ COMMANDS_MSG = (
     '**!spinthewheel**\n\tSpin the wheel to choose a new super pal of the week.'
     '**!cacaw**\n\tSpam the channel with party parrots.\n'
     '**!meow**\n\tSpam the channel with party cats.\n'
-    '**!surprise** your text here\n\tReceive an AI-generated image in the channel based on the text prompt you provide.\n'
     '**!karatechop**\n\tMove a random user to AFK voice channel.'
 )
 
@@ -27,7 +26,7 @@ GAMBLE_MSG = (
 WELCOME_MSG = (
     'Welcome to the super pal channel.\n\n'
     'Use super pal commands by posting commands in chat. Examples:\n'
-    '( !commands (for full list) | !surprise your text here | !karatechop | !spotw @name | !meow )'
+    '( !commands (for full list) | !karatechop | !spotw @name | !meow )'
 )
 
 RUNTIME_WARN_MSG = 'WARN: Super Pal will still run but you are very likely to encounter run-time errors.'
@@ -68,5 +67,3 @@ AFK_CHANNEL_KEYWORD = 'AFK'
 
 # Bot configuration
 EMOJI_SPAM_COUNT = 50
-IMAGE_GENERATION_COUNT = 4
-IMAGE_SIZE = "1024x1024"

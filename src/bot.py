@@ -16,7 +16,6 @@ from discord.ext import commands, tasks
 
 import superpal.static as superpal_static
 import superpal.env as superpal_env
-import superpal.ai as superpal_ai
 
 # Get logger
 log = superpal_env.log
@@ -159,33 +158,6 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
             'Sorry, there was an error processing your request.',
             ephemeral=True
         )
-
-
-@bot.tree.command(name='surprise')
-@app_commands.describe(description='describe the image you want to generate')
-async def surprise(interaction: discord.Interaction, description: str) -> None:
-    """Generate a surprise image! (backed by OpenAI DALL-E)
-
-    Args:
-        description: describe the image
-    """
-    try:
-        log.info(f'{interaction.user.name} used surprise command: {description}')
-
-        # Defer response since image generation takes time
-        await interaction.response.defer()
-
-        channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
-        if not channel:
-            await interaction.followup.send('Error: Could not find art channel.')
-            return
-
-        await superpal_ai.generate_surprise_image_and_send(description, channel)
-        await interaction.followup.send('Images sent to art channel!', ephemeral=True)
-
-    except Exception as e:
-        log.error(f"Error in surprise command: {e}")
-        await interaction.followup.send('Sorry, there was an error generating your image.')
 
 
 ###############
@@ -513,25 +485,6 @@ async def meow(ctx):
     except Exception as e:
         log.error(f"Error in meow command: {e}")
         await ctx.send("Sorry, there was an error.")
-
-
-@bot.command(name='surprise', pass_context=True)
-async def surprise_command(ctx):
-    """Generate surprise images using AI (legacy command)."""
-    try:
-        log.info(f'{ctx.message.author.name} used surprise command: {ctx.message.content}')
-        channel = bot.get_channel(superpal_env.ART_CHANNEL_ID)
-
-        if not channel:
-            await ctx.send("Error: Art channel not found.")
-            return
-
-        your_text_here = ctx.message.content.removeprefix('!surprise ').strip()
-        await superpal_ai.generate_surprise_image_and_send(your_text_here, channel)
-
-    except Exception as e:
-        log.error(f"Error in surprise command: {e}")
-        await ctx.send("Sorry, there was an error generating your image.")
 
 
 @bot.command(name='karatechop', pass_context=True)

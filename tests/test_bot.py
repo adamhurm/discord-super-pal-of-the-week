@@ -227,15 +227,20 @@ class TestFunCommands:
         # Setup
         mock_voice_channel = Mock(spec=discord.VoiceChannel)
         mock_voice_channel.name = "General"
+        # Make members a proper list, not a Mock
         mock_voice_channel.members = [mock_member]
 
         mock_afk_channel = Mock(spec=discord.VoiceChannel)
         mock_afk_channel.name = "AFK"
+        # AFK channel has no members
+        mock_afk_channel.members = []
 
+        # Set up voice_channels as a proper list
         mock_guild.voice_channels = [mock_voice_channel, mock_afk_channel]
         mock_member.move_to = AsyncMock()
+        mock_member.bot = False  # Ensure member is not a bot
 
-        # Get active members
+        # Get active members (simulating the bot logic)
         active_members = [vc.members for vc in mock_guild.voice_channels]
         flatten = lambda l: [x for y in l for x in y]
         true_member_list = [m for m in flatten(active_members) if not m.bot]
@@ -261,4 +266,4 @@ class TestCommandsList:
         mock_channel.send.assert_called_once()
         call_args = mock_channel.send.call_args[0][0]
         assert "!spotw" in call_args
-        assert "!surprise" in call_args
+        assert "!karatechop" in call_args

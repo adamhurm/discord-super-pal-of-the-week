@@ -14,7 +14,6 @@ def test_commands_message_exists():
     assert "!spinthewheel" in superpal_static.COMMANDS_MSG
     assert "!cacaw" in superpal_static.COMMANDS_MSG
     assert "!meow" in superpal_static.COMMANDS_MSG
-    assert "!surprise" in superpal_static.COMMANDS_MSG
     assert "!karatechop" in superpal_static.COMMANDS_MSG
 
 
