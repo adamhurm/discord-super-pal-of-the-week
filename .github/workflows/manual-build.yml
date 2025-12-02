@@ -64,7 +64,7 @@ jobs:
           outputs: type=docker,dest=/tmp/super-pal-image.tar
 
       - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: super-pal-docker-image
           path: /tmp/super-pal-image.tar
@@ -125,7 +125,7 @@ jobs:
           outputs: type=docker,dest=/tmp/spin-the-wheel-image.tar
 
       - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: spin-the-wheel-docker-image
           path: /tmp/spin-the-wheel-image.tar
