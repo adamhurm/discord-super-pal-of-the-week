@@ -59,6 +59,60 @@ def get_super_pal_role(guild: discord.Guild) -> Optional[discord.Role]:
     return role
 
 
+def get_super_pal_channel(guild: discord.Guild, fallback_channel: Optional[discord.TextChannel] = None) -> Optional[discord.TextChannel]:
+    """Get the appropriate channel for Super Pal announcements in a guild.
+
+    This function uses the following priority:
+    1. Configured CHANNEL_ID if it belongs to this guild
+    2. Channel with name containing "super-pal" or "superpal"
+    3. Channel with name containing "bot" (e.g., "bot-commands", "bots")
+    4. Fallback channel provided (e.g., where command was invoked)
+    5. First text channel where bot has send permissions
+
+    Args:
+        guild: Discord guild to find channel in
+        fallback_channel: Optional fallback channel (e.g., command invocation channel)
+
+    Returns:
+        Text channel for announcements or None if not found
+    """
+    # Priority 1: Use configured CHANNEL_ID if it belongs to this guild
+    if superpal_env.CHANNEL_ID:
+        configured_channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        if configured_channel and isinstance(configured_channel, discord.TextChannel) and configured_channel.guild.id == guild.id:
+            return configured_channel
+
+    # Priority 2: Look for channel with "super-pal" or "superpal" in name
+    for channel in guild.text_channels:
+        channel_name_lower = channel.name.lower()
+        if 'super-pal' in channel_name_lower or 'superpal' in channel_name_lower:
+            if channel.permissions_for(guild.me).send_messages:
+                log.info(f"Found super pal channel in {guild.name}: #{channel.name}")
+                return channel
+
+    # Priority 3: Look for channel with "bot" in name
+    for channel in guild.text_channels:
+        if 'bot' in channel.name.lower():
+            if channel.permissions_for(guild.me).send_messages:
+                log.info(f"Using bot channel in {guild.name}: #{channel.name}")
+                return channel
+
+    # Priority 4: Use fallback channel if provided and has permissions
+    if fallback_channel and fallback_channel.guild.id == guild.id:
+        if fallback_channel.permissions_for(guild.me).send_messages:
+            log.info(f"Using fallback channel in {guild.name}: #{fallback_channel.name}")
+            return fallback_channel
+
+    # Priority 5: Find first text channel with send permissions
+    for channel in guild.text_channels:
+        if channel.permissions_for(guild.me).send_messages:
+            log.info(f"Using first available channel in {guild.name}: #{channel.name}")
+            return channel
+
+    log.error(f"Could not find any suitable channel in guild {guild.name}")
+    return None
+
+
 async def promote_super_pal(
     new_super_pal: discord.Member,
     old_super_pal: Optional[discord.Member],
@@ -111,10 +165,10 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         new_super_pal: choose the member you want to promote to super pal
     """
     try:
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = get_super_pal_channel(interaction.guild, interaction.channel)
         if not channel:
             await interaction.response.send_message(
-                'Error: Could not find configured channel.',
+                'Error: Could not find a suitable channel for announcements.',
                 ephemeral=True
             )
             return
@@ -173,15 +227,7 @@ async def pick_super_pal_for_guild(guild: discord.Guild):
         log.info(f"Processing super pal selection for guild: {guild.name} (ID: {guild.id})")
 
         # Get the designated channel for this guild
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
-        if not channel or channel.guild.id != guild.id:
-            # If the configured channel doesn't belong to this guild,
-            # try to find a suitable channel in the guild
-            channel = discord.utils.find(
-                lambda c: isinstance(c, discord.TextChannel) and c.permissions_for(guild.me).send_messages,
-                guild.channels
-            )
-
+        channel = get_super_pal_channel(guild)
         if not channel:
             log.error(f"Could not find a suitable channel in guild {guild.name}")
             return
@@ -396,7 +442,7 @@ async def spotw_command(ctx, new_super_pal: discord.Member):
     """Promote users to Super Pal of the Week (legacy command)."""
     try:
         guild = ctx.guild
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = get_super_pal_channel(guild, ctx.channel)
 
         if not guild or not channel:
             await ctx.send("Error: Could not find guild or channel.")
@@ -433,7 +479,7 @@ async def spinthewheel(ctx):
     """Spin the wheel for a random Super Pal of the Week."""
     try:
         guild = ctx.guild
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = get_super_pal_channel(guild, ctx.channel)
 
         if not guild or not channel:
             await ctx.send("Error: Could not find guild or channel.")
@@ -463,7 +509,7 @@ async def list_commands(ctx):
     """Display information about available commands."""
     try:
         log.info(f'{ctx.message.author.name} used help command')
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = get_super_pal_channel(ctx.guild, ctx.channel)
         if channel:
             await channel.send(superpal_static.COMMANDS_MSG)
         else:
@@ -480,11 +526,12 @@ async def cacaw(ctx):
     """Send party parrot discord emoji."""
     try:
         log.info(f'{ctx.message.author.name} used cacaw command')
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
-        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
+        channel = get_super_pal_channel(ctx.guild, ctx.channel)
+        # Try to use configured emoji guild, otherwise use current guild
+        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID) if superpal_env.EMOJI_GUILD_ID else ctx.guild
 
-        if not emoji_guild:
-            await ctx.send("Error: Emoji guild not found.")
+        if not emoji_guild or not channel:
+            await ctx.send("Error: Could not find emoji guild or channel.")
             return
 
         partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
@@ -505,11 +552,12 @@ async def meow(ctx):
     """Send party cat discord emoji."""
     try:
         log.info(f'{ctx.message.author.name} used meow command')
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
-        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
+        channel = get_super_pal_channel(ctx.guild, ctx.channel)
+        # Try to use configured emoji guild, otherwise use current guild
+        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID) if superpal_env.EMOJI_GUILD_ID else ctx.guild
 
-        if not emoji_guild:
-            await ctx.send("Error: Emoji guild not found.")
+        if not emoji_guild or not channel:
+            await ctx.send("Error: Could not find emoji guild or channel.")
             return
 
         partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
@@ -530,7 +578,7 @@ async def karate_chop(ctx):
     """Randomly remove one user from voice chat."""
     try:
         guild = ctx.guild
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = get_super_pal_channel(guild, ctx.channel)
         current_super_pal = ctx.message.author
 
         if not guild or not channel:

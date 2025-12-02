@@ -80,16 +80,16 @@ def get_env_int(key: str, default: Optional[int] = None, required: bool = False)
 # Required variables
 try:
     TOKEN = get_env('SUPERPAL_TOKEN', required=True)
-    CHANNEL_ID = get_env_int('CHANNEL_ID', required=True)
 except ValueError as e:
     log.error(f"Missing required environment variables: {e}")
     log.error(f"{superpal_static.RUNTIME_WARN_MSG}")
     TOKEN = None
-    CHANNEL_ID = None
 
 # Optional variables with defaults
 # GUILD_ID is now optional - bot will work across all guilds it's invited to
 GUILD_ID = get_env_int('GUILD_ID', default=None)
+# CHANNEL_ID is now optional - bot will auto-detect channels in each guild
+CHANNEL_ID = get_env_int('CHANNEL_ID', default=None)
 EMOJI_GUILD_ID = get_env_int('EMOJI_GUILD_ID', default=GUILD_ID)
 ART_CHANNEL_ID = get_env_int('ART_CHANNEL_ID', default=CHANNEL_ID)
 GPT_ASSISTANT_ID = get_env('GPT_ASSISTANT_ID')
@@ -106,5 +106,5 @@ if OPENAI_API_KEY is None:
 # Log configuration status
 log.info("Environment configuration loaded successfully")
 log.info(f"Guild ID: {GUILD_ID if GUILD_ID else 'Not set (multi-guild mode)'}")
-log.info(f"Channel ID: {CHANNEL_ID}")
+log.info(f"Channel ID: {CHANNEL_ID if CHANNEL_ID else 'Not set (auto-detect mode)'}")
 log.info(f"AI features enabled: {OPENAI_API_KEY is not None}")
