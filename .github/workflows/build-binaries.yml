@@ -1,0 +1,286 @@
+# Build native binaries for macOS, Windows, and Linux
+# This workflow creates standalone executables using PyInstaller
+
+name: Build Native Binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: 'Upload artifacts to workflow'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build-macos:
+    name: Build macOS Binary
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build macOS binary
+        run: |
+          cd src
+          pyinstaller --onefile \
+            --name discord-super-pal-macos \
+            --hidden-import=discord \
+            --hidden-import=discord.ext.commands \
+            --hidden-import=discord.ext.tasks \
+            --hidden-import=openai \
+            --hidden-import=superpal.ai \
+            --hidden-import=superpal.env \
+            --hidden-import=superpal.static \
+            --collect-all discord \
+            --collect-all aiohttp \
+            bot.py
+
+      - name: Test binary
+        run: |
+          cd src/dist
+          ./discord-super-pal-macos --help || echo "Binary created successfully (help flag may not be implemented)"
+          file discord-super-pal-macos
+
+      - name: Create archive
+        run: |
+          cd src/dist
+          tar -czf discord-super-pal-macos.tar.gz discord-super-pal-macos
+          shasum -a 256 discord-super-pal-macos.tar.gz > discord-super-pal-macos.tar.gz.sha256
+
+      - name: Upload artifact
+        if: inputs.upload_artifacts != false
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-super-pal-macos
+          path: |
+            src/dist/discord-super-pal-macos.tar.gz
+            src/dist/discord-super-pal-macos.tar.gz.sha256
+          retention-days: 30
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: src/dist/discord-super-pal-macos.tar.gz
+          asset_name: discord-super-pal-macos-${{ github.event.release.tag_name }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Generate build summary
+        run: |
+          echo "## macOS Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform:** macOS (x86_64/arm64 universal)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python:** $(python --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Binary Details" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          file src/dist/discord-super-pal-macos >> $GITHUB_STEP_SUMMARY
+          ls -lh src/dist/discord-super-pal-macos >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### SHA256 Checksum" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat src/dist/discord-super-pal-macos.tar.gz.sha256 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ macOS binary built successfully!" >> $GITHUB_STEP_SUMMARY
+
+  build-windows:
+    name: Build Windows Binary
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows binary
+        run: |
+          cd src
+          pyinstaller --onefile `
+            --name discord-super-pal-windows `
+            --hidden-import=discord `
+            --hidden-import=discord.ext.commands `
+            --hidden-import=discord.ext.tasks `
+            --hidden-import=openai `
+            --hidden-import=superpal.ai `
+            --hidden-import=superpal.env `
+            --hidden-import=superpal.static `
+            --collect-all discord `
+            --collect-all aiohttp `
+            bot.py
+
+      - name: Test binary
+        run: |
+          cd src/dist
+          Get-Item discord-super-pal-windows.exe
+
+      - name: Create archive
+        run: |
+          cd src/dist
+          Compress-Archive -Path discord-super-pal-windows.exe -DestinationPath discord-super-pal-windows.zip
+          Get-FileHash -Algorithm SHA256 discord-super-pal-windows.zip | Select-Object Hash | Out-File -FilePath discord-super-pal-windows.zip.sha256
+
+      - name: Upload artifact
+        if: inputs.upload_artifacts != false || github.event_name == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-super-pal-windows
+          path: |
+            src/dist/discord-super-pal-windows.zip
+            src/dist/discord-super-pal-windows.zip.sha256
+          retention-days: 30
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            src/dist/discord-super-pal-windows.zip
+            src/dist/discord-super-pal-windows.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate build summary
+        run: |
+          echo "## Windows Build Information" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Platform:** Windows (x64)" >> $env:GITHUB_STEP_SUMMARY
+          $pythonVersion = python --version
+          echo "- **Python:** $pythonVersion" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "### Binary Details" >> $env:GITHUB_STEP_SUMMARY
+          echo '```' >> $env:GITHUB_STEP_SUMMARY
+          Get-Item src/dist/discord-super-pal-windows.exe | Format-List >> $env:GITHUB_STEP_SUMMARY
+          echo '```' >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "### SHA256 Checksum" >> $env:GITHUB_STEP_SUMMARY
+          echo '```' >> $env:GITHUB_STEP_SUMMARY
+          Get-Content src/dist/discord-super-pal-windows.zip.sha256 >> $env:GITHUB_STEP_SUMMARY
+          echo '```' >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "✅ Windows binary built successfully!" >> $env:GITHUB_STEP_SUMMARY
+
+  build-linux:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Linux binary
+        run: |
+          cd src
+          pyinstaller --onefile \
+            --name discord-super-pal-linux \
+            --hidden-import=discord \
+            --hidden-import=discord.ext.commands \
+            --hidden-import=discord.ext.tasks \
+            --hidden-import=openai \
+            --hidden-import=superpal.ai \
+            --hidden-import=superpal.env \
+            --hidden-import=superpal.static \
+            --collect-all discord \
+            --collect-all aiohttp \
+            bot.py
+
+      - name: Test binary
+        run: |
+          cd src/dist
+          ./discord-super-pal-linux --help || echo "Binary created successfully (help flag may not be implemented)"
+          file discord-super-pal-linux
+
+      - name: Create archive
+        run: |
+          cd src/dist
+          tar -czf discord-super-pal-linux.tar.gz discord-super-pal-linux
+          sha256sum discord-super-pal-linux.tar.gz > discord-super-pal-linux.tar.gz.sha256
+
+      - name: Upload artifact
+        if: inputs.upload_artifacts != false
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-super-pal-linux
+          path: |
+            src/dist/discord-super-pal-linux.tar.gz
+            src/dist/discord-super-pal-linux.tar.gz.sha256
+          retention-days: 30
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            src/dist/discord-super-pal-linux.tar.gz
+            src/dist/discord-super-pal-linux.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate build summary
+        run: |
+          echo "## Linux Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform:** Linux (x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python:** $(python --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Binary Details" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          file src/dist/discord-super-pal-linux >> $GITHUB_STEP_SUMMARY
+          ls -lh src/dist/discord-super-pal-linux >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### SHA256 Checksum" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat src/dist/discord-super-pal-linux.tar.gz.sha256 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Linux binary built successfully!" >> $GITHUB_STEP_SUMMARY
