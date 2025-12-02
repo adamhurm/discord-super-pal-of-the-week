@@ -1,0 +1,149 @@
+# Manual Docker build workflow
+# Builds Docker images on manual trigger and uploads to GitHub Actions artifacts
+
+name: Manual Docker Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_target:
+        description: 'Which image to build'
+        required: true
+        default: 'super-pal'
+        type: choice
+        options:
+          - super-pal
+          - spin-the-wheel
+          - both
+      platforms:
+        description: 'Platforms to build for'
+        required: false
+        default: 'linux/amd64'
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
+          - linux/amd64,linux/arm64
+
+jobs:
+  build-super-pal:
+    name: Build Super Pal Docker image
+    runs-on: ubuntu-latest
+    if: inputs.build_target == 'super-pal' || inputs.build_target == 'both'
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: discord-super-pal
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ inputs.platforms }}
+          file: ./Dockerfile.super-pal
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=/tmp/super-pal-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: super-pal-docker-image
+          path: /tmp/super-pal-image.tar
+          retention-days: 7
+          compression-level: 9
+
+      - name: Generate image info
+        run: |
+          echo "## Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** Super Pal of the Week" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms:** ${{ inputs.platforms }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Details" >> $GITHUB_STEP_SUMMARY
+          docker load --input /tmp/super-pal-image.tar
+          docker images | grep discord-super-pal >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Image artifact uploaded successfully!" >> $GITHUB_STEP_SUMMARY
+
+  build-spin-the-wheel:
+    name: Build Spin The Wheel Docker image
+    runs-on: ubuntu-latest
+    if: inputs.build_target == 'spin-the-wheel' || inputs.build_target == 'both'
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: discord-spin-the-wheel
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ inputs.platforms }}
+          file: ./Dockerfile.spin-the-wheel
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=/tmp/spin-the-wheel-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spin-the-wheel-docker-image
+          path: /tmp/spin-the-wheel-image.tar
+          retention-days: 7
+          compression-level: 9
+
+      - name: Generate image info
+        run: |
+          echo "## Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** Spin The Wheel" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms:** ${{ inputs.platforms }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Details" >> $GITHUB_STEP_SUMMARY
+          docker load --input /tmp/spin-the-wheel-image.tar
+          docker images | grep discord-spin-the-wheel >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Image artifact uploaded successfully!" >> $GITHUB_STEP_SUMMARY
