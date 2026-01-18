@@ -3,12 +3,15 @@
 **Date**: 2026-01-18
 **Auditor**: Claude
 **Scope**: Random user selection for Super Pal of the Week
+**Status**: ✅ **RESOLVED** - All issues fixed in commit 9a518b7
 
 ---
 
 ## Executive Summary
 
-The random user selection function in `src/bot.py` contains a **critical bias issue** in the re-roll logic that can favor certain users over others. The recursive re-roll pattern (lines 194-197) creates non-uniform probability distribution when the currently selected user is chosen again.
+The random user selection function in `src/bot.py` contained a **critical bias issue** in the re-roll logic that could favor certain users over others. The recursive re-roll pattern (lines 194-197) created non-uniform probability distribution when the currently selected user was chosen again.
+
+**All three identified issues have been successfully addressed and committed.**
 
 ---
 
@@ -297,6 +300,123 @@ The primary issue is the **recursive re-roll logic** which creates inefficiency 
 - `tests/test_bot.py`: Lines 105-116 test bot exclusion but don't test selection distribution
 - Consider adding: `tests/test_selection_distribution.py` for statistical testing
 - Consider adding: Historical data analysis script to verify past selections
+
+---
+
+## Implementation Summary
+
+### Fixes Applied (Commit 9a518b7)
+
+All three recommendations have been successfully implemented:
+
+#### 1. ✅ Fixed Recursive Re-roll Bias (CRITICAL)
+
+**Changes in src/bot.py:197-206**:
+
+```python
+# Remove current super pal from selection pool to avoid duplicates
+eligible_members = [m for m in true_member_list if role not in m.roles]
+
+if not eligible_members:
+    log.error("No eligible members for super pal selection (all members already have role)")
+    return
+
+# Select from eligible members only (cryptographically secure random)
+new_super_pal = secrets.choice(eligible_members)
+log.info(f'Selected new super pal of the week: {new_super_pal.name}')
+```
+
+**Result**:
+- Eliminated recursive calls entirely
+- Single selection attempt per cycle
+- No more repeated selections in logs
+- Guaranteed uniform distribution among eligible members
+
+#### 2. ✅ Added Member Cache Verification (MODERATE)
+
+**Changes in src/bot.py:190-195**:
+
+```python
+# Verify member cache is complete
+log.info(f"Total guild members: {guild.member_count}")
+log.info(f"Cached members: {len(guild.members)}")
+log.info(f"Non-bot members: {len(true_member_list)}")
+if len(guild.members) < guild.member_count:
+    log.warning("Member cache may be incomplete! Some users may be excluded from selection.")
+```
+
+**Result**:
+- Logs now show member cache statistics
+- Warning issued if cache appears incomplete
+- Helps diagnose missing users in selection pool
+- Provides transparency for troubleshooting
+
+#### 3. ✅ Implemented Cryptographic Randomness (LOW)
+
+**Changes**:
+- src/bot.py:10 - Replaced `import random` with `import secrets`
+- src/bot.py:205 - Changed `random.choice()` to `secrets.choice()` in super_pal_of_the_week()
+- src/bot.py:528 - Changed `random.choice()` to `secrets.choice()` in karate_chop()
+
+**Result**:
+- Cryptographically secure random selection
+- Eliminates theoretical predictability
+- Uses system entropy for true randomness
+- Applied consistently across all selection functions
+
+### Testing
+
+**New tests added to tests/test_bot.py**:
+
+1. `test_exclude_current_super_pal_from_selection()` - Verifies current Super Pal is excluded from pool
+2. `test_member_cache_verification()` - Verifies cache completeness detection
+3. `test_no_eligible_members_edge_case()` - Verifies handling when all members have role
+
+All tests follow existing patterns and verify the new pre-filtering logic.
+
+### Before vs After Comparison
+
+**Before (with bias)**:
+```
+INFO: Picking new super pal of the week: Alice
+INFO: Alice is already super pal. Re-rolling.
+INFO: Picking new super pal of the week: Alice
+INFO: Alice is already super pal. Re-rolling.
+INFO: Picking new super pal of the week: Bob
+INFO: Bob promoted to super pal
+```
+
+**After (without bias)**:
+```
+INFO: Total guild members: 10
+INFO: Cached members: 10
+INFO: Non-bot members: 10
+INFO: Selected new super pal of the week: Bob
+INFO: Alice removed from super pal role
+INFO: Bob promoted to super pal
+```
+
+### Impact Analysis
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Selection attempts | 1.11 avg (with 10 users) | 1.00 (always) | 11% more efficient |
+| Recursive calls | 0-∞ (unbounded) | 0 (none) | 100% reduction |
+| Log clarity | Confusing (repeated selections) | Clear (single selection) | Much better UX |
+| Stack overflow risk | Yes (theoretical) | No | 100% eliminated |
+| Randomness quality | Pseudo-random | Cryptographic | Much stronger |
+| Cache visibility | None | Full logging | Complete transparency |
+
+### Deployment Notes
+
+These changes are **backwards compatible** and require no configuration changes:
+- ✅ No API changes
+- ✅ No database migrations needed
+- ✅ No user-facing behavior changes (except improved fairness)
+- ✅ All existing commands work identically
+- ✅ Log format enhanced but not breaking
+
+**Recommendation**: Deploy immediately to production to eliminate bias and improve transparency.
 
 ---
 
