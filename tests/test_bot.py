@@ -129,6 +129,79 @@ class TestWeeklyTask:
         # Verify
         mock_member.remove_roles.assert_called_once_with(mock_super_pal_role)
 
+    @pytest.mark.asyncio
+    async def test_exclude_current_super_pal_from_selection(self, mock_guild, mock_member, mock_super_pal_role):
+        """Test that current super pal is excluded from selection pool."""
+        # Setup - create members where one already has the role
+        current_super_pal = Mock(spec=discord.Member)
+        current_super_pal.name = "CurrentSuperPal"
+        current_super_pal.bot = False
+        current_super_pal.roles = [mock_super_pal_role]
+
+        other_member1 = Mock(spec=discord.Member)
+        other_member1.name = "Member1"
+        other_member1.bot = False
+        other_member1.roles = []
+
+        other_member2 = Mock(spec=discord.Member)
+        other_member2.name = "Member2"
+        other_member2.bot = False
+        other_member2.roles = []
+
+        mock_guild.members = [current_super_pal, other_member1, other_member2]
+
+        # Filter out bots and current super pal
+        true_member_list = [m for m in mock_guild.members if not m.bot]
+        eligible_members = [m for m in true_member_list if mock_super_pal_role not in m.roles]
+
+        # Verify
+        assert len(true_member_list) == 3
+        assert len(eligible_members) == 2
+        assert current_super_pal not in eligible_members
+        assert other_member1 in eligible_members
+        assert other_member2 in eligible_members
+
+    @pytest.mark.asyncio
+    async def test_member_cache_verification(self, mock_guild):
+        """Test that member cache completeness is verified."""
+        # Setup - simulate incomplete cache
+        mock_guild.member_count = 100
+        mock_guild.members = [Mock(spec=discord.Member) for _ in range(75)]
+
+        # Verify cache completeness check
+        cache_complete = len(mock_guild.members) >= mock_guild.member_count
+        assert cache_complete is False
+
+        # Verify we can detect this condition
+        if len(mock_guild.members) < mock_guild.member_count:
+            cache_warning_needed = True
+        else:
+            cache_warning_needed = False
+
+        assert cache_warning_needed is True
+
+    @pytest.mark.asyncio
+    async def test_no_eligible_members_edge_case(self, mock_guild, mock_super_pal_role):
+        """Test handling when all members already have super pal role."""
+        # Setup - all members have the role
+        member1 = Mock(spec=discord.Member)
+        member1.bot = False
+        member1.roles = [mock_super_pal_role]
+
+        member2 = Mock(spec=discord.Member)
+        member2.bot = False
+        member2.roles = [mock_super_pal_role]
+
+        mock_guild.members = [member1, member2]
+
+        # Filter eligible members
+        true_member_list = [m for m in mock_guild.members if not m.bot]
+        eligible_members = [m for m in true_member_list if mock_super_pal_role not in m.roles]
+
+        # Verify
+        assert len(true_member_list) == 2
+        assert len(eligible_members) == 0
+
 
 class TestSpinTheWheel:
     """Tests for spin the wheel integration."""

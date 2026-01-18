@@ -7,7 +7,7 @@ featuring AI-powered image generation, automated role management, and fun comman
 
 import asyncio
 import datetime
-import random
+import secrets
 from typing import List, Optional
 
 import discord
@@ -181,20 +181,29 @@ async def super_pal_of_the_week():
         if not role:
             return
 
-        # Get list of non-bot members and pick random member
+        # Get list of non-bot members
         true_member_list = get_non_bot_members(guild)
         if not true_member_list:
             log.error("No non-bot members found in guild")
             return
 
-        new_super_pal = random.choice(true_member_list)
-        log.info(f'Picking new super pal of the week: {new_super_pal.name}')
+        # Verify member cache is complete
+        log.info(f"Total guild members: {guild.member_count}")
+        log.info(f"Cached members: {len(guild.members)}")
+        log.info(f"Non-bot members: {len(true_member_list)}")
+        if len(guild.members) < guild.member_count:
+            log.warning("Member cache may be incomplete! Some users may be excluded from selection.")
 
-        # Check if chosen member already has role (avoid duplicates)
-        if role in new_super_pal.roles:
-            log.info(f'{new_super_pal.name} is already super pal. Re-rolling.')
-            await super_pal_of_the_week()
+        # Remove current super pal from selection pool to avoid duplicates
+        eligible_members = [m for m in true_member_list if role not in m.roles]
+
+        if not eligible_members:
+            log.error("No eligible members for super pal selection (all members already have role)")
             return
+
+        # Select from eligible members only (cryptographically secure random)
+        new_super_pal = secrets.choice(eligible_members)
+        log.info(f'Selected new super pal of the week: {new_super_pal.name}')
 
         # Remove role from all current super pals
         for member in true_member_list:
@@ -516,7 +525,7 @@ async def karate_chop(ctx):
             await channel.send('No users found in voice channels!')
             return
 
-        chopped_member = random.choice(true_member_list)
+        chopped_member = secrets.choice(true_member_list)
         log.info(f'{chopped_member.name} karate chopped')
 
         # Check that an 'AFK' channel exists
