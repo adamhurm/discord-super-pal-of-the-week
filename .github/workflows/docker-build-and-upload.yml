@@ -16,7 +16,7 @@ jobs:
 
       - name: Extract super-pal metadata (tags, labels) for Docker
         id: meta-super-pal
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: adamhurm/discord-super-pal
           tags: type=semver,pattern={{version}}
