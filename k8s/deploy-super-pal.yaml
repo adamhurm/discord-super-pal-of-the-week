@@ -100,4 +100,4 @@ spec:
       terminationGracePeriodSeconds: 30
       volumes:
         - name: card-data
-          emptyDir: {}
+          emptyDir: {}  # TODO: replace with PersistentVolumeClaim before production deployment
