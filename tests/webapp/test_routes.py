@@ -95,3 +95,21 @@ async def test_admin_sync_without_session_shows_expired(client):
         response = await client.post("/admin/sync")
     assert response.status_code == 200
     assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_exclude_collection_session_shows_expired(client):
+    link = _link(link_type="collection")
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)):
+        response = await client.post("/admin/exclude/123")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_sync_collection_session_shows_expired(client):
+    link = _link(link_type="collection")
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)):
+        response = await client.post("/admin/sync")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()

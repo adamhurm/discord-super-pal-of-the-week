@@ -54,6 +54,7 @@ async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
     now = datetime.now(timezone.utc).isoformat()
 
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
         async with db.execute(
             "SELECT draws_used FROM draw_log WHERE user_id = ? AND week_start = ?",
             (owner_id, week_start),

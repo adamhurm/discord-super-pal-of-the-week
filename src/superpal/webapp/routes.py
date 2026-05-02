@@ -49,7 +49,7 @@ async def collection_view(request: Request):
     display_name = row[0] if row else "Unknown"
     avatar_url = row[1] if row else None
     total_cards = sum(c["quantity"] for c in data["owned"])
-    unique_members = len(data["owned"])
+    unique_members = len({c["member_id"] for c in data["owned"]})
     return templates.TemplateResponse(request, "collection.html", {
         "display_name": display_name,
         "avatar_url": avatar_url,
