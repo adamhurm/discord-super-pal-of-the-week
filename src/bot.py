@@ -10,12 +10,18 @@ import datetime
 import random
 from typing import List, Optional
 
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 import superpal.static as superpal_static
 import superpal.env as superpal_env
+from superpal.cards.db import init_db, DB_PATH
+from superpal.cards.service import draw_card, sync_members, generate_magic_link, trade_in, upgrade
+from superpal.cards.embeds import build_card_embed
+from superpal.cards.models import RARITY_ORDER
+from superpal.env import WEBAPP_BASE_URL
 
 # Get logger
 log = superpal_env.log
@@ -27,6 +33,8 @@ intents = discord.Intents.default()
 intents.members = True  # Required to list all users in a guild
 intents.message_content = True  # Required to use spin-the-wheel and grab winner
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+_guild_members_cache: list[dict] = []
 
 
 ##################
@@ -160,6 +168,45 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         )
 
 
+@bot.tree.command(name="draw-card", description="Draw a card from the Bringus deck (once per week)")
+async def draw_card_command(interaction: discord.Interaction) -> None:
+    await interaction.response.defer()
+    member = interaction.user
+    is_super_pal = any(
+        r.name == superpal_static.SUPER_PAL_ROLE_NAME for r in getattr(member, "roles", [])
+    )
+    max_draws = 2 if is_super_pal else 1
+
+    card = await draw_card(owner_id=str(member.id), max_draws=max_draws)
+    if card is None:
+        limit_label = "2 draws" if is_super_pal else "1 draw"
+        await interaction.followup.send(
+            f"You've used your {limit_label} for this week. Come back Monday!",
+            ephemeral=True,
+        )
+        return
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            (card.card_member_id,),
+        ) as cur:
+            row = await cur.fetchone()
+
+    display_name = row[0] if row else "Unknown"
+    avatar_url = row[1] if row else None
+
+    embed = build_card_embed(
+        display_name=display_name,
+        avatar_url=avatar_url,
+        rarity=card.rarity,
+        card_number=card.id,
+        drawn_by=member.display_name,
+    )
+    embed.set_footer(text=f"{embed.footer.text} · drawn by {member.display_name}")
+    await interaction.followup.send(embed=embed)
+
+
 ###############
 # Looped task #
 ###############
@@ -268,6 +315,24 @@ async def on_ready():
         log.info('Slash commands synced')
     except Exception as e:
         log.error(f'Error syncing slash commands: {e}')
+
+    await init_db()
+    guild = bot.get_guild(superpal_env.GUILD_ID)
+    if guild:
+        members_data = [
+            {
+                "discord_id": str(m.id),
+                "display_name": m.display_name,
+                "avatar_url": str(m.display_avatar.url) if m.display_avatar else None,
+            }
+            for m in guild.members
+            if not m.bot
+        ]
+        await sync_members(members_data)
+        global _guild_members_cache
+        _guild_members_cache.clear()
+        _guild_members_cache.extend(members_data)
+        log.info("Synced %d members to card DB", len(members_data))
 
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
