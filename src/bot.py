@@ -19,7 +19,6 @@ import superpal.static as superpal_static
 import superpal.env as superpal_env
 from superpal.cards.db import init_db, DB_PATH
 from superpal.cards.service import draw_card, sync_members, generate_magic_link, trade_in, upgrade
-from superpal.cards.models import RARITY_ORDER
 from superpal.env import WEBAPP_BASE_URL
 from superpal.cards.embeds import build_card_embed
 
@@ -215,12 +214,18 @@ async def my_collection_command(interaction: discord.Interaction) -> None:
         link_type="collection",
         base_url=WEBAPP_BASE_URL,
     )
-    await interaction.user.send(
-        f"Here's your private collection link (valid for 24 hours after first click):\n{url}"
-    )
-    await interaction.response.send_message(
-        "Check your DMs for your collection link!", ephemeral=True
-    )
+    try:
+        await interaction.user.send(
+            f"Here's your private collection link (valid for 24 hours after first click):\n{url}"
+        )
+        await interaction.response.send_message(
+            "Check your DMs for your collection link!", ephemeral=True
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I couldn't send you a DM. Please enable DMs from server members and try again.",
+            ephemeral=True,
+        )
 
 
 @bot.tree.command(name="trade-in", description="Trade 3 duplicate cards for a random card of the same rarity")
@@ -338,12 +343,18 @@ async def admin_link_command(interaction: discord.Interaction) -> None:
         link_type="admin",
         base_url=WEBAPP_BASE_URL,
     )
-    await member.send(
-        f"Here's your private admin dashboard link (valid for 24 hours after first click):\n{url}"
-    )
-    await interaction.response.send_message(
-        "Check your DMs for your admin link!", ephemeral=True
-    )
+    try:
+        await member.send(
+            f"Here's your private admin dashboard link (valid for 24 hours after first click):\n{url}"
+        )
+        await interaction.response.send_message(
+            "Check your DMs for your admin link!", ephemeral=True
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I couldn't send you a DM. Please enable DMs from server members and try again.",
+            ephemeral=True,
+        )
 
 
 ###############
