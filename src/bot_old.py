@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa
 import asyncio, datetime, random
 
 # 3rd-party library

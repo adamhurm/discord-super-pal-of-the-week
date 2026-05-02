@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ display_name }}'s Collection — Bringus Card Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
+    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
+              padding-bottom: 16px; border-bottom: 1px solid #3f4147; flex-wrap: wrap; }
+    .avatar { width: 56px; height: 56px; border-radius: 50%; background: #5865f2;
+              object-fit: cover; }
+    .avatar-placeholder { width: 56px; height: 56px; border-radius: 50%;
+                          background: linear-gradient(135deg, #667eea, #764ba2);
+                          display: flex; align-items: center; justify-content: center;
+                          color: #fff; font-weight: 700; font-size: 20px; }
+    h1 { font-size: 1.4rem; font-weight: 700; }
+    .subtitle { color: #72767d; font-size: 13px; margin-top: 2px; }
+.pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    .pill { padding: 4px 10px; border-radius: 3px; font-size: 12px; font-weight: 700; color: #fff; }
+    .pill-common { background: #95a5a6; }
+    .pill-uncommon { background: #27ae60; }
+    .pill-rare { background: #2980b9; }
+    .pill-legendary { background: #f39c12; color: #7d4f00; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+    .card { background: #2b2d31; border-radius: 8px; padding: 14px;
+            border-left: 4px solid #95a5a6; }
+    .card-common { border-left-color: #95a5a6; }
+    .card-uncommon { border-left-color: #27ae60; }
+    .card-rare { border-left-color: #2980b9; }
+    .card-legendary { border-left-color: #f39c12; }
+    .card-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+                   margin-bottom: 8px; }
+    .card-avatar-placeholder { width: 44px; height: 44px; border-radius: 50%;
+                               background: #555; margin-bottom: 8px; }
+    .card-name { font-weight: 600; font-size: 13px; color: #fff; margin-bottom: 4px;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-rarity { font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+    .rarity-common { color: #95a5a6; }
+    .rarity-uncommon { color: #27ae60; }
+    .rarity-rare { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .qty-badge { display: inline-block; background: #3f4147; color: #b9bbbe;
+                 font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-top: 2px; }
+    .unknown { opacity: 0.4; border-left-color: #3f4147; }
+    .unknown .card-name { color: #555; }
+    .trade-btn {
+      display: block; width: 100%; margin-top: 10px;
+      background: #3f4147; color: #b9bbbe; border: none;
+      padding: 5px 0; border-radius: 3px; font-size: 11px;
+      font-weight: 700; cursor: pointer; letter-spacing: 0.5px;
+    }
+    .trade-btn:hover { background: #5865f2; color: #fff; }
+    .help-btn {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #3f4147; color: #b9bbbe; border: none;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .help-btn:hover { background: #5865f2; color: #fff; }
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75); z-index: 100;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal {
+      background: #2b2d31; border-radius: 8px; padding: 24px;
+      max-width: 560px; width: 100%; max-height: 80vh;
+      overflow-y: auto; position: relative;
+    }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 16px; color: #fff; }
+    .modal h3 { font-size: 0.95rem; color: #b9bbbe; margin: 16px 0 6px; }
+    .modal p, .modal li { font-size: 13px; color: #b9bbbe; line-height: 1.6; margin-bottom: 6px; }
+    .modal ul { padding-left: 18px; }
+    .modal code { color: #96a0ff; }
+    .modal table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
+    .modal th { color: #72767d; text-align: left; padding: 4px 8px; border-bottom: 1px solid #3f4147; }
+    .modal td { color: #b9bbbe; padding: 4px 8px; }
+    .modal-close {
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: none; color: #72767d;
+      font-size: 20px; cursor: pointer; line-height: 1;
+    }
+    .modal-close:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    {% if avatar_url %}
+      <img class="avatar" src="{{ avatar_url }}" alt="">
+    {% else %}
+      <div class="avatar-placeholder">{{ display_name[0] | upper }}</div>
+    {% endif %}
+    <div>
+      <h1>{{ display_name }}'s Collection</h1>
+      <div class="subtitle">{{ total_cards }} card{{ 's' if total_cards != 1 else '' }} · {{ unique_members }} unique member{{ 's' if unique_members != 1 else '' }}</div>
+    </div>
+    <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help" style="margin-left:auto">?</button>
+  </div>
+
+  <div class="pills">
+    <span class="pill pill-common">COMMON ×{{ counts.common }}</span>
+    <span class="pill pill-uncommon">UNCOMMON ×{{ counts.uncommon }}</span>
+    <span class="pill pill-rare">RARE ×{{ counts.rare }}</span>
+    <span class="pill pill-legendary">LEGENDARY ×{{ counts.legendary }}</span>
+  </div>
+
+  <div class="grid">
+    {% for card in owned %}
+    <div class="card card-{{ card.rarity }}">
+      {% if card.avatar_url %}
+        <img class="card-avatar" src="{{ card.avatar_url }}" alt="">
+      {% else %}
+        <div class="card-avatar-placeholder"></div>
+      {% endif %}
+      <div class="card-name">{{ card.display_name }}</div>
+      <div class="card-rarity rarity-{{ card.rarity }}">{{ card.rarity | upper }}</div>
+      {% if card.quantity > 1 %}
+        <div class="qty-badge">×{{ card.quantity }}</div>
+      {% endif %}
+      {% if card.quantity >= 3 %}
+        <form method="post" action="/collection/trade-in">
+          <input type="hidden" name="member_id" value="{{ card.member_id }}">
+          <input type="hidden" name="rarity" value="{{ card.rarity }}">
+          <button class="trade-btn" type="submit">TRADE IN (3×)</button>
+        </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {% for m in undiscovered %}
+    <div class="card unknown">
+      <div class="card-avatar-placeholder"></div>
+      <div class="card-name">???</div>
+      <div class="card-rarity" style="color:#555">NOT YET FOUND</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="modal-backdrop" id="help-modal" onclick="if(event.target===this)this.style.display='none'">
+    <div class="modal">
+      <button class="modal-close" onclick="document.getElementById('help-modal').style.display='none'">×</button>
+      <h2>Bringus Card Game — How to Play</h2>
+
+      <h3>Drawing Cards</h3>
+      <p>Use <code>/draw-card</code> in Discord once per week. The card posts publicly in the channel.</p>
+      <p>Super Pal of the Week holders get <strong>2 draws per week</strong>. Resets every Monday.</p>
+      <table>
+        <tr><th>Rarity</th><th>Chance</th><th>Color</th></tr>
+        <tr><td>Common</td><td>60%</td><td style="color:#95a5a6">&#9679;</td></tr>
+        <tr><td>Uncommon</td><td>25%</td><td style="color:#27ae60">&#9679;</td></tr>
+        <tr><td>Rare</td><td>12%</td><td style="color:#2980b9">&#9679;</td></tr>
+        <tr><td>Legendary</td><td>3%</td><td style="color:#f39c12">&#9679;</td></tr>
+      </table>
+
+      <h3>This Page</h3>
+      <p>Run <code>/my-collection</code> in Discord to get a private link. The link works once — first click opens a 24-hour session. After it expires, run <code>/my-collection</code> again for a fresh link.</p>
+      <p>Cards you haven't drawn yet appear as <strong>???</strong> silhouettes — so you can see the full roster.</p>
+
+      <h3>Trading In</h3>
+      <p>When you own <strong>3 or more copies</strong> of a card, a <strong>Trade In (3×)</strong> button appears on it. Click it to spend 3 copies and receive 1 random card of the same rarity.</p>
+
+      <h3>Upgrading — <code>/upgrade @member rarity</code></h3>
+      <p>Spend <strong>5 copies</strong> of the same [member + rarity] to receive that member at the next rarity tier.</p>
+      <ul>
+        <li>Common → Uncommon → Rare → Legendary</li>
+        <li>Legendary cards cannot be upgraded further.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

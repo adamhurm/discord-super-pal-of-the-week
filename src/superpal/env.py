@@ -96,6 +96,11 @@ GPT_ASSISTANT_ID = get_env('GPT_ASSISTANT_ID')
 GPT_ASSISTANT_THREAD_ID = get_env('GPT_ASSISTANT_THREAD_ID')
 OPENAI_API_KEY = get_env('OPENAI_API_KEY')
 
+# Webapp configuration
+WEBAPP_HOST: str = get_env("WEBAPP_HOST", default="0.0.0.0")
+WEBAPP_PORT: int = get_env_int("WEBAPP_PORT", default=8080)
+WEBAPP_BASE_URL: str = get_env("WEBAPP_BASE_URL", default=f"http://localhost:{WEBAPP_PORT}")
+
 # Validate AI requirements
 if OPENAI_API_KEY is None:
     log.warning(

@@ -1,7 +1,6 @@
 """Pytest configuration and shared fixtures for test suite."""
-import os
 import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock
+from unittest.mock import AsyncMock, Mock
 import discord
 from discord.ext import commands
 

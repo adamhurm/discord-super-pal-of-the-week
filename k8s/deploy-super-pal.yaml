@@ -75,6 +75,18 @@ spec:
               secretKeyRef:
                 name: super-pal-env
                 key: gpt-assistant-thread-id
+          - name: WEBAPP_PORT
+            value: "8080"
+          - name: WEBAPP_BASE_URL
+            value: "https://cards.bring-us.com"
+          - name: CARDS_DB_PATH
+            value: "/data/cards.db"
+        ports:
+          - containerPort: 8080
+            name: webapp
+        volumeMounts:
+          - name: card-data
+            mountPath: /data
       - name: spin-the-wheel
         image: adamhurm/discord-spin-the-wheel:1.0.0
         imagePullPolicy: Always
@@ -86,3 +98,6 @@ spec:
                 key: spin-the-wheel-discord-key
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
+      volumes:
+        - name: card-data
+          emptyDir: {}  # TODO: replace with PersistentVolumeClaim before production deployment

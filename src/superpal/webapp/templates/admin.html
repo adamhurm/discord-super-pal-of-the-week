@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — Bringus Card Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { color: #72767d; font-size: 13px; margin-bottom: 24px; }
+    .stats { background: #2b2d31; border-radius: 6px; padding: 14px; margin-bottom: 20px; font-size: 13px; color: #72767d; }
+    .stats strong { color: #dcddde; }
+    .sync-btn { background: #5865f2; color: #fff; border: none; padding: 8px 16px;
+                border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 10px; display: block; }
+    .sync-btn:hover { background: #4752c4; }
+    .member-list { display: flex; flex-direction: column; gap: 8px; }
+    .member-row { background: #2b2d31; border-radius: 6px; padding: 10px 14px;
+                  display: flex; align-items: center; gap: 12px; }
+    .member-row.excluded { opacity: 0.55; border: 1px dashed #ed4245; }
+    .member-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: #555; }
+    .member-info { flex: 1; }
+    .member-name { font-weight: 600; font-size: 13px; }
+    .member-id { font-size: 11px; color: #72767d; margin-top: 2px; }
+    .excluded-label { font-size: 11px; color: #ed4245; margin-top: 2px; }
+    .exclude-btn { background: #ed4245; color: #fff; border: none; padding: 5px 12px;
+                   border-radius: 3px; cursor: pointer; font-size: 12px; }
+    .include-btn { background: #57f287; color: #1e1f22; border: none; padding: 5px 12px;
+                   border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: 700; }
+    .help-btn {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #3f4147; color: #b9bbbe; border: none;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .help-btn:hover { background: #5865f2; color: #fff; }
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75); z-index: 100;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal {
+      background: #2b2d31; border-radius: 8px; padding: 24px;
+      max-width: 560px; width: 100%; max-height: 80vh;
+      overflow-y: auto; position: relative;
+    }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 16px; color: #fff; }
+    .modal h3 { font-size: 0.95rem; color: #b9bbbe; margin: 16px 0 6px; }
+    .modal p, .modal li { font-size: 13px; color: #b9bbbe; line-height: 1.6; margin-bottom: 6px; }
+    .modal code { color: #96a0ff; }
+    .modal-close {
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: none; color: #72767d;
+      font-size: 20px; cursor: pointer; line-height: 1;
+    }
+    .modal-close:hover { color: #fff; }
+    details { margin-bottom: 16px; }
+    details > summary {
+      background: #2b2d31; border-radius: 6px; padding: 10px 14px;
+      cursor: pointer; font-size: 13px; font-weight: 600; color: #b9bbbe;
+      user-select: none;
+    }
+    details[open] > summary { border-radius: 6px 6px 0 0; }
+    details > summary:hover { color: #fff; }
+    .form-panel { background: #2b2d31; border-radius: 0 0 6px 6px; padding: 14px; border-top: 1px solid #1e1f22; }
+    .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .form-row label { font-size: 11px; color: #72767d; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+    .form-row select, .form-row input[type=text], .form-row input[type=number] {
+      background: #1e1f22; color: #dcddde; border: 1px solid #3f4147;
+      border-radius: 4px; padding: 6px 8px; font-size: 13px; width: 100%;
+    }
+    .award-btn { background: #5865f2; color: #fff; border: none; padding: 8px 16px;
+                 border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .award-btn:hover { background: #4752c4; }
+    .img-label {
+      display: inline-block; background: #3f4147; color: #b9bbbe;
+      padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;
+      font-weight: 700; white-space: nowrap;
+    }
+    .img-label:hover { background: #5865f2; color: #fff; }
+  </style>
+</head>
+<body>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+    <h1 style="margin-bottom:0">Admin Dashboard</h1>
+    <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help">?</button>
+  </div>
+  <p class="subtitle">Excluded members do not appear in the card draw pool.</p>
+
+  <div class="stats">
+    <strong>{{ stats.eligible }}</strong> eligible ·
+    <strong>{{ stats.excluded }}</strong> excluded ·
+    <strong>{{ stats.total_cards }}</strong> cards in circulation
+    <form method="post" action="/admin/sync">
+      <button class="sync-btn" type="submit">Sync Member List from Discord</button>
+    </form>
+  </div>
+
+  <details>
+    <summary>Add Member Manually</summary>
+    <div class="form-panel">
+      <form method="post" action="/admin/member/add">
+        <div class="form-row">
+          <label>Unique ID (any string, used internally)</label>
+          <input type="text" name="discord_id" placeholder="e.g. dingus_supreme" required>
+        </div>
+        <div class="form-row">
+          <label>Display Name</label>
+          <input type="text" name="display_name" placeholder="e.g. Dingus Supreme" required>
+        </div>
+        <button type="submit" class="award-btn">Add Member</button>
+      </form>
+    </div>
+  </details>
+
+  <details>
+    <summary>Award a Card</summary>
+    <div class="form-panel">
+      <form method="post" action="/admin/award">
+        <div class="form-row">
+          <label>Owner (receives the card)</label>
+          <select name="owner_id">
+            {% for m in members %}<option value="{{ m.discord_id }}">{{ m.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Card (which member's card)</label>
+          <select name="card_member_id">
+            {% for m in members %}<option value="{{ m.discord_id }}">{{ m.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Rarity</label>
+          <select name="rarity">
+            <option value="common">Common</option>
+            <option value="uncommon">Uncommon</option>
+            <option value="rare">Rare</option>
+            <option value="legendary">Legendary</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Quantity</label>
+          <input type="number" name="quantity" value="1" min="1" max="100">
+        </div>
+        <button type="submit" class="award-btn">Award Card</button>
+      </form>
+    </div>
+  </details>
+
+  <div class="member-list">
+    {% for m in members %}
+    <div class="member-row {% if m.is_excluded %}excluded{% endif %}">
+      {% if m.avatar_url %}
+        <img class="member-avatar" src="{{ m.avatar_url }}" alt="">
+      {% else %}
+        <div class="member-avatar"></div>
+      {% endif %}
+      <div class="member-info">
+        <div class="member-name">{{ m.display_name }}</div>
+        {% if m.is_excluded %}
+          <div class="excluded-label">Excluded — not in card pool</div>
+        {% else %}
+          <div class="member-id">ID: {{ m.discord_id }}</div>
+        {% endif %}
+      </div>
+      <form method="post" action="/admin/member/{{ m.discord_id }}/avatar" enctype="multipart/form-data">
+        <label class="img-label">
+          Set Image
+          <input type="file" name="image" accept="image/*" style="display:none" onchange="this.form.submit()">
+        </label>
+      </form>
+      <form method="post" action="/admin/exclude/{{ m.discord_id }}">
+        {% if m.is_excluded %}
+          <button class="include-btn" type="submit">Re-include</button>
+        {% else %}
+          <button class="exclude-btn" type="submit">Exclude</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="modal-backdrop" id="help-modal" onclick="if(event.target===this)this.style.display='none'">
+    <div class="modal">
+      <button class="modal-close" onclick="document.getElementById('help-modal').style.display='none'">×</button>
+      <h2>Admin Dashboard — Guide</h2>
+
+      <h3>Excluding a Member</h3>
+      <p>Click <strong>Exclude</strong> next to a member to remove them from the card draw pool. Excluded members will not appear in <code>/draw-card</code>, <code>/trade-in</code>, or <code>/upgrade</code> results. Click <strong>Re-include</strong> to restore them.</p>
+
+      <h3>Syncing the Member List</h3>
+      <p>Click <strong>Sync Member List from Discord</strong> to pull the current server roster into the database. Do this after members join or change their display name so their cards stay up to date.</p>
+
+      <h3>Card Pool Stats</h3>
+      <p><strong>Eligible</strong> — members currently in the draw pool.<br>
+      <strong>Excluded</strong> — members blocked from the pool.<br>
+      <strong>Cards in circulation</strong> — total cards held across all players (counts duplicates).</p>
+
+      <h3>Accessing This Page</h3>
+      <p>Run <code>/admin-link</code> in Discord (requires The Clippy role). The bot DMs a one-time link — first click opens a 24-hour admin session.</p>
+    </div>
+  </div>
+</body>
+</html>

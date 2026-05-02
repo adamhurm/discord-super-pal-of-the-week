@@ -4,9 +4,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 import discord
-from discord.ext import commands
 import datetime
 
 
@@ -242,7 +241,9 @@ class TestFunCommands:
 
         # Get active members (simulating the bot logic)
         active_members = [vc.members for vc in mock_guild.voice_channels]
-        flatten = lambda l: [x for y in l for x in y]
+
+        def flatten(nested):
+            return [x for y in nested for x in y]
         true_member_list = [m for m in flatten(active_members) if not m.bot]
 
         # Check for AFK channel

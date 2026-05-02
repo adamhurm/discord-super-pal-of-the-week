@@ -18,6 +18,16 @@ Super Pal Bot currently supports these commands and the looped task:
 - **Looped Task:**
   - Pick new super pal every Sunday at noon (dependent on bot's timezone).
 
+## Bringus Card Game
+
+A trading card game built into the bot. See the [card game guide](docs/card-game-guide.md) for full rules.
+
+- `/draw-card` — draw a random card (once per week; twice if you're Super Pal)
+- `/my-collection` — get a private link to your collection at [cards.bring-us.com](https://cards.bring-us.com)
+- `/trade-in @member rarity` — spend 3 copies to receive 1 random card of the same rarity
+- `/upgrade @member rarity` — spend 5 copies to upgrade that card to the next rarity tier
+- `/admin-link` — (Clippy role only) get a link to the admin dashboard
+
 ℹ️ See the [supported features page](https://github.com/adamhurm/discord-super-pal-of-the-week/wiki/Features) for a full list of commands.
 
 ## Building Native Binaries
