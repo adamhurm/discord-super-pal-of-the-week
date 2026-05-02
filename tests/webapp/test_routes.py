@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
 from superpal.webapp.app import create_app
 from superpal.cards.models import MagicLink

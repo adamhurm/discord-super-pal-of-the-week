@@ -724,7 +724,8 @@ async def karate_chop(ctx):
             return
 
         # Flatten user list, filter out bots, and choose random user
-        flatten = lambda l: [x for y in l for x in y]
+        def flatten(nested):
+            return [x for y in nested for x in y]
         true_member_list = [m for m in flatten(active_members) if not m.bot]
 
         if not true_member_list:

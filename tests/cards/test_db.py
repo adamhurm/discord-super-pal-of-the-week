@@ -1,7 +1,5 @@
-import os
 import pytest
 import aiosqlite
-from superpal.cards.db import init_db
 
 
 @pytest.fixture

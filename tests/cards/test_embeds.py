@@ -1,7 +1,6 @@
 import discord
-import pytest
 from superpal.cards.embeds import build_card_embed
-from superpal.cards.models import RARITY_COLORS, RARITY_LABELS
+from superpal.cards.models import RARITY_COLORS
 
 
 def test_build_card_embed_common():
