@@ -18,7 +18,9 @@ from discord.ext import commands, tasks
 import superpal.static as superpal_static
 import superpal.env as superpal_env
 from superpal.cards.db import init_db, DB_PATH
-from superpal.cards.service import draw_card, sync_members
+from superpal.cards.service import draw_card, sync_members, generate_magic_link, trade_in, upgrade
+from superpal.cards.models import RARITY_ORDER
+from superpal.env import WEBAPP_BASE_URL
 from superpal.cards.embeds import build_card_embed
 
 # Get logger
@@ -33,6 +35,8 @@ intents.message_content = True  # Required to use spin-the-wheel and grab winner
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 _guild_members_cache: list[dict] = []
+
+CLIPPY_ROLE_ID = 1085646770006151259
 
 
 ##################
@@ -202,6 +206,144 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
         drawn_by=member.display_name,
     )
     await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="my-collection", description="Get a private link to your card collection")
+async def my_collection_command(interaction: discord.Interaction) -> None:
+    url = await generate_magic_link(
+        user_id=str(interaction.user.id),
+        link_type="collection",
+        base_url=WEBAPP_BASE_URL,
+    )
+    await interaction.user.send(
+        f"Here's your private collection link (valid for 24 hours after first click):\n{url}"
+    )
+    await interaction.response.send_message(
+        "Check your DMs for your collection link!", ephemeral=True
+    )
+
+
+@bot.tree.command(name="trade-in", description="Trade 3 duplicate cards for a random card of the same rarity")
+@discord.app_commands.describe(
+    member="The member whose card you want to trade in",
+    rarity="The rarity of the card to trade",
+)
+@discord.app_commands.choices(rarity=[
+    discord.app_commands.Choice(name="Common", value="common"),
+    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+    discord.app_commands.Choice(name="Rare", value="rare"),
+    discord.app_commands.Choice(name="Legendary", value="legendary"),
+])
+async def trade_in_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    rarity: str,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+    card = await trade_in(
+        owner_id=str(interaction.user.id),
+        card_member_id=str(member.id),
+        rarity=rarity,
+    )
+    if card is None:
+        await interaction.followup.send(
+            f"You need at least 3× {rarity.upper()} {member.display_name} to trade in.",
+            ephemeral=True,
+        )
+        return
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            (card.card_member_id,),
+        ) as cur:
+            row = await cur.fetchone()
+
+    display_name = row[0] if row else "Unknown"
+    avatar_url = row[1] if row else None
+    embed = build_card_embed(
+        display_name=display_name,
+        avatar_url=avatar_url,
+        rarity=card.rarity,
+        card_number=card.id,
+        drawn_by=interaction.user.display_name,
+    )
+    await interaction.followup.send(
+        "Trade complete! You received:", embed=embed, ephemeral=True
+    )
+
+
+@bot.tree.command(name="upgrade", description="Spend 5 duplicate cards to upgrade a member's card rarity")
+@discord.app_commands.describe(
+    member="The member whose card you want to upgrade",
+    rarity="The current rarity of the card",
+)
+@discord.app_commands.choices(rarity=[
+    discord.app_commands.Choice(name="Common", value="common"),
+    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+    discord.app_commands.Choice(name="Rare", value="rare"),
+])
+async def upgrade_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    rarity: str,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+    card = await upgrade(
+        owner_id=str(interaction.user.id),
+        card_member_id=str(member.id),
+        rarity=rarity,
+    )
+    if card is None:
+        await interaction.followup.send(
+            f"You need at least 5× {rarity.upper()} {member.display_name} to upgrade.",
+            ephemeral=True,
+        )
+        return
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            (card.card_member_id,),
+        ) as cur:
+            row = await cur.fetchone()
+
+    display_name = row[0] if row else "Unknown"
+    avatar_url = row[1] if row else None
+    embed = build_card_embed(
+        display_name=display_name,
+        avatar_url=avatar_url,
+        rarity=card.rarity,
+        card_number=card.id,
+        drawn_by=interaction.user.display_name,
+    )
+    await interaction.followup.send(
+        f"Upgrade complete! {member.display_name} is now {card.rarity.upper()}:",
+        embed=embed,
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")
+async def admin_link_command(interaction: discord.Interaction) -> None:
+    member = interaction.user
+    role_ids = [r.id for r in getattr(member, "roles", [])]
+    if CLIPPY_ROLE_ID not in role_ids:
+        await interaction.response.send_message(
+            "You don't have permission to use this command.", ephemeral=True
+        )
+        return
+    url = await generate_magic_link(
+        user_id=str(member.id),
+        link_type="admin",
+        base_url=WEBAPP_BASE_URL,
+    )
+    await member.send(
+        f"Here's your private admin dashboard link (valid for 24 hours after first click):\n{url}"
+    )
+    await interaction.response.send_message(
+        "Check your DMs for your admin link!", ephemeral=True
+    )
 
 
 ###############
