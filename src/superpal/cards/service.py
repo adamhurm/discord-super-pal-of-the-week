@@ -116,14 +116,21 @@ async def get_card_quantity(owner_id: str, card_member_id: str, rarity: str) -> 
 
 async def trade_in(owner_id: str, card_member_id: str, rarity: str) -> Optional[UserCard]:
     """Trade 3x [card_member_id, rarity] for a random card of the same rarity.
-    Returns the new card, or None if insufficient duplicates."""
-    qty = await get_card_quantity(owner_id, card_member_id, rarity)
-    if qty < 3:
+    Returns the new card, or None if insufficient duplicates or invalid rarity."""
+    if rarity not in RARITY_ORDER:
         return None
 
     now = datetime.now(timezone.utc).isoformat()
 
     async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (owner_id, card_member_id, rarity),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row[0] < 3:
+            return None
+
         await db.execute(
             "UPDATE user_cards SET quantity = quantity - 3 "
             "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
@@ -169,18 +176,22 @@ async def trade_in(owner_id: str, card_member_id: str, rarity: str) -> Optional[
 
 async def upgrade(owner_id: str, card_member_id: str, rarity: str) -> Optional[UserCard]:
     """Trade 5x [card_member_id, rarity] for 1x same member at next rarity tier.
-    Returns upgraded card, or None if insufficient copies or already Legendary."""
+    Returns upgraded card, or None if insufficient copies, already Legendary, or invalid rarity."""
     if rarity == "legendary" or rarity not in RARITY_ORDER:
-        return None
-
-    qty = await get_card_quantity(owner_id, card_member_id, rarity)
-    if qty < 5:
         return None
 
     next_rarity = RARITY_ORDER[RARITY_ORDER.index(rarity) + 1]
     now = datetime.now(timezone.utc).isoformat()
 
     async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (owner_id, card_member_id, rarity),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row[0] < 5:
+            return None
+
         await db.execute(
             "UPDATE user_cards SET quantity = quantity - 5 "
             "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
@@ -288,7 +299,7 @@ async def get_collection(owner_id: str) -> dict:
         async with db.execute(
             "SELECT uc.card_member_id, m.display_name, m.avatar_url, uc.rarity, uc.quantity "
             "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
-            "WHERE uc.owner_id = ? ORDER BY uc.rarity, m.display_name",
+            "WHERE uc.owner_id = ? AND m.is_excluded = 0 ORDER BY uc.rarity, m.display_name",
             (owner_id,),
         ) as cur:
             owned_rows = await cur.fetchall()
