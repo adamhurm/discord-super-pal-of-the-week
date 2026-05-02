@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ display_name }}'s Collection — Bringus Card Game</title>
+  {% if replace_url %}<script>history.replaceState(null, '', '{{ replace_url }}');</script>{% endif %}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }

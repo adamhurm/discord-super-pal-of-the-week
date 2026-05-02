@@ -8,7 +8,7 @@ from superpal.cards.db import DB_PATH
 from superpal.cards.service import (
     add_member,
     award_card,
-    consume_magic_link,
+    use_magic_link,
     get_collection,
     get_all_members_for_admin,
     get_pool_stats,
@@ -27,13 +27,44 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
+async def _collection_context(user_id: str) -> dict:
+    data = await get_collection(user_id)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    return {
+        "display_name": row[0] if row else "Unknown",
+        "avatar_url": row[1] if row else None,
+        "owned": data["owned"],
+        "undiscovered": data["undiscovered"],
+        "counts": data["counts"],
+        "total_cards": sum(c["quantity"] for c in data["owned"]),
+        "unique_members": len({c["member_id"] for c in data["owned"]}),
+    }
+
+
+async def _admin_context() -> dict:
+    return {
+        "members": await get_all_members_for_admin(),
+        "stats": await get_pool_stats(),
+    }
+
+
 @router.get("/link/{token}")
 async def magic_link_landing(token: str, request: Request):
-    link = await consume_magic_link(token)
+    link = await use_magic_link(token)
     if link is None:
         return templates.TemplateResponse(request, "expired.html")
-    redirect_path = "/admin" if link.link_type == "admin" else "/collection"
-    resp = RedirectResponse(url=redirect_path, status_code=303)
+    if link.link_type == "admin":
+        ctx = await _admin_context()
+        template, replace_url = "admin.html", "/admin"
+    else:
+        ctx = await _collection_context(link.user_id)
+        template, replace_url = "collection.html", "/collection"
+    resp = templates.TemplateResponse(request, template, {**ctx, "replace_url": replace_url})
     set_session_cookie(resp, link.session_token)
     return resp
 
@@ -43,26 +74,8 @@ async def collection_view(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    data = await get_collection(session.user_id)
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (session.user_id,),
-        ) as cur:
-            row = await cur.fetchone()
-    display_name = row[0] if row else "Unknown"
-    avatar_url = row[1] if row else None
-    total_cards = sum(c["quantity"] for c in data["owned"])
-    unique_members = len({c["member_id"] for c in data["owned"]})
-    return templates.TemplateResponse(request, "collection.html", {
-        "display_name": display_name,
-        "avatar_url": avatar_url,
-        "owned": data["owned"],
-        "undiscovered": data["undiscovered"],
-        "counts": data["counts"],
-        "total_cards": total_cards,
-        "unique_members": unique_members,
-    })
+    ctx = await _collection_context(session.user_id)
+    return templates.TemplateResponse(request, "collection.html", ctx)
 
 
 @router.post("/collection/trade-in", response_class=HTMLResponse)
@@ -96,12 +109,8 @@ async def admin_view(request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html")
-    members = await get_all_members_for_admin()
-    stats = await get_pool_stats()
-    return templates.TemplateResponse(request, "admin.html", {
-        "members": members,
-        "stats": stats,
-    })
+    ctx = await _admin_context()
+    return templates.TemplateResponse(request, "admin.html", ctx)
 
 
 @router.post("/admin/exclude/{member_id}")

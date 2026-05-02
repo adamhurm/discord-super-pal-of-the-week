@@ -236,8 +236,12 @@ async def generate_magic_link(user_id: str, link_type: str, base_url: str) -> st
     return f"{base_url}/link/{token}"
 
 
-async def consume_magic_link(token: str) -> Optional[MagicLink]:
-    """Consume a token on first use. Returns MagicLink with session_token set, or None if already used."""
+async def use_magic_link(token: str) -> Optional[MagicLink]:
+    """Return a valid MagicLink for token if it exists and hasn't expired (24h from creation).
+    Reusable within the 24h window — each call issues a fresh session expiring at the same time as the link.
+    Returns None if the token is unknown or the link has expired."""
+    now = datetime.now(timezone.utc)
+
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT token, user_id, link_type, created_at, consumed_at FROM magic_links WHERE token = ?",
@@ -245,24 +249,31 @@ async def consume_magic_link(token: str) -> Optional[MagicLink]:
         ) as cur:
             row = await cur.fetchone()
 
-        if not row or row[4] is not None:
+        if not row:
+            return None
+
+        created_at = datetime.fromisoformat(row[3])
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        link_expires = created_at + timedelta(hours=24)
+        if now >= link_expires:
             return None
 
         session_token = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
-        expires = (now + timedelta(hours=24)).isoformat()
-        now_str = now.isoformat()
+        session_expires = link_expires.isoformat()
 
+        # Record first use time but don't gate on it.
+        consumed_at = row[4] if row[4] is not None else now.isoformat()
         await db.execute(
             "UPDATE magic_links SET consumed_at = ?, session_token = ?, session_expires_at = ? WHERE token = ?",
-            (now_str, session_token, expires, token),
+            (consumed_at, session_token, session_expires, token),
         )
         await db.commit()
 
         return MagicLink(
             token=row[0], user_id=row[1], link_type=row[2],
-            created_at=row[3], consumed_at=now_str,
-            session_token=session_token, session_expires_at=expires,
+            created_at=row[3], consumed_at=consumed_at,
+            session_token=session_token, session_expires_at=session_expires,
         )
 
 
