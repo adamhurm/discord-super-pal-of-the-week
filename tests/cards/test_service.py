@@ -136,11 +136,13 @@ async def test_trade_in_succeeds_with_three(db):
             (datetime.now(timezone.utc).isoformat(),)
         )
         await conn.commit()
-    result = await svc.trade_in("111", "222", "common")
+    import unittest.mock as mock
+    with mock.patch("random.choice", return_value="111"):
+        result = await svc.trade_in("111", "222", "common")
     assert result is not None
     assert result.rarity == "common"
     assert result.owner_id == "111"
-    # Source cards deducted
+    # Source cards fully deducted (trade gave back "111", not "222")
     remaining = await svc.get_card_quantity("111", "222", "common")
     assert remaining == 0
 
