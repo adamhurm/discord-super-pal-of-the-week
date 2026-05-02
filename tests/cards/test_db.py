@@ -1,8 +1,7 @@
-import asyncio
 import os
 import pytest
 import aiosqlite
-from superpal.cards.db import init_db, DB_PATH
+from superpal.cards.db import init_db
 
 
 @pytest.fixture
