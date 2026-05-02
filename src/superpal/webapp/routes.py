@@ -7,6 +7,7 @@ from pathlib import Path
 from superpal.cards.db import DB_PATH
 from superpal.cards.service import (
     consume_magic_link,
+    generate_magic_link,
     get_collection,
     get_all_members_for_admin,
     get_pool_stats,
@@ -65,10 +66,9 @@ async def collection_refresh(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    from superpal.cards.service import generate_magic_link, consume_magic_link as consume
     url = await generate_magic_link(session.user_id, "collection", WEBAPP_BASE_URL)
     token = url.split("/")[-1]
-    link = await consume(token)
+    link = await consume_magic_link(token)
     resp = RedirectResponse(url="/collection", status_code=303)
     if link:
         set_session_cookie(resp, link.session_token)
@@ -92,7 +92,7 @@ async def admin_view(request: Request):
 async def toggle_exclude(member_id: str, request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(request, "expired.html", {})
     members = await get_all_members_for_admin()
     current = next((m for m in members if m["discord_id"] == member_id), None)
     if current:
@@ -104,7 +104,7 @@ async def toggle_exclude(member_id: str, request: Request):
 async def admin_sync(request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(request, "expired.html", {})
     try:
         from bot import _guild_members_cache
         if _guild_members_cache:

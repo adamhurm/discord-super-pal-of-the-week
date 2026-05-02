@@ -61,3 +61,37 @@ async def test_admin_shows_expired_without_session(client):
         response = await client.get("/admin")
     assert response.status_code == 200
     assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_collection_session_cant_access_admin(client):
+    """A collection session should not be able to access the admin page."""
+    link = _link(link_type="collection")
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)):
+        response = await client.get("/admin")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_collection_refresh_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post("/collection/refresh")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_exclude_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post("/admin/exclude/123")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_sync_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post("/admin/sync")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
