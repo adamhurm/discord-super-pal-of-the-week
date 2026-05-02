@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ display_name }}'s Collection — Bringus Card Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
+    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
+              padding-bottom: 16px; border-bottom: 1px solid #3f4147; flex-wrap: wrap; }
+    .avatar { width: 56px; height: 56px; border-radius: 50%; background: #5865f2;
+              object-fit: cover; }
+    .avatar-placeholder { width: 56px; height: 56px; border-radius: 50%;
+                          background: linear-gradient(135deg, #667eea, #764ba2);
+                          display: flex; align-items: center; justify-content: center;
+                          color: #fff; font-weight: 700; font-size: 20px; }
+    h1 { font-size: 1.4rem; font-weight: 700; }
+    .subtitle { color: #72767d; font-size: 13px; margin-top: 2px; }
+    .refresh-btn { margin-left: auto; background: #5865f2; color: #fff; border: none;
+                   padding: 8px 18px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .refresh-btn:hover { background: #4752c4; }
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    .pill { padding: 4px 10px; border-radius: 3px; font-size: 12px; font-weight: 700; color: #fff; }
+    .pill-common { background: #95a5a6; }
+    .pill-uncommon { background: #27ae60; }
+    .pill-rare { background: #2980b9; }
+    .pill-legendary { background: #f39c12; color: #7d4f00; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+    .card { background: #2b2d31; border-radius: 8px; padding: 14px;
+            border-left: 4px solid #95a5a6; }
+    .card-common { border-left-color: #95a5a6; }
+    .card-uncommon { border-left-color: #27ae60; }
+    .card-rare { border-left-color: #2980b9; }
+    .card-legendary { border-left-color: #f39c12; }
+    .card-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+                   margin-bottom: 8px; }
+    .card-avatar-placeholder { width: 44px; height: 44px; border-radius: 50%;
+                               background: #555; margin-bottom: 8px; }
+    .card-name { font-weight: 600; font-size: 13px; color: #fff; margin-bottom: 4px;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-rarity { font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+    .rarity-common { color: #95a5a6; }
+    .rarity-uncommon { color: #27ae60; }
+    .rarity-rare { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .qty-badge { display: inline-block; background: #3f4147; color: #b9bbbe;
+                 font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-top: 2px; }
+    .unknown { opacity: 0.4; border-left-color: #3f4147; }
+    .unknown .card-name { color: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    {% if avatar_url %}
+      <img class="avatar" src="{{ avatar_url }}" alt="">
+    {% else %}
+      <div class="avatar-placeholder">{{ display_name[0] | upper }}</div>
+    {% endif %}
+    <div>
+      <h1>{{ display_name }}'s Collection</h1>
+      <div class="subtitle">{{ total_cards }} card{{ 's' if total_cards != 1 else '' }} · {{ unique_members }} unique member{{ 's' if unique_members != 1 else '' }}</div>
+    </div>
+    <form method="post" action="/collection/refresh" style="margin-left:auto">
+      <button class="refresh-btn" type="submit">Generate New Link</button>
+    </form>
+  </div>
+
+  <div class="pills">
+    <span class="pill pill-common">COMMON ×{{ counts.common }}</span>
+    <span class="pill pill-uncommon">UNCOMMON ×{{ counts.uncommon }}</span>
+    <span class="pill pill-rare">RARE ×{{ counts.rare }}</span>
+    <span class="pill pill-legendary">LEGENDARY ×{{ counts.legendary }}</span>
+  </div>
+
+  <div class="grid">
+    {% for card in owned %}
+    <div class="card card-{{ card.rarity }}">
+      {% if card.avatar_url %}
+        <img class="card-avatar" src="{{ card.avatar_url }}" alt="">
+      {% else %}
+        <div class="card-avatar-placeholder"></div>
+      {% endif %}
+      <div class="card-name">{{ card.display_name }}</div>
+      <div class="card-rarity rarity-{{ card.rarity }}">{{ card.rarity | upper }}</div>
+      {% if card.quantity > 1 %}
+        <div class="qty-badge">×{{ card.quantity }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {% for m in undiscovered %}
+    <div class="card unknown">
+      <div class="card-avatar-placeholder"></div>
+      <div class="card-name">???</div>
+      <div class="card-rarity" style="color:#555">NOT YET FOUND</div>
+    </div>
+    {% endfor %}
+  </div>
+</body>
+</html>

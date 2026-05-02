@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — Bringus Card Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { color: #72767d; font-size: 13px; margin-bottom: 24px; }
+    .stats { background: #2b2d31; border-radius: 6px; padding: 14px; margin-bottom: 20px; font-size: 13px; color: #72767d; }
+    .stats strong { color: #dcddde; }
+    .sync-btn { background: #5865f2; color: #fff; border: none; padding: 8px 16px;
+                border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 10px; display: block; }
+    .sync-btn:hover { background: #4752c4; }
+    .member-list { display: flex; flex-direction: column; gap: 8px; }
+    .member-row { background: #2b2d31; border-radius: 6px; padding: 10px 14px;
+                  display: flex; align-items: center; gap: 12px; }
+    .member-row.excluded { opacity: 0.55; border: 1px dashed #ed4245; }
+    .member-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: #555; }
+    .member-info { flex: 1; }
+    .member-name { font-weight: 600; font-size: 13px; }
+    .member-id { font-size: 11px; color: #72767d; margin-top: 2px; }
+    .excluded-label { font-size: 11px; color: #ed4245; margin-top: 2px; }
+    .exclude-btn { background: #ed4245; color: #fff; border: none; padding: 5px 12px;
+                   border-radius: 3px; cursor: pointer; font-size: 12px; }
+    .include-btn { background: #57f287; color: #1e1f22; border: none; padding: 5px 12px;
+                   border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Admin Dashboard</h1>
+  <p class="subtitle">Excluded members do not appear in the card draw pool.</p>
+
+  <div class="stats">
+    <strong>{{ stats.eligible }}</strong> eligible ·
+    <strong>{{ stats.excluded }}</strong> excluded ·
+    <strong>{{ stats.total_cards }}</strong> cards in circulation
+    <form method="post" action="/admin/sync">
+      <button class="sync-btn" type="submit">Sync Member List from Discord</button>
+    </form>
+  </div>
+
+  <div class="member-list">
+    {% for m in members %}
+    <div class="member-row {% if m.is_excluded %}excluded{% endif %}">
+      {% if m.avatar_url %}
+        <img class="member-avatar" src="{{ m.avatar_url }}" alt="">
+      {% else %}
+        <div class="member-avatar"></div>
+      {% endif %}
+      <div class="member-info">
+        <div class="member-name">{{ m.display_name }}</div>
+        {% if m.is_excluded %}
+          <div class="excluded-label">Excluded — not in card pool</div>
+        {% else %}
+          <div class="member-id">ID: {{ m.discord_id }}</div>
+        {% endif %}
+      </div>
+      <form method="post" action="/admin/exclude/{{ m.discord_id }}">
+        {% if m.is_excluded %}
+          <button class="include-btn" type="submit">Re-include</button>
+        {% else %}
+          <button class="exclude-btn" type="submit">Exclude</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</body>
+</html>
