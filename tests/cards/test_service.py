@@ -101,3 +101,105 @@ async def test_draw_card_increments_quantity_on_duplicate(db):
         card = await svc.draw_card(owner_id="111", max_draws=2)
     assert card is not None
     assert card.quantity == 2
+
+
+@pytest.mark.asyncio
+async def test_trade_in_requires_three(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+    ])
+    # Give owner 2 copies of Bob's common card
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('111', '222', 'common', 2, ?)",
+            (datetime.now(timezone.utc).isoformat(),)
+        )
+        await conn.commit()
+    result = await svc.trade_in("111", "222", "common")
+    assert result is None  # not enough
+
+
+@pytest.mark.asyncio
+async def test_trade_in_succeeds_with_three(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+    ])
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('111', '222', 'common', 3, ?)",
+            (datetime.now(timezone.utc).isoformat(),)
+        )
+        await conn.commit()
+    result = await svc.trade_in("111", "222", "common")
+    assert result is not None
+    assert result.rarity == "common"
+    assert result.owner_id == "111"
+    # Source cards deducted
+    remaining = await svc.get_card_quantity("111", "222", "common")
+    assert remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_upgrade_legendary_rejected(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+    ])
+    result = await svc.upgrade("111", "111", "legendary")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_upgrade_requires_five(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+    ])
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('111', '111', 'common', 4, ?)",
+            (datetime.now(timezone.utc).isoformat(),)
+        )
+        await conn.commit()
+    result = await svc.upgrade("111", "111", "common")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_upgrade_succeeds(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+    ])
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('111', '111', 'common', 5, ?)",
+            (datetime.now(timezone.utc).isoformat(),)
+        )
+        await conn.commit()
+    result = await svc.upgrade("111", "111", "common")
+    assert result is not None
+    assert result.rarity == "uncommon"
+    assert result.card_member_id == "111"
+    remaining = await svc.get_card_quantity("111", "111", "common")
+    assert remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_magic_link_consumed_once(db):
+    db_mod, svc = db
+    url = await svc.generate_magic_link("111", "collection", "http://localhost:8080")
+    token = url.split("/")[-1]
+    link1 = await svc.consume_magic_link(token)
+    link2 = await svc.consume_magic_link(token)
+    assert link1 is not None
+    assert link1.session_token is not None
+    assert link2 is None  # already consumed
