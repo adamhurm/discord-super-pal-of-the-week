@@ -7,6 +7,7 @@ featuring AI-powered image generation, automated role management, and fun comman
 
 import asyncio
 import datetime
+import uvicorn
 import random
 from typing import List, Optional
 
@@ -753,11 +754,18 @@ async def karate_chop(ctx):
 ################
 # Start the bot
 ################
-if __name__ == '__main__':
-    if not superpal_env.TOKEN:
-        log.error("Bot token not configured. Cannot start bot.")
-    else:
-        try:
-            bot.run(superpal_env.TOKEN)
-        except Exception as e:
-            log.error(f"Fatal error running bot: {e}")
+async def _main() -> None:
+    from superpal.webapp.app import create_app
+    from superpal.env import WEBAPP_HOST, WEBAPP_PORT
+    webapp = create_app()
+    config = uvicorn.Config(webapp, host=WEBAPP_HOST, port=WEBAPP_PORT, log_level="info")
+    server = uvicorn.Server(config)
+    async with bot:
+        await asyncio.gather(
+            bot.start(superpal_env.TOKEN),
+            server.serve(),
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
