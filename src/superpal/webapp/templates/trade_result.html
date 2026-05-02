@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade Complete — Bringus Card Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif;
+           display: flex; flex-direction: column; align-items: center;
+           justify-content: center; min-height: 100vh; padding: 24px; }
+    .result-box { max-width: 340px; width: 100%; text-align: center; }
+    .label { color: #72767d; font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: #2b2d31; border-radius: 8px; padding: 24px;
+      border-left: 6px solid #95a5a6; text-align: left; margin-bottom: 24px;
+    }
+    .card-common    { border-left-color: #95a5a6; }
+    .card-uncommon  { border-left-color: #27ae60; }
+    .card-rare      { border-left-color: #2980b9; }
+    .card-legendary { border-left-color: #f39c12; }
+    .card-avatar { width: 52px; height: 52px; border-radius: 50%;
+                   object-fit: cover; margin-bottom: 12px; }
+    .card-avatar-placeholder { width: 52px; height: 52px; border-radius: 50%;
+                               background: #555; margin-bottom: 12px; }
+    .card-name { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .card-rarity { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+    .rarity-common    { color: #95a5a6; }
+    .rarity-uncommon  { color: #27ae60; }
+    .rarity-rare      { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .qty-note { font-size: 11px; color: #72767d; margin-top: 8px; }
+    .back-btn {
+      display: inline-block; background: #5865f2; color: #fff;
+      text-decoration: none; padding: 10px 24px; border-radius: 4px;
+      font-size: 13px; font-weight: 600;
+    }
+    .back-btn:hover { background: #4752c4; }
+  </style>
+</head>
+<body>
+  <div class="result-box">
+    <p class="label">Trade complete — you received:</p>
+    <div class="card card-{{ rarity }}">
+      {% if avatar_url %}
+        <img class="card-avatar" src="{{ avatar_url }}" alt="">
+      {% else %}
+        <div class="card-avatar-placeholder"></div>
+      {% endif %}
+      <div class="card-name">{{ display_name }}</div>
+      <div class="card-rarity rarity-{{ rarity }}">{{ rarity | upper }}</div>
+      {% if quantity > 1 %}
+        <div class="qty-note">You now own {{ quantity }} of this card.</div>
+      {% endif %}
+    </div>
+    <a class="back-btn" href="/collection">Back to Collection</a>
+  </div>
+</body>
+</html>

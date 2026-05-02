@@ -351,3 +351,58 @@ async def get_pool_stats() -> dict:
         async with db.execute("SELECT COALESCE(SUM(quantity), 0) FROM user_cards") as cur:
             total_cards = (await cur.fetchone())[0]
     return {"eligible": eligible, "excluded": excluded, "total_cards": total_cards}
+
+
+async def add_member(discord_id: str, display_name: str) -> None:
+    """Insert or update a member by ID (works for non-Discord test users too)."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, synced_at)
+            VALUES (?, ?, NULL, 0, ?)
+            ON CONFLICT(discord_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                synced_at    = excluded.synced_at
+            """,
+            (discord_id, display_name, now),
+        )
+        await db.commit()
+
+
+async def set_member_avatar(member_id: str, avatar_url: str) -> None:
+    """Update the stored avatar URL for a member."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE members SET avatar_url = ? WHERE discord_id = ?",
+            (avatar_url, member_id),
+        )
+        await db.commit()
+
+
+async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: int) -> Optional[UserCard]:
+    """Manually award cards to a user. Returns None if rarity is invalid."""
+    if rarity not in RARITY_ORDER:
+        return None
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(owner_id, card_member_id, rarity)
+            DO UPDATE SET quantity = quantity + excluded.quantity
+            """,
+            (owner_id, card_member_id, rarity, quantity, now),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at "
+            "FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (owner_id, card_member_id, rarity),
+        ) as cur:
+            r = await cur.fetchone()
+    return UserCard(
+        id=r[0], owner_id=r[1], card_member_id=r[2],
+        rarity=r[3], quantity=r[4], first_acquired_at=r[5],
+    )

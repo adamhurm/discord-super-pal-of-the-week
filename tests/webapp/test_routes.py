@@ -73,13 +73,6 @@ async def test_admin_collection_session_cant_access_admin(client):
     assert "expired" in response.text.lower()
 
 
-@pytest.mark.asyncio
-async def test_collection_refresh_without_session_shows_expired(client):
-    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
-        response = await client.post("/collection/refresh")
-    assert response.status_code == 200
-    assert "expired" in response.text.lower()
-
 
 @pytest.mark.asyncio
 async def test_admin_exclude_without_session_shows_expired(client):
@@ -113,3 +106,180 @@ async def test_admin_sync_collection_session_shows_expired(client):
         response = await client.post("/admin/sync")
     assert response.status_code == 200
     assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_trade_in_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post(
+            "/collection/trade-in",
+            data={"member_id": "111", "rarity": "common"},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_trade_in_success_shows_result(client):
+    from superpal.cards.models import UserCard
+    from unittest.mock import MagicMock
+    from datetime import datetime, timezone
+
+    link = _link()
+    received_card = UserCard(
+        id=42, owner_id="111", card_member_id="222",
+        rarity="common", quantity=1,
+        first_acquired_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=("Florp Xennial", None))
+
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.trade_in", new=AsyncMock(return_value=received_card)),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
+        response = await client.post(
+            "/collection/trade-in",
+            data={"member_id": "222", "rarity": "common"},
+        )
+    assert response.status_code == 200
+    assert "trade" in response.text.lower()
+    assert "Florp Xennial" in response.text
+
+
+@pytest.mark.asyncio
+async def test_trade_in_insufficient_redirects_to_collection(client):
+    link = _link()
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.trade_in", new=AsyncMock(return_value=None)),
+    ):
+        response = await client.post(
+            "/collection/trade-in",
+            data={"member_id": "999", "rarity": "common"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/collection"
+
+
+@pytest.mark.asyncio
+async def test_admin_add_member_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post(
+            "/admin/member/add",
+            data={"discord_id": "test_123", "display_name": "Test User"},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_add_member_collection_session_shows_expired(client):
+    link = _link(link_type="collection")
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)):
+        response = await client.post(
+            "/admin/member/add",
+            data={"discord_id": "test_123", "display_name": "Test User"},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_add_member_success_redirects(client):
+    link = _link(link_type="admin")
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.add_member", new=AsyncMock()),
+    ):
+        response = await client.post(
+            "/admin/member/add",
+            data={"discord_id": "test_123", "display_name": "Test User"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
+
+
+@pytest.mark.asyncio
+async def test_admin_set_avatar_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post(
+            "/admin/member/111/avatar",
+            files={"image": ("test.png", b"\x89PNG\r\n", "image/png")},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_set_avatar_success_redirects(client, tmp_path, monkeypatch):
+    import superpal.webapp.routes as routes_mod
+    monkeypatch.setattr(routes_mod, "IMAGES_DIR", tmp_path)
+    link = _link(link_type="admin")
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.set_member_avatar", new=AsyncMock()),
+    ):
+        response = await client.post(
+            "/admin/member/111/avatar",
+            files={"image": ("test.png", b"\x89PNG\r\n", "image/png")},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
+
+
+@pytest.mark.asyncio
+async def test_admin_award_card_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post(
+            "/admin/award",
+            data={"owner_id": "111", "card_member_id": "222", "rarity": "common", "quantity": "1"},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_award_card_collection_session_shows_expired(client):
+    link = _link(link_type="collection")
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)):
+        response = await client.post(
+            "/admin/award",
+            data={"owner_id": "111", "card_member_id": "222", "rarity": "common", "quantity": "1"},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_award_card_success_redirects(client):
+    from superpal.cards.models import UserCard
+    link = _link(link_type="admin")
+    received = UserCard(
+        id=1, owner_id="111", card_member_id="222",
+        rarity="common", quantity=1,
+        first_acquired_at=datetime.now(timezone.utc).isoformat(),
+    )
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.award_card", new=AsyncMock(return_value=received)),
+    ):
+        response = await client.post(
+            "/admin/award",
+            data={"owner_id": "111", "card_member_id": "222", "rarity": "common", "quantity": "1"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"

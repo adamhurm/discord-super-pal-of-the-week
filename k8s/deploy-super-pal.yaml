@@ -78,7 +78,7 @@ spec:
           - name: WEBAPP_PORT
             value: "8080"
           - name: WEBAPP_BASE_URL
-            value: "https://cards.bringus.gg"
+            value: "https://cards.bring-us.com"
           - name: CARDS_DB_PATH
             value: "/data/cards.db"
         ports:

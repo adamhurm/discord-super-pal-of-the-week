@@ -205,3 +205,74 @@ async def test_magic_link_consumed_once(db):
     assert link1 is not None
     assert link1.session_token is not None
     assert link2 is None  # already consumed
+
+
+@pytest.mark.asyncio
+async def test_add_member_inserts(db):
+    db_mod, svc = db
+    await svc.add_member("test_dingus", "Dingus Supreme")
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        async with conn.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?", ("test_dingus",)
+        ) as cur:
+            row = await cur.fetchone()
+    assert row is not None
+    assert row[0] == "Dingus Supreme"
+
+
+@pytest.mark.asyncio
+async def test_add_member_upserts_name(db):
+    db_mod, svc = db
+    await svc.add_member("test_dingus", "Dingus Supreme")
+    await svc.add_member("test_dingus", "Dingus Supreme Revised")
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        async with conn.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?", ("test_dingus",)
+        ) as cur:
+            row = await cur.fetchone()
+    assert row[0] == "Dingus Supreme Revised"
+
+
+@pytest.mark.asyncio
+async def test_set_member_avatar_updates_url(db):
+    db_mod, svc = db
+    await svc.add_member("test_dingus", "Dingus Supreme")
+    await svc.set_member_avatar("test_dingus", "/static/avatars/test_dingus.png")
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        async with conn.execute(
+            "SELECT avatar_url FROM members WHERE discord_id = ?", ("test_dingus",)
+        ) as cur:
+            row = await cur.fetchone()
+    assert row[0] == "/static/avatars/test_dingus.png"
+
+
+@pytest.mark.asyncio
+async def test_award_card_creates_entry(db):
+    db_mod, svc = db
+    await svc.add_member("owner1", "Owner")
+    await svc.add_member("card1", "Card Member")
+    card = await svc.award_card("owner1", "card1", "rare", 2)
+    assert card is not None
+    assert card.owner_id == "owner1"
+    assert card.card_member_id == "card1"
+    assert card.rarity == "rare"
+    assert card.quantity == 2
+
+
+@pytest.mark.asyncio
+async def test_award_card_increments_existing(db):
+    db_mod, svc = db
+    await svc.add_member("owner1", "Owner")
+    await svc.add_member("card1", "Card Member")
+    await svc.award_card("owner1", "card1", "common", 1)
+    card = await svc.award_card("owner1", "card1", "common", 3)
+    assert card.quantity == 4
+
+
+@pytest.mark.asyncio
+async def test_award_card_rejects_invalid_rarity(db):
+    db_mod, svc = db
+    await svc.add_member("owner1", "Owner")
+    await svc.add_member("card1", "Card Member")
+    result = await svc.award_card("owner1", "card1", "mythic", 1)
+    assert result is None
