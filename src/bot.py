@@ -18,10 +18,8 @@ from discord.ext import commands, tasks
 import superpal.static as superpal_static
 import superpal.env as superpal_env
 from superpal.cards.db import init_db, DB_PATH
-from superpal.cards.service import draw_card, sync_members, generate_magic_link, trade_in, upgrade
+from superpal.cards.service import draw_card, sync_members
 from superpal.cards.embeds import build_card_embed
-from superpal.cards.models import RARITY_ORDER
-from superpal.env import WEBAPP_BASE_URL
 
 # Get logger
 log = superpal_env.log
@@ -203,7 +201,6 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
         card_number=card.id,
         drawn_by=member.display_name,
     )
-    embed.set_footer(text=f"{embed.footer.text} · drawn by {member.display_name}")
     await interaction.followup.send(embed=embed)
 
 
@@ -329,7 +326,6 @@ async def on_ready():
             if not m.bot
         ]
         await sync_members(members_data)
-        global _guild_members_cache
         _guild_members_cache.clear()
         _guild_members_cache.extend(members_data)
         log.info("Synced %d members to card DB", len(members_data))

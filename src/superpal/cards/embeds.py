@@ -20,7 +20,7 @@ def build_card_embed(
         color=color,
     )
     embed.set_author(name=display_name, icon_url=avatar_url)
-    embed.set_footer(text=f"{label} · #{card_number} · Bringus Card Game")
+    embed.set_footer(text=f"{label} · #{card_number} · Bringus Card Game · drawn by {drawn_by}")
     embed.set_thumbnail(url=avatar_url)
 
     return embed
