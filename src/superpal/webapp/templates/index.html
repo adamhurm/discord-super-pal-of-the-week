@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bringus Card Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif;
+           display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; padding: 24px; }
+    .box { text-align: center; max-width: 480px; }
+    .logo { font-size: 3rem; margin-bottom: 16px; }
+    h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
+    .tagline { color: #72767d; font-size: 1rem; margin-bottom: 32px; }
+    .card { background: #2b2d31; border-radius: 8px; padding: 24px;
+            margin-bottom: 24px; text-align: left; }
+    .card h2 { font-size: 0.85rem; font-weight: 600; text-transform: uppercase;
+               letter-spacing: 0.05em; color: #72767d; margin-bottom: 12px; }
+    .card p { font-size: 0.95rem; line-height: 1.6; color: #b5bac1; }
+    .command { display: inline-block; background: #1e1f22; color: #96a0ff;
+               font-family: monospace; font-size: 0.95rem; padding: 4px 10px;
+               border-radius: 4px; margin-top: 12px; }
+    .rarity-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .pill { padding: 3px 10px; border-radius: 12px; font-size: 0.78rem;
+            font-weight: 600; text-transform: capitalize; }
+    .common    { background: #3f4147; color: #dcddde; }
+    .uncommon  { background: #1a3a2a; color: #3ba55c; }
+    .rare      { background: #1a2a4a; color: #5865f2; }
+    .legendary { background: #3a2a10; color: #f0a232; }
+    .footer { color: #4e5058; font-size: 0.8rem; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo">🃏</div>
+    <h1>Bringus Card Game</h1>
+    <p class="tagline">Collect cards of your server members. Trade. Upgrade. Flex.</p>
+
+    <div class="card">
+      <h2>How to play</h2>
+      <p>Cards are awarded weekly in Discord. Run the command below to open your personal collection — the link is private to you and valid for 24 hours.</p>
+      <div class="command">/my-collection</div>
+    </div>
+
+    <div class="card">
+      <h2>Rarities</h2>
+      <p>Every card has a rarity. Collect 3 duplicates to trade in for a random card of the same rarity, or 5 to upgrade to the next tier.</p>
+      <div class="rarity-row">
+        <span class="pill common">Common</span>
+        <span class="pill uncommon">Uncommon</span>
+        <span class="pill rare">Rare</span>
+        <span class="pill legendary">Legendary</span>
+      </div>
+    </div>
+
+    <p class="footer">Links are generated per-user inside Discord. There's nothing to sign up for here.</p>
+  </div>
+</body>
+</html>

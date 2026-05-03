@@ -27,6 +27,11 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
+@router.get("/", response_class=HTMLResponse)
+async def landing(request: Request):
+    return templates.TemplateResponse(request, "index.html")
+
+
 async def _collection_context(user_id: str) -> dict:
     data = await get_collection(user_id)
     async with aiosqlite.connect(DB_PATH) as db:
