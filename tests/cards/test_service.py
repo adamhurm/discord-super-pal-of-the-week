@@ -1,7 +1,7 @@
 import pytest
 import aiosqlite
 import importlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 @pytest.fixture
@@ -278,3 +278,232 @@ async def test_award_card_rejects_invalid_rarity(db):
     await svc.add_member("card1", "Card Member")
     result = await svc.award_card("owner1", "card1", "mythic", 1)
     assert result is None
+
+
+# ─── Peer trade tests ────────────────────────────────────────────────────────
+
+async def _setup_trade_members(svc, db_mod):
+    """Insert four members and give proposer a common card of card_a."""
+    await svc.sync_members([
+        {"discord_id": "proposer", "display_name": "Proposer", "avatar_url": None},
+        {"discord_id": "recipient", "display_name": "Recipient", "avatar_url": None},
+        {"discord_id": "card_a", "display_name": "Card A", "avatar_url": None},
+        {"discord_id": "card_b", "display_name": "Card B", "avatar_url": None},
+    ])
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('proposer', 'card_a', 'common', 1, ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_create_trade_offer_returns_trade(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    trade, err = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    assert err is None
+    assert trade is not None
+    assert trade.status == "pending"
+    assert trade.proposer_id == "proposer"
+    assert trade.offer_rarity == "common"
+
+
+@pytest.mark.asyncio
+async def test_create_trade_offer_rejects_missing_card(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "proposer", "display_name": "Proposer", "avatar_url": None},
+        {"discord_id": "recipient", "display_name": "Recipient", "avatar_url": None},
+        {"discord_id": "card_a", "display_name": "Card A", "avatar_url": None},
+        {"discord_id": "card_b", "display_name": "Card B", "avatar_url": None},
+    ])
+    trade, err = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    assert trade is None
+    assert err == "no_offer_card"
+
+
+@pytest.mark.asyncio
+async def test_create_trade_offer_rejects_self_trade(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    trade, err = await svc.create_trade_offer(
+        "proposer", "proposer", "card_a", "common", "card_b", "rare"
+    )
+    assert trade is None
+    assert err == "self_trade"
+
+
+@pytest.mark.asyncio
+async def test_create_trade_offer_rejects_duplicate_pending(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    # Give proposer a second card so the first offer succeeds
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('proposer', 'card_a', 'rare', 1, ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await conn.commit()
+    trade1, err1 = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    assert err1 is None
+    trade2, err2 = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "rare", "card_b", "uncommon"
+    )
+    assert trade2 is None
+    assert err2 == "pending_exists"
+
+
+@pytest.mark.asyncio
+async def test_create_trade_offer_allows_after_first_resolved(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    trade1, _ = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    assert trade1 is not None
+    await svc.decline_trade(trade1.id)
+    # Give proposer the card again for the second offer
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('proposer', 'card_a', 'common', 1, ?) "
+            "ON CONFLICT(owner_id, card_member_id, rarity) DO UPDATE SET quantity = quantity + 1",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await conn.commit()
+    trade2, err2 = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    assert err2 is None
+    assert trade2 is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_trade_swaps_cards(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    # Give recipient card_b/rare
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('recipient', 'card_b', 'rare', 1, ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await conn.commit()
+    trade, _ = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    assert trade is not None
+    success, reason = await svc.execute_trade(trade.id)
+    assert success is True
+    assert reason is None
+    assert await svc.get_card_quantity("proposer", "card_b", "rare") == 1
+    assert await svc.get_card_quantity("recipient", "card_a", "common") == 1
+    assert await svc.get_card_quantity("proposer", "card_a", "common") == 0
+    assert await svc.get_card_quantity("recipient", "card_b", "rare") == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_trade_fails_if_proposer_card_gone(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('recipient', 'card_b', 'rare', 1, ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await conn.commit()
+    trade, _ = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    # Remove proposer's card after creating the offer
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "DELETE FROM user_cards WHERE owner_id = 'proposer' AND card_member_id = 'card_a'"
+        )
+        await conn.commit()
+    success, reason = await svc.execute_trade(trade.id)
+    assert success is False
+    assert reason == "proposer_missing_card"
+
+
+@pytest.mark.asyncio
+async def test_execute_trade_fails_if_recipient_card_gone(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    trade, _ = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    # Recipient never had card_b/rare
+    success, reason = await svc.execute_trade(trade.id)
+    assert success is False
+    assert reason == "recipient_missing_card"
+
+
+@pytest.mark.asyncio
+async def test_execute_trade_fails_if_expired(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    # Insert an already-expired trade directly
+    past = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO pending_trades "
+            "(proposer_id, recipient_id, offer_member_id, offer_rarity, "
+            "request_member_id, request_rarity, status, created_at, expires_at) "
+            "VALUES ('proposer', 'recipient', 'card_a', 'common', 'card_b', 'rare', 'pending', ?, ?)",
+            (past, past),
+        )
+        await conn.commit()
+        async with conn.execute("SELECT last_insert_rowid()") as cur:
+            trade_id = (await cur.fetchone())[0]
+    success, reason = await svc.execute_trade(trade_id)
+    assert success is False
+    assert reason == "expired"
+
+
+@pytest.mark.asyncio
+async def test_decline_trade_works(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    trade, _ = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    result = await svc.decline_trade(trade.id)
+    assert result is True
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        async with conn.execute(
+            "SELECT status FROM pending_trades WHERE id = ?", (trade.id,)
+        ) as cur:
+            row = await cur.fetchone()
+    assert row[0] == "declined"
+
+
+@pytest.mark.asyncio
+async def test_decline_trade_already_resolved_returns_false(db):
+    db_mod, svc = db
+    await _setup_trade_members(svc, db_mod)
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('recipient', 'card_b', 'rare', 1, ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        await conn.commit()
+    trade, _ = await svc.create_trade_offer(
+        "proposer", "recipient", "card_a", "common", "card_b", "rare"
+    )
+    await svc.execute_trade(trade.id)
+    result = await svc.decline_trade(trade.id)
+    assert result is False

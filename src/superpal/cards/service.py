@@ -6,8 +6,10 @@ from typing import Optional
 
 from superpal.cards.db import DB_PATH
 from superpal.cards.models import (
-    UserCard, MagicLink, RARITY_ORDER, RARITY_WEIGHTS
+    UserCard, MagicLink, PendingTrade, RARITY_ORDER, RARITY_WEIGHTS
 )
+
+TRADE_EXPIRY_MINUTES = 10
 
 
 def _get_week_start() -> str:
@@ -397,6 +399,166 @@ async def set_member_avatar(member_id: str, avatar_url: str) -> None:
             (avatar_url, member_id),
         )
         await db.commit()
+
+
+async def create_trade_offer(
+    proposer_id: str,
+    recipient_id: str,
+    offer_member_id: str,
+    offer_rarity: str,
+    request_member_id: str,
+    request_rarity: str,
+) -> tuple[Optional[PendingTrade], Optional[str]]:
+    """Create a pending trade offer. Returns (PendingTrade, None) on success or (None, reason) on failure."""
+    if offer_rarity not in RARITY_ORDER or request_rarity not in RARITY_ORDER:
+        return None, "invalid_rarity"
+    if proposer_id == recipient_id:
+        return None, "self_trade"
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_iso = (now + timedelta(minutes=TRADE_EXPIRY_MINUTES)).isoformat()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+
+        async with db.execute(
+            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (proposer_id, offer_member_id, offer_rarity),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row[0] < 1:
+            return None, "no_offer_card"
+
+        async with db.execute(
+            "SELECT id FROM pending_trades WHERE proposer_id = ? AND status = 'pending' AND expires_at > ?",
+            (proposer_id, now_iso),
+        ) as cur:
+            existing = await cur.fetchone()
+        if existing:
+            return None, "pending_exists"
+
+        await db.execute(
+            "INSERT INTO pending_trades "
+            "(proposer_id, recipient_id, offer_member_id, offer_rarity, request_member_id, request_rarity, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (proposer_id, recipient_id, offer_member_id, offer_rarity, request_member_id, request_rarity, now_iso, expires_iso),
+        )
+        await db.commit()
+
+        async with db.execute(
+            "SELECT id, proposer_id, recipient_id, offer_member_id, offer_rarity, "
+            "request_member_id, request_rarity, status, created_at, expires_at "
+            "FROM pending_trades WHERE proposer_id = ? AND created_at = ?",
+            (proposer_id, now_iso),
+        ) as cur:
+            r = await cur.fetchone()
+
+    return PendingTrade(
+        id=r[0], proposer_id=r[1], recipient_id=r[2],
+        offer_member_id=r[3], offer_rarity=r[4],
+        request_member_id=r[5], request_rarity=r[6],
+        status=r[7], created_at=r[8], expires_at=r[9],
+    ), None
+
+
+async def execute_trade(trade_id: int) -> tuple[bool, Optional[str]]:
+    """Atomically swap cards between proposer and recipient. Returns (True, None) on success."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    first_acquired = now_iso
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+
+        async with db.execute(
+            "SELECT proposer_id, recipient_id, offer_member_id, offer_rarity, "
+            "request_member_id, request_rarity, status, expires_at "
+            "FROM pending_trades WHERE id = ?",
+            (trade_id,),
+        ) as cur:
+            row = await cur.fetchone()
+
+        if not row:
+            return False, "not_found"
+
+        proposer_id, recipient_id, offer_member_id, offer_rarity, \
+            request_member_id, request_rarity, status, expires_at = row
+
+        if status != "pending":
+            return False, "already_resolved"
+
+        if expires_at <= now_iso:
+            await db.execute(
+                "UPDATE pending_trades SET status = 'expired' WHERE id = ?", (trade_id,)
+            )
+            await db.commit()
+            return False, "expired"
+
+        async with db.execute(
+            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (proposer_id, offer_member_id, offer_rarity),
+        ) as cur:
+            r = await cur.fetchone()
+        if not r or r[0] < 1:
+            return False, "proposer_missing_card"
+
+        async with db.execute(
+            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (recipient_id, request_member_id, request_rarity),
+        ) as cur:
+            r = await cur.fetchone()
+        if not r or r[0] < 1:
+            return False, "recipient_missing_card"
+
+        # Deduct offered card from proposer
+        await db.execute(
+            "UPDATE user_cards SET quantity = quantity - 1 "
+            "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (proposer_id, offer_member_id, offer_rarity),
+        )
+        await db.execute("DELETE FROM user_cards WHERE owner_id = ? AND quantity <= 0", (proposer_id,))
+
+        # Award offered card to recipient
+        await db.execute("""
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
+            VALUES (?, ?, ?, 1, ?)
+            ON CONFLICT(owner_id, card_member_id, rarity)
+            DO UPDATE SET quantity = quantity + 1
+        """, (recipient_id, offer_member_id, offer_rarity, first_acquired))
+
+        # Deduct requested card from recipient
+        await db.execute(
+            "UPDATE user_cards SET quantity = quantity - 1 "
+            "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (recipient_id, request_member_id, request_rarity),
+        )
+        await db.execute("DELETE FROM user_cards WHERE owner_id = ? AND quantity <= 0", (recipient_id,))
+
+        # Award requested card to proposer
+        await db.execute("""
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
+            VALUES (?, ?, ?, 1, ?)
+            ON CONFLICT(owner_id, card_member_id, rarity)
+            DO UPDATE SET quantity = quantity + 1
+        """, (proposer_id, request_member_id, request_rarity, first_acquired))
+
+        await db.execute(
+            "UPDATE pending_trades SET status = 'accepted' WHERE id = ?", (trade_id,)
+        )
+        await db.commit()
+
+    return True, None
+
+
+async def decline_trade(trade_id: int) -> bool:
+    """Mark a pending trade as declined. Returns True if a pending trade was found and updated."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE pending_trades SET status = 'declined' WHERE id = ? AND status = 'pending'",
+            (trade_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: int) -> Optional[UserCard]:

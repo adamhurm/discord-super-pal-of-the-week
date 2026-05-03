@@ -21,7 +21,7 @@ async def test_init_db_creates_tables(tmp_db):
             "SELECT name FROM sqlite_master WHERE type='table'"
         ) as cur:
             tables = {row[0] for row in await cur.fetchall()}
-    assert {"members", "user_cards", "draw_log", "magic_links"}.issubset(tables)
+    assert {"members", "user_cards", "draw_log", "magic_links", "pending_trades"}.issubset(tables)
 
 
 @pytest.mark.asyncio

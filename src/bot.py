@@ -19,7 +19,11 @@ from discord.ext import commands, tasks
 import superpal.static as superpal_static
 import superpal.env as superpal_env
 from superpal.cards.db import init_db, DB_PATH
-from superpal.cards.service import draw_card, sync_members, generate_magic_link, trade_in, upgrade
+from superpal.cards.service import (
+    draw_card, sync_members, generate_magic_link, trade_in, upgrade,
+    create_trade_offer, execute_trade, decline_trade, TRADE_EXPIRY_MINUTES,
+)
+from superpal.cards.models import RARITY_LABELS
 from superpal.env import WEBAPP_BASE_URL
 from superpal.cards.embeds import build_card_embed
 
@@ -107,6 +111,59 @@ async def promote_super_pal(
     except Exception as e:
         log.error(f"Error promoting super pal: {e}")
         await channel.send(f"Sorry, there was an error promoting {new_super_pal.mention}.")
+
+
+##################
+# Trade UI Views #
+##################
+class TradeView(discord.ui.View):
+    def __init__(self, trade_id: int, proposer_id: str, recipient_id: str):
+        super().__init__(timeout=TRADE_EXPIRY_MINUTES * 60)
+        self.trade_id = trade_id
+        self.proposer_id = proposer_id
+        self.recipient_id = recipient_id
+        self.message: Optional[discord.Message] = None
+
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
+    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if str(interaction.user.id) != self.recipient_id:
+            await interaction.response.send_message(
+                "Only the trade recipient can accept this offer.", ephemeral=True
+            )
+            return
+        success, reason = await execute_trade(self.trade_id)
+        self.stop()
+        if success:
+            await interaction.response.edit_message(
+                content="Trade accepted! Cards have been exchanged.", view=None
+            )
+        else:
+            msg = {
+                "already_resolved": "This trade has already been resolved.",
+                "expired": "This trade has expired.",
+                "proposer_missing_card": "Trade failed — the proposer no longer has that card.",
+                "recipient_missing_card": "Trade failed — you no longer have that card.",
+            }.get(reason or "", "Trade failed.")
+            await interaction.response.edit_message(content=msg, view=None)
+
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
+    async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if str(interaction.user.id) != self.recipient_id:
+            await interaction.response.send_message(
+                "Only the trade recipient can decline this offer.", ephemeral=True
+            )
+            return
+        await decline_trade(self.trade_id)
+        self.stop()
+        await interaction.response.edit_message(content="Trade declined.", view=None)
+
+    async def on_timeout(self) -> None:
+        await decline_trade(self.trade_id)
+        if self.message:
+            try:
+                await self.message.edit(content="Trade offer expired.", view=None)
+            except discord.NotFound:
+                pass
 
 
 ##################
@@ -328,6 +385,78 @@ async def upgrade_command(
         embed=embed,
         ephemeral=True,
     )
+
+
+@bot.tree.command(name="propose-trade", description="Offer one of your cards in exchange for another player's card")
+@discord.app_commands.describe(
+    recipient="The server member you want to trade with",
+    offer_member="The member card you're offering",
+    offer_rarity="The rarity of the card you're offering",
+    request_member="The member card you want in return",
+    request_rarity="The rarity of the card you want",
+)
+@discord.app_commands.choices(
+    offer_rarity=[
+        discord.app_commands.Choice(name="Common", value="common"),
+        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+        discord.app_commands.Choice(name="Rare", value="rare"),
+        discord.app_commands.Choice(name="Legendary", value="legendary"),
+    ],
+    request_rarity=[
+        discord.app_commands.Choice(name="Common", value="common"),
+        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+        discord.app_commands.Choice(name="Rare", value="rare"),
+        discord.app_commands.Choice(name="Legendary", value="legendary"),
+    ],
+)
+async def propose_trade_command(
+    interaction: discord.Interaction,
+    recipient: discord.Member,
+    offer_member: discord.Member,
+    offer_rarity: str,
+    request_member: discord.Member,
+    request_rarity: str,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+
+    if interaction.user.id == recipient.id:
+        await interaction.followup.send("You can't trade with yourself.", ephemeral=True)
+        return
+    if not interaction.channel:
+        await interaction.followup.send(
+            "This command must be used in a server channel.", ephemeral=True
+        )
+        return
+
+    trade, err = await create_trade_offer(
+        str(interaction.user.id), str(recipient.id),
+        str(offer_member.id), offer_rarity,
+        str(request_member.id), request_rarity,
+    )
+    if trade is None:
+        msg = {
+            "invalid_rarity": "Invalid rarity specified.",
+            "self_trade": "You can't trade with yourself.",
+            "no_offer_card": (
+                f"You don't have a {offer_rarity.upper()} {offer_member.display_name} card to offer."
+            ),
+            "pending_exists": "You already have a pending trade offer. Wait for it to resolve first.",
+        }.get(err or "", "Could not create trade offer.")
+        await interaction.followup.send(msg, ephemeral=True)
+        return
+
+    view = TradeView(trade.id, str(interaction.user.id), str(recipient.id))
+    channel_msg = await interaction.channel.send(
+        content=(
+            f"{recipient.mention}, **{interaction.user.display_name}** wants to trade:\n\n"
+            f"Their offer: **{RARITY_LABELS[offer_rarity]} {offer_member.display_name}**\n"
+            f"They want:   **{RARITY_LABELS[request_rarity]} {request_member.display_name}**\n\n"
+            f"You have {TRADE_EXPIRY_MINUTES} minutes to respond."
+        ),
+        view=view,
+    )
+    view.message = channel_msg
+    await interaction.followup.send("Trade offer sent!", ephemeral=True)
 
 
 @bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")

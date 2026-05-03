@@ -39,6 +39,20 @@ CREATE TABLE IF NOT EXISTS magic_links (
     session_token      TEXT,
     session_expires_at TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS pending_trades (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposer_id       TEXT NOT NULL REFERENCES members(discord_id),
+    recipient_id      TEXT NOT NULL REFERENCES members(discord_id),
+    offer_member_id   TEXT NOT NULL REFERENCES members(discord_id),
+    offer_rarity      TEXT NOT NULL CHECK(offer_rarity IN ('common','uncommon','rare','legendary')),
+    request_member_id TEXT NOT NULL REFERENCES members(discord_id),
+    request_rarity    TEXT NOT NULL CHECK(request_rarity IN ('common','uncommon','rare','legendary')),
+    status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK(status IN ('pending','accepted','declined','expired')),
+    created_at        TIMESTAMP NOT NULL,
+    expires_at        TIMESTAMP NOT NULL
+);
 """
 
 
