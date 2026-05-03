@@ -10,17 +10,20 @@ def build_card_embed(
     rarity: str,
     card_number: int,
     drawn_by: str,
+    bio: Optional[str] = None,
+    stats_pairs: Optional[list[tuple[str, str]]] = None,
 ) -> discord.Embed:
     """Build a Discord embed for a drawn card."""
     color = discord.Color(RARITY_COLORS[rarity])
     label = RARITY_LABELS[rarity]
 
-    embed = discord.Embed(
-        description="*[ Stats & lore coming soon ]*",
-        color=color,
-    )
+    embed = discord.Embed(description=bio if bio else None, color=color)
     embed.set_author(name=display_name, icon_url=avatar_url)
     embed.set_footer(text=f"{label} · #{card_number} · Bringus Card Game · drawn by {drawn_by}")
     embed.set_thumbnail(url=avatar_url)
+
+    if stats_pairs:
+        value = "\n".join(f"**{k}** {v}" for k, v in stats_pairs)
+        embed.add_field(name="Stats", value=value, inline=False)
 
     return embed

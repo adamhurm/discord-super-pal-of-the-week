@@ -30,7 +30,23 @@ def test_build_card_embed_legendary():
     assert "LEGENDARY" in embed.footer.text
 
 
-def test_build_card_embed_has_description_placeholder():
+def test_build_card_embed_bio_and_stats():
+    embed = build_card_embed(
+        display_name="Test",
+        avatar_url=None,
+        rarity="rare",
+        card_number=3,
+        drawn_by="User",
+        bio="A mysterious figure.",
+        stats_pairs=[("Power Level", "9000"), ("Vibe", "Immaculate")],
+    )
+    assert embed.description == "A mysterious figure."
+    assert len(embed.fields) == 1
+    assert embed.fields[0].name == "Stats"
+    assert "Power Level" in embed.fields[0].value
+
+
+def test_build_card_embed_no_bio_no_stats():
     embed = build_card_embed(
         display_name="Test",
         avatar_url=None,
@@ -38,4 +54,5 @@ def test_build_card_embed_has_description_placeholder():
         card_number=3,
         drawn_by="User",
     )
-    assert embed.description is not None  # placeholder row exists
+    assert embed.description is None
+    assert len(embed.fields) == 0

@@ -7,6 +7,7 @@ featuring AI-powered image generation, automated role management, and fun comman
 
 import asyncio
 import datetime
+import json
 import uvicorn
 import random
 from typing import List, Optional
@@ -41,6 +42,15 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 _guild_members_cache: list[dict] = []
 
 CLIPPY_ROLE_ID = 1085646770006151259
+
+
+def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
+    if not raw:
+        return []
+    try:
+        return list(json.loads(raw).items())
+    except (json.JSONDecodeError, AttributeError):
+        return []
 
 
 ##################
@@ -247,7 +257,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
             (card.card_member_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -261,6 +271,8 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
         rarity=card.rarity,
         card_number=card.id,
         drawn_by=member.display_name,
+        bio=row[2] if row else None,
+        stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send(embed=embed)
 
@@ -284,7 +296,7 @@ async def display_card_command(
     await interaction.response.defer()
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT uc.id, m.display_name, m.avatar_url "
+            "SELECT uc.id, m.display_name, m.avatar_url, m.bio, m.stats "
             "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
             "WHERE uc.owner_id = ? AND uc.card_member_id = ? AND uc.rarity = ? AND uc.quantity > 0",
             (str(interaction.user.id), str(member.id), rarity),
@@ -298,13 +310,15 @@ async def display_card_command(
         )
         return
 
-    card_id, display_name, avatar_url = row
+    card_id, display_name, avatar_url, bio, stats_raw = row
     embed = build_card_embed(
         display_name=display_name,
         avatar_url=avatar_url,
         rarity=rarity,
         card_number=card_id,
         drawn_by=interaction.user.display_name,
+        bio=bio,
+        stats_pairs=_parse_stats(stats_raw),
     )
     await interaction.followup.send(embed=embed)
 
@@ -361,7 +375,7 @@ async def trade_in_command(
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
             (card.card_member_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -374,6 +388,8 @@ async def trade_in_command(
         rarity=card.rarity,
         card_number=card.id,
         drawn_by=interaction.user.display_name,
+        bio=row[2] if row else None,
+        stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send(
         "Trade complete! You received:", embed=embed, ephemeral=True
@@ -410,7 +426,7 @@ async def upgrade_command(
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
             (card.card_member_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -423,6 +439,8 @@ async def upgrade_command(
         rarity=card.rarity,
         card_number=card.id,
         drawn_by=interaction.user.display_name,
+        bio=row[2] if row else None,
+        stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send(
         f"Upgrade complete! {member.display_name} is now {card.rarity.upper()}:",
