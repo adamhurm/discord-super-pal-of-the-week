@@ -84,6 +84,16 @@
       font-weight: 700; white-space: nowrap;
     }
     .img-label:hover { background: #5865f2; color: #fff; }
+    .rarity-lock-label { font-size: 11px; font-weight: 700; margin-top: 2px; }
+    .rarity-lock-common    { color: #95a5a6; }
+    .rarity-lock-uncommon  { color: #27ae60; }
+    .rarity-lock-rare      { color: #2980b9; }
+    .rarity-lock-legendary { color: #f39c12; }
+    .rarity-select {
+      background: #1e1f22; color: #dcddde; border: 1px solid #3f4147;
+      border-radius: 3px; padding: 4px 6px; font-size: 11px; font-weight: 600;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -172,7 +182,19 @@
         {% else %}
           <div class="member-id">ID: {{ m.discord_id }}</div>
         {% endif %}
+        {% if m.forced_rarity %}
+          <div class="rarity-lock-label rarity-lock-{{ m.forced_rarity }}">{{ m.forced_rarity | upper }}-only drop</div>
+        {% endif %}
       </div>
+      <form method="post" action="/admin/member/{{ m.discord_id }}/forced-rarity">
+        <select name="rarity" class="rarity-select" onchange="this.form.submit()">
+          <option value="">Any rarity</option>
+          <option value="common"    {% if m.forced_rarity == 'common'    %}selected{% endif %}>Common only</option>
+          <option value="uncommon"  {% if m.forced_rarity == 'uncommon'  %}selected{% endif %}>Uncommon only</option>
+          <option value="rare"      {% if m.forced_rarity == 'rare'      %}selected{% endif %}>Rare only</option>
+          <option value="legendary" {% if m.forced_rarity == 'legendary' %}selected{% endif %}>Legendary only</option>
+        </select>
+      </form>
       <form method="post" action="/admin/member/{{ m.discord_id }}/avatar" enctype="multipart/form-data">
         <label class="img-label">
           Set Image
@@ -197,6 +219,9 @@
 
       <h3>Excluding a Member</h3>
       <p>Click <strong>Exclude</strong> next to a member to remove them from the card draw pool. Excluded members will not appear in <code>/draw-card</code>, <code>/trade-in</code>, or <code>/upgrade</code> results. Click <strong>Re-include</strong> to restore them.</p>
+
+      <h3>Rarity Lock</h3>
+      <p>Use the rarity dropdown on a member row to restrict which rarity tier they can appear in. A member set to <strong>Legendary only</strong> will only be drawn when a Legendary card is rolled — they won't appear in Common, Uncommon, or Rare draws, or in trade-in results for those tiers. Set to <strong>Any rarity</strong> to remove the restriction.</p>
 
       <h3>Syncing the Member List</h3>
       <p>Click <strong>Sync Member List from Discord</strong> to pull the current server roster into the database. Do this after members join or change their display name so their cards stay up to date.</p>

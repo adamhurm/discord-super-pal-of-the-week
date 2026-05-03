@@ -14,6 +14,7 @@ from superpal.cards.service import (
     get_pool_stats,
     reset_draw_log,
     set_excluded,
+    set_forced_rarity,
     set_member_avatar,
     sync_members as _sync_members,
     trade_in,
@@ -183,6 +184,19 @@ async def admin_set_member_avatar(
     IMAGES_DIR.mkdir(exist_ok=True)
     (IMAGES_DIR / filename).write_bytes(await image.read())
     await set_member_avatar(member_id, f"/static/avatars/{filename}")
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/admin/member/{member_id}/forced-rarity")
+async def admin_set_forced_rarity(
+    member_id: str,
+    request: Request,
+    rarity: str = Form(...),
+):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html", {})
+    await set_forced_rarity(member_id, rarity or None)
     return RedirectResponse(url="/admin", status_code=303)
 
 

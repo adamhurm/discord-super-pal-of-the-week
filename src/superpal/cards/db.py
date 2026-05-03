@@ -61,3 +61,11 @@ async def init_db() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_SCHEMA)
         await db.commit()
+        try:
+            await db.execute(
+                "ALTER TABLE members ADD COLUMN forced_rarity TEXT "
+                "CHECK(forced_rarity IN ('common','uncommon','rare','legendary'))"
+            )
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists

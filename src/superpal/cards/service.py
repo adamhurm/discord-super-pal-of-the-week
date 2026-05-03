@@ -50,6 +50,16 @@ async def set_excluded(discord_id: str, *, excluded: bool) -> None:
         await db.commit()
 
 
+async def set_forced_rarity(discord_id: str, rarity: Optional[str]) -> None:
+    """Lock a member to a specific rarity tier, or clear the lock when rarity is None."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE members SET forced_rarity = ? WHERE discord_id = ?",
+            (rarity or None, discord_id),
+        )
+        await db.commit()
+
+
 async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
     """Draw a card for owner_id. Returns UserCard or None if weekly limit reached."""
     week_start = _get_week_start()
@@ -66,8 +76,12 @@ async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
         if draws_used >= max_draws:
             return None
 
+        rarity = _roll_rarity()
+
         async with db.execute(
-            "SELECT discord_id FROM members WHERE is_excluded = 0"
+            "SELECT discord_id FROM members "
+            "WHERE is_excluded = 0 AND (forced_rarity IS NULL OR forced_rarity = ?)",
+            (rarity,),
         ) as cur:
             eligible = [r[0] for r in await cur.fetchall()]
 
@@ -75,7 +89,6 @@ async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
             return None
 
         card_member_id = random.choice(eligible)
-        rarity = _roll_rarity()
 
         await db.execute("""
             INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
@@ -145,7 +158,9 @@ async def trade_in(owner_id: str, card_member_id: str, rarity: str) -> Optional[
         )
 
         async with db.execute(
-            "SELECT discord_id FROM members WHERE is_excluded = 0"
+            "SELECT discord_id FROM members "
+            "WHERE is_excluded = 0 AND (forced_rarity IS NULL OR forced_rarity = ?)",
+            (rarity,),
         ) as cur:
             eligible = [r[0] for r in await cur.fetchall()]
 
@@ -350,14 +365,18 @@ async def reset_draw_log() -> None:
 
 
 async def get_all_members_for_admin() -> list[dict]:
-    """Return all members with exclusion status for admin dashboard."""
+    """Return all members with exclusion and rarity-lock status for admin dashboard."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT discord_id, display_name, avatar_url, is_excluded FROM members ORDER BY display_name"
+            "SELECT discord_id, display_name, avatar_url, is_excluded, forced_rarity "
+            "FROM members ORDER BY display_name"
         ) as cur:
             rows = await cur.fetchall()
     return [
-        {"discord_id": r[0], "display_name": r[1], "avatar_url": r[2], "is_excluded": bool(r[3])}
+        {
+            "discord_id": r[0], "display_name": r[1], "avatar_url": r[2],
+            "is_excluded": bool(r[3]), "forced_rarity": r[4],
+        }
         for r in rows
     ]
 
