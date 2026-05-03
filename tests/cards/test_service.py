@@ -196,15 +196,17 @@ async def test_upgrade_succeeds(db):
 
 
 @pytest.mark.asyncio
-async def test_magic_link_consumed_once(db):
+async def test_magic_link_reusable_within_24h(db):
     db_mod, svc = db
     url = await svc.generate_magic_link("111", "collection", "http://localhost:8080")
     token = url.split("/")[-1]
-    link1 = await svc.consume_magic_link(token)
-    link2 = await svc.consume_magic_link(token)
+    link1 = await svc.use_magic_link(token)
+    link2 = await svc.use_magic_link(token)
     assert link1 is not None
     assert link1.session_token is not None
-    assert link2 is None  # already consumed
+    assert link2 is not None
+    assert link2.session_token is not None
+    assert link1.session_token != link2.session_token  # fresh session each time
 
 
 @pytest.mark.asyncio

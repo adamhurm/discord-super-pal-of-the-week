@@ -11,10 +11,10 @@ from superpal.cards.models import (
 
 
 def _get_week_start() -> str:
-    """ISO date string for the Monday of the current UTC week."""
+    """ISO date string for the Sunday of the current UTC week."""
     today = datetime.now(timezone.utc).date()
-    monday = today - timedelta(days=today.weekday())
-    return monday.isoformat()
+    sunday = today - timedelta(days=(today.weekday() + 1) % 7)
+    return sunday.isoformat()
 
 
 def _roll_rarity() -> str:
@@ -337,6 +337,14 @@ async def get_collection(owner_id: str) -> dict:
         counts[card["rarity"]] += card["quantity"]
 
     return {"owned": owned, "undiscovered": undiscovered, "counts": counts}
+
+
+async def reset_draw_log() -> None:
+    """Delete all draw_log entries for the current week, restoring everyone's draws."""
+    week_start = _get_week_start()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM draw_log WHERE week_start = ?", (week_start,))
+        await db.commit()
 
 
 async def get_all_members_for_admin() -> list[dict]:

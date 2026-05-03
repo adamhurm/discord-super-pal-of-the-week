@@ -15,6 +15,9 @@
     .sync-btn { background: #5865f2; color: #fff; border: none; padding: 8px 16px;
                 border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 10px; display: block; }
     .sync-btn:hover { background: #4752c4; }
+    .reset-btn { background: #ed4245; color: #fff; border: none; padding: 8px 16px;
+                 border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 8px; display: block; }
+    .reset-btn:hover { background: #c03537; }
     .member-list { display: flex; flex-direction: column; gap: 8px; }
     .member-row { background: #2b2d31; border-radius: 6px; padding: 10px 14px;
                   display: flex; align-items: center; gap: 12px; }
@@ -95,6 +98,10 @@
     <strong>{{ stats.total_cards }}</strong> cards in circulation
     <form method="post" action="/admin/sync">
       <button class="sync-btn" type="submit">Sync Member List from Discord</button>
+    </form>
+    <form method="post" action="/admin/reset-draws"
+          onsubmit="return confirm('Reset everyone\'s draw counts for this week? This lets all players draw again immediately.')">
+      <button class="reset-btn" type="submit">Reset Weekly Draw Counts</button>
     </form>
   </div>
 
@@ -197,6 +204,9 @@
       <p><strong>Eligible</strong> — members currently in the draw pool.<br>
       <strong>Excluded</strong> — members blocked from the pool.<br>
       <strong>Cards in circulation</strong> — total cards held across all players (counts duplicates).</p>
+
+      <h3>Resetting Weekly Draw Counts</h3>
+      <p>Click <strong>Reset Weekly Draw Counts</strong> to clear everyone's draw usage for the current week. Players who have already used their draws this week will be able to draw again immediately. Historical weeks are not affected.</p>
 
       <h3>Accessing This Page</h3>
       <p>Run <code>/admin-link</code> in Discord (requires The Clippy role). The bot DMs a one-time link — first click opens a 24-hour admin session.</p>

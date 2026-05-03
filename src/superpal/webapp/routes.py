@@ -12,6 +12,7 @@ from superpal.cards.service import (
     get_collection,
     get_all_members_for_admin,
     get_pool_stats,
+    reset_draw_log,
     set_excluded,
     set_member_avatar,
     sync_members as _sync_members,
@@ -141,6 +142,15 @@ async def admin_sync(request: Request):
             await _sync_members(_guild_members_cache)
     except ImportError:
         pass  # running in isolation — sync skipped
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/admin/reset-draws")
+async def admin_reset_draws(request: Request):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html", {})
+    await reset_draw_log()
     return RedirectResponse(url="/admin", status_code=303)
 
 

@@ -170,20 +170,20 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         )
 
 
-@bot.tree.command(name="draw-card", description="Draw a card from the Bringus deck (once per week)")
+@bot.tree.command(name="draw-card", description="Draw a card from the Bringus deck (up to 5 per week)")
 async def draw_card_command(interaction: discord.Interaction) -> None:
     await interaction.response.defer()
     member = interaction.user
     is_super_pal = any(
         r.name == superpal_static.SUPER_PAL_ROLE_NAME for r in getattr(member, "roles", [])
     )
-    max_draws = 2 if is_super_pal else 1
+    max_draws = 10 if is_super_pal else 5
 
     card = await draw_card(owner_id=str(member.id), max_draws=max_draws)
     if card is None:
-        limit_label = "2 draws" if is_super_pal else "1 draw"
+        limit_label = "10 draws" if is_super_pal else "5 draws"
         await interaction.followup.send(
-            f"You've used your {limit_label} for this week. Come back Monday!",
+            f"You've used your {limit_label} for this week. Come back Sunday!",
             ephemeral=True,
         )
         return
