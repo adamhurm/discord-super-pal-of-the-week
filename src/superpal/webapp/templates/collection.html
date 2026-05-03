@@ -47,6 +47,8 @@
                  font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-top: 2px; }
     .unknown { opacity: 0.4; border-left-color: #3f4147; }
     .unknown .card-name { color: #555; }
+    .card:not(.unknown) { cursor: pointer; }
+    .card:not(.unknown):hover { background: #313338; }
     .card-bio {
       font-size: 11px; color: #72767d; font-style: italic; margin-top: 4px;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -56,6 +58,17 @@
     .card-stat { display: flex; justify-content: space-between; font-size: 10px;
                  color: #b9bbbe; line-height: 1.6; gap: 4px; }
     .card-stat-key { color: #72767d; flex-shrink: 0; }
+    .card-detail-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .card-detail-avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
+    .card-detail-avatar-placeholder { width: 64px; height: 64px; border-radius: 50%; background: #555; }
+    .card-detail-name { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    .card-detail-bio { font-size: 13px; color: #b9bbbe; font-style: italic;
+                       line-height: 1.6; margin-bottom: 12px; }
+    .card-detail-stat { display: flex; justify-content: space-between;
+                        font-size: 12px; color: #b9bbbe; padding: 3px 0;
+                        border-bottom: 1px solid #3f4147; }
+    .card-detail-stat:last-child { border-bottom: none; }
+    .card-detail-stat-key { color: #72767d; }
     .trade-btn {
       display: block; width: 100%; margin-top: 10px;
       background: #3f4147; color: #b9bbbe; border: none;
@@ -120,7 +133,14 @@
 
   <div class="grid">
     {% for card in owned %}
-    <div class="card card-{{ card.rarity }}">
+    <div class="card card-{{ card.rarity }}"
+         onclick="openCardDetail(this)"
+         data-name="{{ card.display_name | e }}"
+         data-rarity="{{ card.rarity }}"
+         data-avatar="{{ card.avatar_url if card.avatar_url else '' }}"
+         data-quantity="{{ card.quantity }}"
+         data-bio="{{ card.bio | e if card.bio else '' }}"
+         data-stats='{{ card.stats_pairs | tojson }}'>
       {% if card.avatar_url %}
         <img class="card-avatar" src="{{ card.avatar_url }}" alt="">
       {% else %}
@@ -142,7 +162,7 @@
         </div>
       {% endif %}
       {% if card.quantity >= 3 %}
-        <form method="post" action="/collection/trade-in">
+        <form method="post" action="/collection/trade-in" onclick="event.stopPropagation()">
           <input type="hidden" name="member_id" value="{{ card.member_id }}">
           <input type="hidden" name="rarity" value="{{ card.rarity }}">
           <button class="trade-btn" type="submit">TRADE IN (3×)</button>
@@ -158,6 +178,22 @@
       <div class="card-rarity" style="color:#555">NOT YET FOUND</div>
     </div>
     {% endfor %}
+  </div>
+
+  <div class="modal-backdrop" id="card-modal" onclick="if(event.target===this)this.style.display='none'">
+    <div class="modal" style="max-width:400px">
+      <button class="modal-close" onclick="document.getElementById('card-modal').style.display='none'">×</button>
+      <div class="card-detail-header">
+        <div id="card-modal-avatar-wrap"></div>
+        <div>
+          <div class="card-detail-name" id="card-modal-name"></div>
+          <div id="card-modal-rarity" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-top:2px"></div>
+          <div id="card-modal-qty" style="font-size:11px;color:#72767d;margin-top:2px"></div>
+        </div>
+      </div>
+      <div id="card-modal-bio" class="card-detail-bio" style="display:none"></div>
+      <div id="card-modal-stats"></div>
+    </div>
   </div>
 
   <div class="modal-backdrop" id="help-modal" onclick="if(event.target===this)this.style.display='none'">
@@ -191,5 +227,42 @@
       </ul>
     </div>
   </div>
+  <script>
+    const RARITY_COLORS = {
+      common: '#95a5a6', uncommon: '#27ae60', rare: '#2980b9', legendary: '#f39c12'
+    };
+    function openCardDetail(el) {
+      const name = el.dataset.name;
+      const rarity = el.dataset.rarity;
+      const avatar = el.dataset.avatar;
+      const qty = parseInt(el.dataset.quantity, 10);
+      const bio = el.dataset.bio;
+      const stats = JSON.parse(el.dataset.stats || '[]');
+
+      const avatarWrap = document.getElementById('card-modal-avatar-wrap');
+      avatarWrap.innerHTML = avatar
+        ? `<img class="card-detail-avatar" src="${avatar}" alt="">`
+        : `<div class="card-detail-avatar-placeholder"></div>`;
+
+      document.getElementById('card-modal-name').textContent = name;
+      const rarityEl = document.getElementById('card-modal-rarity');
+      rarityEl.textContent = rarity.toUpperCase();
+      rarityEl.style.color = RARITY_COLORS[rarity] || '#dcddde';
+
+      const qtyEl = document.getElementById('card-modal-qty');
+      qtyEl.textContent = qty > 1 ? `×${qty} copies` : '';
+
+      const bioEl = document.getElementById('card-modal-bio');
+      if (bio) { bioEl.textContent = bio; bioEl.style.display = ''; }
+      else { bioEl.style.display = 'none'; }
+
+      const statsEl = document.getElementById('card-modal-stats');
+      statsEl.innerHTML = stats.map(([k, v]) =>
+        `<div class="card-detail-stat"><span class="card-detail-stat-key">${k}</span><span>${v}</span></div>`
+      ).join('');
+
+      document.getElementById('card-modal').style.display = 'flex';
+    }
+  </script>
 </body>
 </html>
