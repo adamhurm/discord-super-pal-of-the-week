@@ -126,7 +126,12 @@
       <form method="post" action="/admin/member/add">
         <div class="form-row">
           <label>Unique ID (any string, used internally)</label>
-          <input type="text" name="discord_id" placeholder="e.g. dingus_supreme" required>
+          <div style="display:flex;gap:6px">
+            <input type="text" name="discord_id" id="new-member-id"
+                   placeholder="leave blank to auto-generate" style="flex:1">
+            <button type="button" class="img-label"
+                    onclick="document.getElementById('new-member-id').value=crypto.randomUUID()">Generate</button>
+          </div>
         </div>
         <div class="form-row">
           <label>Display Name</label>
@@ -189,10 +194,11 @@
         {% if m.is_synthetic %}
           <div class="synthetic-badge">CUSTOM</div>
         {% endif %}
-        {% if m.forced_rarity %}
+        {% if m.is_synthetic and m.forced_rarity %}
           <div class="rarity-lock-label rarity-lock-{{ m.forced_rarity }}">{{ m.forced_rarity | upper }}-only drop</div>
         {% endif %}
       </div>
+      {% if m.is_synthetic %}
       <form method="post" action="/admin/member/{{ m.discord_id }}/forced-rarity">
         <select name="rarity" class="rarity-select" onchange="this.form.submit()">
           <option value="">Any rarity</option>
@@ -202,6 +208,7 @@
           <option value="legendary" {% if m.forced_rarity == 'legendary' %}selected{% endif %}>Legendary only</option>
         </select>
       </form>
+      {% endif %}
       <form method="post" action="/admin/member/{{ m.discord_id }}/avatar" enctype="multipart/form-data">
         <label class="img-label">
           Set Image
@@ -231,7 +238,7 @@
       <p>Members added via <strong>Add Member Manually</strong> are marked <strong>CUSTOM</strong> and are never modified by the Discord sync. Their display name, avatar, rarity lock, and exclusion status are preserved exactly as set here regardless of how many times you sync.</p>
 
       <h3>Rarity Lock</h3>
-      <p>Use the rarity dropdown on a member row to restrict which rarity tier they can appear in. A member set to <strong>Legendary only</strong> will only be drawn when a Legendary card is rolled — they won't appear in Common, Uncommon, or Rare draws, or in trade-in results for those tiers. Set to <strong>Any rarity</strong> to remove the restriction.</p>
+      <p>Only <strong>CUSTOM</strong> members have a rarity dropdown. Use it to restrict which rarity tier that member can appear in — e.g. set to <strong>Legendary only</strong> so they only show up on a Legendary roll. Real Discord members always follow normal rarity rules. Set to <strong>Any rarity</strong> to remove the restriction.</p>
 
       <h3>Syncing the Member List</h3>
       <p>Click <strong>Sync Member List from Discord</strong> to pull the current server roster into the database. Do this after members join or change their display name so their cards stay up to date.</p>

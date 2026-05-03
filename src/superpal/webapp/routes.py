@@ -1,3 +1,4 @@
+import uuid
 import aiosqlite
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -158,12 +159,14 @@ async def admin_reset_draws(request: Request):
 @router.post("/admin/member/add")
 async def admin_add_member(
     request: Request,
-    discord_id: str = Form(...),
+    discord_id: str = Form(""),
     display_name: str = Form(...),
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html", {})
+    if not discord_id.strip():
+        discord_id = str(uuid.uuid4())
     await add_member(discord_id, display_name)
     return RedirectResponse(url="/admin", status_code=303)
 
