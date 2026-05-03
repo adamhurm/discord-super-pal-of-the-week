@@ -94,6 +94,10 @@
       border-radius: 3px; padding: 4px 6px; font-size: 11px; font-weight: 600;
       cursor: pointer;
     }
+    .synthetic-badge {
+      display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+      color: #b9bbbe; background: #3f4147; padding: 1px 6px; border-radius: 10px; margin-top: 2px;
+    }
   </style>
 </head>
 <body>
@@ -182,6 +186,9 @@
         {% else %}
           <div class="member-id">ID: {{ m.discord_id }}</div>
         {% endif %}
+        {% if m.is_synthetic %}
+          <div class="synthetic-badge">CUSTOM</div>
+        {% endif %}
         {% if m.forced_rarity %}
           <div class="rarity-lock-label rarity-lock-{{ m.forced_rarity }}">{{ m.forced_rarity | upper }}-only drop</div>
         {% endif %}
@@ -219,6 +226,9 @@
 
       <h3>Excluding a Member</h3>
       <p>Click <strong>Exclude</strong> next to a member to remove them from the card draw pool. Excluded members will not appear in <code>/draw-card</code>, <code>/trade-in</code>, or <code>/upgrade</code> results. Click <strong>Re-include</strong> to restore them.</p>
+
+      <h3>Custom Members</h3>
+      <p>Members added via <strong>Add Member Manually</strong> are marked <strong>CUSTOM</strong> and are never modified by the Discord sync. Their display name, avatar, rarity lock, and exclusion status are preserved exactly as set here regardless of how many times you sync.</p>
 
       <h3>Rarity Lock</h3>
       <p>Use the rarity dropdown on a member row to restrict which rarity tier they can appear in. A member set to <strong>Legendary only</strong> will only be drawn when a Legendary card is rolled — they won't appear in Common, Uncommon, or Rare draws, or in trade-in results for those tiers. Set to <strong>Any rarity</strong> to remove the restriction.</p>

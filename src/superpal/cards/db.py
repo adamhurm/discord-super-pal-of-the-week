@@ -69,3 +69,10 @@ async def init_db() -> None:
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists
+        try:
+            await db.execute(
+                "ALTER TABLE members ADD COLUMN is_synthetic BOOLEAN NOT NULL DEFAULT 0"
+            )
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists

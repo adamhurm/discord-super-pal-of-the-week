@@ -26,16 +26,17 @@ def _roll_rarity() -> str:
 
 
 async def sync_members(members: list[dict]) -> None:
-    """Upsert members from a list of dicts with discord_id, display_name, avatar_url."""
+    """Upsert Discord members. Synthetic (manually-created) members are never modified."""
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executemany("""
-            INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, synced_at)
-            VALUES (:discord_id, :display_name, :avatar_url, 0, :synced_at)
+            INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, is_synthetic, synced_at)
+            VALUES (:discord_id, :display_name, :avatar_url, 0, 0, :synced_at)
             ON CONFLICT(discord_id) DO UPDATE SET
                 display_name = excluded.display_name,
                 avatar_url   = excluded.avatar_url,
                 synced_at    = excluded.synced_at
+            WHERE members.is_synthetic = 0
         """, [{"synced_at": now, **m} for m in members])
         await db.commit()
 
@@ -368,14 +369,14 @@ async def get_all_members_for_admin() -> list[dict]:
     """Return all members with exclusion and rarity-lock status for admin dashboard."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT discord_id, display_name, avatar_url, is_excluded, forced_rarity "
+            "SELECT discord_id, display_name, avatar_url, is_excluded, forced_rarity, is_synthetic "
             "FROM members ORDER BY display_name"
         ) as cur:
             rows = await cur.fetchall()
     return [
         {
             "discord_id": r[0], "display_name": r[1], "avatar_url": r[2],
-            "is_excluded": bool(r[3]), "forced_rarity": r[4],
+            "is_excluded": bool(r[3]), "forced_rarity": r[4], "is_synthetic": bool(r[5]),
         }
         for r in rows
     ]
@@ -394,13 +395,13 @@ async def get_pool_stats() -> dict:
 
 
 async def add_member(discord_id: str, display_name: str) -> None:
-    """Insert or update a member by ID (works for non-Discord test users too)."""
+    """Insert a synthetic (non-Discord) member, or update its display name if it already exists."""
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
-            INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, synced_at)
-            VALUES (?, ?, NULL, 0, ?)
+            INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, is_synthetic, synced_at)
+            VALUES (?, ?, NULL, 0, 1, ?)
             ON CONFLICT(discord_id) DO UPDATE SET
                 display_name = excluded.display_name,
                 synced_at    = excluded.synced_at
