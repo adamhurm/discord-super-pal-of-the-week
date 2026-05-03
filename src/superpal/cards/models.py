@@ -44,6 +44,7 @@ class UserCard:
     rarity: str
     quantity: int
     first_acquired_at: datetime
+    drawn_by_name: Optional[str] = None
 
 
 @dataclass

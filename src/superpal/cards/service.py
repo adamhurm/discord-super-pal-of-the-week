@@ -62,7 +62,7 @@ async def set_forced_rarity(discord_id: str, rarity: Optional[str]) -> None:
         await db.commit()
 
 
-async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
+async def draw_card(owner_id: str, max_draws: int, drawn_by_name: str = "") -> Optional[UserCard]:
     """Draw a card for owner_id. Returns UserCard or None if weekly limit reached."""
     week_start = _get_week_start()
     now = datetime.now(timezone.utc).isoformat()
@@ -93,11 +93,11 @@ async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
         card_member_id = random.choice(eligible)
 
         await db.execute("""
-            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, 1, ?, ?)
             ON CONFLICT(owner_id, card_member_id, rarity)
             DO UPDATE SET quantity = quantity + 1
-        """, (owner_id, card_member_id, rarity, now))
+        """, (owner_id, card_member_id, rarity, now, drawn_by_name))
 
         await db.execute("""
             INSERT INTO draw_log (user_id, week_start, draws_used)
@@ -109,7 +109,7 @@ async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
         await db.commit()
 
         async with db.execute(
-            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at "
+            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name "
             "FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
             (owner_id, card_member_id, rarity),
         ) as cur:
@@ -118,6 +118,7 @@ async def draw_card(owner_id: str, max_draws: int) -> Optional[UserCard]:
         return UserCard(
             id=r[0], owner_id=r[1], card_member_id=r[2],
             rarity=r[3], quantity=r[4], first_acquired_at=r[5],
+            drawn_by_name=r[6],
         )
 
 
@@ -132,7 +133,7 @@ async def get_card_quantity(owner_id: str, card_member_id: str, rarity: str) -> 
     return row[0] if row else 0
 
 
-async def trade_in(owner_id: str, card_member_id: str, rarity: str) -> Optional[UserCard]:
+async def trade_in(owner_id: str, card_member_id: str, rarity: str, drawn_by_name: str = "") -> Optional[UserCard]:
     """Trade 3x [card_member_id, rarity] for a random card of the same rarity.
     Returns the new card, or None if insufficient duplicates or invalid rarity."""
     if rarity not in RARITY_ORDER:
@@ -173,16 +174,16 @@ async def trade_in(owner_id: str, card_member_id: str, rarity: str) -> Optional[
         new_member_id = random.choice(eligible)
 
         await db.execute("""
-            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, 1, ?, ?)
             ON CONFLICT(owner_id, card_member_id, rarity)
             DO UPDATE SET quantity = quantity + 1
-        """, (owner_id, new_member_id, rarity, now))
+        """, (owner_id, new_member_id, rarity, now, drawn_by_name))
 
         await db.commit()
 
         async with db.execute(
-            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at "
+            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name "
             "FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
             (owner_id, new_member_id, rarity),
         ) as cur:
@@ -191,10 +192,11 @@ async def trade_in(owner_id: str, card_member_id: str, rarity: str) -> Optional[
     return UserCard(
         id=r[0], owner_id=r[1], card_member_id=r[2],
         rarity=r[3], quantity=r[4], first_acquired_at=r[5],
+        drawn_by_name=r[6],
     )
 
 
-async def upgrade(owner_id: str, card_member_id: str, rarity: str) -> Optional[UserCard]:
+async def upgrade(owner_id: str, card_member_id: str, rarity: str, drawn_by_name: str = "") -> Optional[UserCard]:
     """Trade 5x [card_member_id, rarity] for 1x same member at next rarity tier.
     Returns upgraded card, or None if insufficient copies, already Legendary, or invalid rarity."""
     if rarity == "legendary" or rarity not in RARITY_ORDER:
@@ -222,15 +224,15 @@ async def upgrade(owner_id: str, card_member_id: str, rarity: str) -> Optional[U
             (owner_id,),
         )
         await db.execute("""
-            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, 1, ?, ?)
             ON CONFLICT(owner_id, card_member_id, rarity)
             DO UPDATE SET quantity = quantity + 1
-        """, (owner_id, card_member_id, next_rarity, now))
+        """, (owner_id, card_member_id, next_rarity, now, drawn_by_name))
         await db.commit()
 
         async with db.execute(
-            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at "
+            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name "
             "FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
             (owner_id, card_member_id, next_rarity),
         ) as cur:
@@ -239,6 +241,7 @@ async def upgrade(owner_id: str, card_member_id: str, rarity: str) -> Optional[U
     return UserCard(
         id=r[0], owner_id=r[1], card_member_id=r[2],
         rarity=r[3], quantity=r[4], first_acquired_at=r[5],
+        drawn_by_name=r[6],
     )
 
 
@@ -537,20 +540,22 @@ async def execute_trade(trade_id: int) -> tuple[bool, Optional[str]]:
             return False, "expired"
 
         async with db.execute(
-            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            "SELECT quantity, drawn_by_name FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
             (proposer_id, offer_member_id, offer_rarity),
         ) as cur:
             r = await cur.fetchone()
         if not r or r[0] < 1:
             return False, "proposer_missing_card"
+        offer_drawn_by = r[1]
 
         async with db.execute(
-            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            "SELECT quantity, drawn_by_name FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
             (recipient_id, request_member_id, request_rarity),
         ) as cur:
             r = await cur.fetchone()
         if not r or r[0] < 1:
             return False, "recipient_missing_card"
+        request_drawn_by = r[1]
 
         # Deduct offered card from proposer
         await db.execute(
@@ -560,13 +565,13 @@ async def execute_trade(trade_id: int) -> tuple[bool, Optional[str]]:
         )
         await db.execute("DELETE FROM user_cards WHERE owner_id = ? AND quantity <= 0", (proposer_id,))
 
-        # Award offered card to recipient
+        # Award offered card to recipient (preserve original drawn_by)
         await db.execute("""
-            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, 1, ?, ?)
             ON CONFLICT(owner_id, card_member_id, rarity)
             DO UPDATE SET quantity = quantity + 1
-        """, (recipient_id, offer_member_id, offer_rarity, first_acquired))
+        """, (recipient_id, offer_member_id, offer_rarity, first_acquired, offer_drawn_by))
 
         # Deduct requested card from recipient
         await db.execute(
@@ -576,13 +581,13 @@ async def execute_trade(trade_id: int) -> tuple[bool, Optional[str]]:
         )
         await db.execute("DELETE FROM user_cards WHERE owner_id = ? AND quantity <= 0", (recipient_id,))
 
-        # Award requested card to proposer
+        # Award requested card to proposer (preserve original drawn_by)
         await db.execute("""
-            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, 1, ?, ?)
             ON CONFLICT(owner_id, card_member_id, rarity)
             DO UPDATE SET quantity = quantity + 1
-        """, (proposer_id, request_member_id, request_rarity, first_acquired))
+        """, (proposer_id, request_member_id, request_rarity, first_acquired, request_drawn_by))
 
         await db.execute(
             "UPDATE pending_trades SET status = 'accepted' WHERE id = ?", (trade_id,)
@@ -603,7 +608,7 @@ async def decline_trade(trade_id: int) -> bool:
         return cursor.rowcount > 0
 
 
-async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: int) -> Optional[UserCard]:
+async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: int, drawn_by_name: str = "admin") -> Optional[UserCard]:
     """Manually award cards to a user. Returns None if rarity is invalid."""
     if rarity not in RARITY_ORDER:
         return None
@@ -611,16 +616,16 @@ async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
-            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(owner_id, card_member_id, rarity)
             DO UPDATE SET quantity = quantity + excluded.quantity
             """,
-            (owner_id, card_member_id, rarity, quantity, now),
+            (owner_id, card_member_id, rarity, quantity, now, drawn_by_name),
         )
         await db.commit()
         async with db.execute(
-            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at "
+            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name "
             "FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
             (owner_id, card_member_id, rarity),
         ) as cur:
@@ -628,4 +633,5 @@ async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: 
     return UserCard(
         id=r[0], owner_id=r[1], card_member_id=r[2],
         rarity=r[3], quantity=r[4], first_acquired_at=r[5],
+        drawn_by_name=r[6],
     )

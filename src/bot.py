@@ -246,7 +246,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
     )
     max_draws = 10 if is_super_pal else 5
 
-    card = await draw_card(owner_id=str(member.id), max_draws=max_draws)
+    card = await draw_card(owner_id=str(member.id), max_draws=max_draws, drawn_by_name=member.display_name)
     if card is None:
         limit_label = "10 draws" if is_super_pal else "5 draws"
         await interaction.followup.send(
@@ -270,7 +270,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
         avatar_url=avatar_url,
         rarity=card.rarity,
         card_number=card.id,
-        drawn_by=member.display_name,
+        drawn_by=card.drawn_by_name or member.display_name,
         bio=row[2] if row else None,
         stats_pairs=_parse_stats(row[3] if row else None),
     )
@@ -296,7 +296,7 @@ async def display_card_command(
     await interaction.response.defer()
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT uc.id, m.display_name, m.avatar_url, m.bio, m.stats "
+            "SELECT uc.id, m.display_name, m.avatar_url, m.bio, m.stats, uc.drawn_by_name "
             "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
             "WHERE uc.owner_id = ? AND uc.card_member_id = ? AND uc.rarity = ? AND uc.quantity > 0",
             (str(interaction.user.id), str(member.id), rarity),
@@ -310,13 +310,13 @@ async def display_card_command(
         )
         return
 
-    card_id, display_name, avatar_url, bio, stats_raw = row
+    card_id, display_name, avatar_url, bio, stats_raw, drawn_by_name = row
     embed = build_card_embed(
         display_name=display_name,
         avatar_url=avatar_url,
         rarity=rarity,
         card_number=card_id,
-        drawn_by=interaction.user.display_name,
+        drawn_by=drawn_by_name or interaction.user.display_name,
         bio=bio,
         stats_pairs=_parse_stats(stats_raw),
     )
@@ -365,6 +365,7 @@ async def trade_in_command(
         owner_id=str(interaction.user.id),
         card_member_id=str(member.id),
         rarity=rarity,
+        drawn_by_name=interaction.user.display_name,
     )
     if card is None:
         await interaction.followup.send(
@@ -387,7 +388,7 @@ async def trade_in_command(
         avatar_url=avatar_url,
         rarity=card.rarity,
         card_number=card.id,
-        drawn_by=interaction.user.display_name,
+        drawn_by=card.drawn_by_name or interaction.user.display_name,
         bio=row[2] if row else None,
         stats_pairs=_parse_stats(row[3] if row else None),
     )
@@ -416,6 +417,7 @@ async def upgrade_command(
         owner_id=str(interaction.user.id),
         card_member_id=str(member.id),
         rarity=rarity,
+        drawn_by_name=interaction.user.display_name,
     )
     if card is None:
         await interaction.followup.send(
@@ -438,7 +440,7 @@ async def upgrade_command(
         avatar_url=avatar_url,
         rarity=card.rarity,
         card_number=card.id,
-        drawn_by=interaction.user.display_name,
+        drawn_by=card.drawn_by_name or interaction.user.display_name,
         bio=row[2] if row else None,
         stats_pairs=_parse_stats(row[3] if row else None),
     )
