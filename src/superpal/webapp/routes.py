@@ -63,11 +63,21 @@ async def _admin_context() -> dict:
     }
 
 
+async def _expired_command_for_token(token: str) -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT link_type FROM magic_links WHERE token = ?", (token,)
+        ) as cur:
+            row = await cur.fetchone()
+    return "/admin-link" if row and row[0] == "admin" else "/my-collection"
+
+
 @router.get("/link/{token}")
 async def magic_link_landing(token: str, request: Request):
     link = await use_magic_link(token)
     if link is None:
-        return templates.TemplateResponse(request, "expired.html")
+        command = await _expired_command_for_token(token)
+        return templates.TemplateResponse(request, "expired.html", {"command": command})
     if link.link_type == "admin":
         ctx = await _admin_context()
         template, replace_url = "admin.html", "/admin"
@@ -118,7 +128,7 @@ async def collection_trade_in(
 async def admin_view(request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html")
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     ctx = await _admin_context()
     return templates.TemplateResponse(request, "admin.html", ctx)
 
@@ -127,7 +137,7 @@ async def admin_view(request: Request):
 async def toggle_exclude(member_id: str, request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     members = await get_all_members_for_admin()
     current = next((m for m in members if m["discord_id"] == member_id), None)
     if current:
@@ -139,7 +149,7 @@ async def toggle_exclude(member_id: str, request: Request):
 async def admin_sync(request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     try:
         from bot import _guild_members_cache
         if _guild_members_cache:
@@ -153,7 +163,7 @@ async def admin_sync(request: Request):
 async def admin_reset_draws(request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await reset_draw_log()
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -166,7 +176,7 @@ async def admin_add_member(
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     if not discord_id.strip():
         discord_id = str(uuid.uuid4())
     await add_member(discord_id, display_name)
@@ -181,7 +191,7 @@ async def admin_set_member_avatar(
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     suffix = Path(image.filename or "upload.png").suffix.lower()
     if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
         suffix = ".png"
@@ -200,7 +210,7 @@ async def admin_set_forced_rarity(
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await set_forced_rarity(member_id, rarity or None)
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -215,7 +225,7 @@ async def admin_award_card(
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await award_card(owner_id, card_member_id, rarity, max(1, quantity))
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -229,7 +239,7 @@ async def admin_set_bio_stats(
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
-        return templates.TemplateResponse(request, "expired.html", {})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     stats_dict: dict[str, str] = {}
     for line in stats_text.splitlines():
         if ":" in line:
