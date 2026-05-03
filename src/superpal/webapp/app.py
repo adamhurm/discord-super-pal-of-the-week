@@ -1,14 +1,21 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from superpal.cards.db import DB_PATH
+from superpal.cards.db import DB_PATH, init_db
 from superpal.webapp.routes import router
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Bringus Card Game", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Bringus Card Game", docs_url=None, redoc_url=None, lifespan=_lifespan)
     app.include_router(router)
     images_dir = Path(DB_PATH).parent / "images"
     images_dir.mkdir(exist_ok=True)
