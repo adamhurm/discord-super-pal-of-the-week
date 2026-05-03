@@ -265,6 +265,50 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
     await interaction.followup.send(embed=embed)
 
 
+@bot.tree.command(name="display-card", description="Show a card you own in the channel")
+@discord.app_commands.describe(
+    member="The member whose card you want to display",
+    rarity="The rarity of the card to display",
+)
+@discord.app_commands.choices(rarity=[
+    discord.app_commands.Choice(name="Common", value="common"),
+    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+    discord.app_commands.Choice(name="Rare", value="rare"),
+    discord.app_commands.Choice(name="Legendary", value="legendary"),
+])
+async def display_card_command(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    rarity: str,
+) -> None:
+    await interaction.response.defer()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT uc.id, m.display_name, m.avatar_url "
+            "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
+            "WHERE uc.owner_id = ? AND uc.card_member_id = ? AND uc.rarity = ? AND uc.quantity > 0",
+            (str(interaction.user.id), str(member.id), rarity),
+        ) as cur:
+            row = await cur.fetchone()
+
+    if row is None:
+        await interaction.followup.send(
+            f"You don't own a {rarity.upper()} {member.display_name} card.",
+            ephemeral=True,
+        )
+        return
+
+    card_id, display_name, avatar_url = row
+    embed = build_card_embed(
+        display_name=display_name,
+        avatar_url=avatar_url,
+        rarity=rarity,
+        card_number=card_id,
+        drawn_by=interaction.user.display_name,
+    )
+    await interaction.followup.send(embed=embed)
+
+
 @bot.tree.command(name="my-collection", description="Get a private link to your card collection")
 async def my_collection_command(interaction: discord.Interaction) -> None:
     url = await generate_magic_link(
