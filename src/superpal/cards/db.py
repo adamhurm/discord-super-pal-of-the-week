@@ -76,3 +76,13 @@ async def init_db() -> None:
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE members ADD COLUMN bio TEXT")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE members ADD COLUMN stats TEXT")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists

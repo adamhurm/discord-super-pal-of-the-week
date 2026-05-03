@@ -1,3 +1,4 @@
+import json
 import uuid
 import aiosqlite
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -17,6 +18,7 @@ from superpal.cards.service import (
     set_excluded,
     set_forced_rarity,
     set_member_avatar,
+    set_member_bio_stats,
     sync_members as _sync_members,
     trade_in,
 )
@@ -215,4 +217,28 @@ async def admin_award_card(
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html", {})
     await award_card(owner_id, card_member_id, rarity, max(1, quantity))
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/admin/member/{member_id}/bio-stats")
+async def admin_set_bio_stats(
+    member_id: str,
+    request: Request,
+    bio: str = Form(""),
+    stats_text: str = Form(""),
+):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html", {})
+    stats_dict: dict[str, str] = {}
+    for line in stats_text.splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            if k.strip():
+                stats_dict[k.strip()] = v.strip()
+    await set_member_bio_stats(
+        member_id,
+        bio.strip(),
+        json.dumps(stats_dict) if stats_dict else "",
+    )
     return RedirectResponse(url="/admin", status_code=303)

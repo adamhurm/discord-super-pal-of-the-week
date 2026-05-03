@@ -47,6 +47,15 @@
                  font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-top: 2px; }
     .unknown { opacity: 0.4; border-left-color: #3f4147; }
     .unknown .card-name { color: #555; }
+    .card-bio {
+      font-size: 11px; color: #72767d; font-style: italic; margin-top: 4px;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; line-height: 1.4;
+    }
+    .card-stats { margin-top: 5px; }
+    .card-stat { display: flex; justify-content: space-between; font-size: 10px;
+                 color: #b9bbbe; line-height: 1.6; gap: 4px; }
+    .card-stat-key { color: #72767d; flex-shrink: 0; }
     .trade-btn {
       display: block; width: 100%; margin-top: 10px;
       background: #3f4147; color: #b9bbbe; border: none;
@@ -121,6 +130,16 @@
       <div class="card-rarity rarity-{{ card.rarity }}">{{ card.rarity | upper }}</div>
       {% if card.quantity > 1 %}
         <div class="qty-badge">×{{ card.quantity }}</div>
+      {% endif %}
+      {% if card.bio %}
+        <p class="card-bio">{{ card.bio }}</p>
+      {% endif %}
+      {% if card.stats_pairs %}
+        <div class="card-stats">
+          {% for key, val in card.stats_pairs %}
+            <div class="card-stat"><span class="card-stat-key">{{ key }}</span><span>{{ val }}</span></div>
+          {% endfor %}
+        </div>
       {% endif %}
       {% if card.quantity >= 3 %}
         <form method="post" action="/collection/trade-in">

@@ -1,3 +1,4 @@
+import json
 import random
 import uuid
 import aiosqlite
@@ -327,12 +328,20 @@ async def get_collection(owner_id: str) -> dict:
             }
 
         async with db.execute(
-            "SELECT uc.card_member_id, m.display_name, m.avatar_url, uc.rarity, uc.quantity "
+            "SELECT uc.card_member_id, m.display_name, m.avatar_url, uc.rarity, uc.quantity, m.bio, m.stats "
             "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
             "WHERE uc.owner_id = ? AND m.is_excluded = 0 ORDER BY uc.rarity, m.display_name",
             (owner_id,),
         ) as cur:
             owned_rows = await cur.fetchall()
+
+    def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
+        if not raw:
+            return []
+        try:
+            return list(json.loads(raw).items())
+        except (json.JSONDecodeError, AttributeError):
+            return []
 
     owned = [
         {
@@ -341,6 +350,8 @@ async def get_collection(owner_id: str) -> dict:
             "avatar_url": r[2],
             "rarity": r[3],
             "quantity": r[4],
+            "bio": r[5],
+            "stats_pairs": _parse_stats(r[6]),
         }
         for r in owned_rows
     ]
@@ -369,7 +380,7 @@ async def get_all_members_for_admin() -> list[dict]:
     """Return all members with exclusion and rarity-lock status for admin dashboard."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT discord_id, display_name, avatar_url, is_excluded, forced_rarity, is_synthetic "
+            "SELECT discord_id, display_name, avatar_url, is_excluded, forced_rarity, is_synthetic, bio, stats "
             "FROM members ORDER BY display_name"
         ) as cur:
             rows = await cur.fetchall()
@@ -377,6 +388,7 @@ async def get_all_members_for_admin() -> list[dict]:
         {
             "discord_id": r[0], "display_name": r[1], "avatar_url": r[2],
             "is_excluded": bool(r[3]), "forced_rarity": r[4], "is_synthetic": bool(r[5]),
+            "bio": r[6], "stats": r[7],
         }
         for r in rows
     ]
@@ -417,6 +429,16 @@ async def set_member_avatar(member_id: str, avatar_url: str) -> None:
         await db.execute(
             "UPDATE members SET avatar_url = ? WHERE discord_id = ?",
             (avatar_url, member_id),
+        )
+        await db.commit()
+
+
+async def set_member_bio_stats(member_id: str, bio: str, stats: str) -> None:
+    """Update bio (lore text) and stats (JSON blob) for a member."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE members SET bio = ?, stats = ? WHERE discord_id = ?",
+            (bio or None, stats or None, member_id),
         )
         await db.commit()
 

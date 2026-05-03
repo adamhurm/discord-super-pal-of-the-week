@@ -98,6 +98,16 @@
       display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
       color: #b9bbbe; background: #3f4147; padding: 1px 6px; border-radius: 10px; margin-top: 2px;
     }
+    .bio-textarea {
+      background: #1e1f22; color: #dcddde; border: 1px solid #3f4147;
+      border-radius: 4px; padding: 6px 8px; font-size: 13px; width: 100%;
+      resize: vertical; font-family: sans-serif; line-height: 1.5;
+    }
+    .bio-label { font-size: 11px; color: #72767d; font-weight: 700;
+                 letter-spacing: 0.5px; text-transform: uppercase;
+                 display: block; margin-bottom: 4px; margin-top: 12px; }
+    .bio-label:first-child { margin-top: 0; }
+    .bio-hint { font-size: 11px; color: #72767d; margin-top: 4px; margin-bottom: 0; }
   </style>
 </head>
 <body>
@@ -209,6 +219,12 @@
         </select>
       </form>
       {% endif %}
+      <button class="img-label" type="button"
+        data-id="{{ m.discord_id }}"
+        data-name="{{ m.display_name | e }}"
+        data-bio="{{ m.bio | e if m.bio else '' }}"
+        data-stats="{{ m.stats if m.stats else '' }}"
+        onclick="openBioModal(this)">Edit Bio</button>
       <form method="post" action="/admin/member/{{ m.discord_id }}/avatar" enctype="multipart/form-data">
         <label class="img-label">
           Set Image
@@ -224,6 +240,25 @@
       </form>
     </div>
     {% endfor %}
+  </div>
+
+  <div class="modal-backdrop" id="bio-modal" onclick="if(event.target===this)this.style.display='none'">
+    <div class="modal">
+      <button class="modal-close" onclick="document.getElementById('bio-modal').style.display='none'">×</button>
+      <h2 id="bio-modal-title">Edit Bio</h2>
+      <form method="post" id="bio-modal-form" action="">
+        <label class="bio-label">Lore / Bio</label>
+        <textarea class="bio-textarea" name="bio" id="bio-modal-bio" rows="4"
+                  placeholder="A short flavor description…"></textarea>
+        <label class="bio-label">Stats</label>
+        <textarea class="bio-textarea" name="stats_text" id="bio-modal-stats" rows="5"
+                  placeholder="Power Level: 9000&#10;Catchphrase: Never give up&#10;Vibe: Immaculate"></textarea>
+        <p class="bio-hint">One stat per line in <strong>Label: Value</strong> format.</p>
+        <div style="margin-top:14px">
+          <button type="submit" class="award-btn">Save</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div class="modal-backdrop" id="help-modal" onclick="if(event.target===this)this.style.display='none'">
@@ -255,5 +290,25 @@
       <p>Run <code>/admin-link</code> in Discord (requires The Clippy role). The bot DMs a one-time link — first click opens a 24-hour admin session.</p>
     </div>
   </div>
+  <script>
+    function openBioModal(btn) {
+      const id = btn.dataset.id;
+      const name = btn.dataset.name;
+      const bio = btn.dataset.bio || '';
+      const statsRaw = btn.dataset.stats || '';
+      let statsText = '';
+      if (statsRaw) {
+        try {
+          const obj = JSON.parse(statsRaw);
+          statsText = Object.entries(obj).map(([k, v]) => k + ': ' + v).join('\n');
+        } catch (_) { statsText = ''; }
+      }
+      document.getElementById('bio-modal-title').textContent = 'Edit Bio — ' + name;
+      document.getElementById('bio-modal-form').action = '/admin/member/' + id + '/bio-stats';
+      document.getElementById('bio-modal-bio').value = bio;
+      document.getElementById('bio-modal-stats').value = statsText;
+      document.getElementById('bio-modal').style.display = 'flex';
+    }
+  </script>
 </body>
 </html>
