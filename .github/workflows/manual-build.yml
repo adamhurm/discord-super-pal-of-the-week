@@ -57,7 +57,7 @@ jobs:
         with:
           context: .
           platforms: ${{ inputs.platforms }}
-          file: ./Dockerfile.super-pal
+          file: ./docker/Dockerfile.super-pal
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -118,7 +118,7 @@ jobs:
         with:
           context: .
           platforms: ${{ inputs.platforms }}
-          file: ./Dockerfile.spin-the-wheel
+          file: ./docker/Dockerfile.spin-the-wheel
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

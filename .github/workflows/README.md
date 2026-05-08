@@ -52,13 +52,13 @@ This directory contains GitHub Actions workflows for building and publishing the
 ## Image Information
 
 ### Super Pal Image
-- **Dockerfile:** `Dockerfile.super-pal`
+- **Dockerfile:** `docker/Dockerfile.super-pal`
 - **Base Image:** `python:3.13-slim-bookworm`
 - **Docker Hub:** `adamhurm/discord-super-pal` (releases only)
 - **Purpose:** Main Discord bot for Super Pal of the Week
 
 ### Spin The Wheel Image
-- **Dockerfile:** `Dockerfile.spin-the-wheel`
+- **Dockerfile:** `docker/Dockerfile.spin-the-wheel`
 - **Purpose:** Spin The Wheel integration bot
 
 ## Platform Support

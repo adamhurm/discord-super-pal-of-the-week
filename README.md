@@ -65,4 +65,4 @@ Binaries are automatically built when:
 
 - **macOS**: The binary supports both Intel (x86_64) and Apple Silicon (arm64) architectures
 - **Windows**: The binary is built for x64 architecture
-- **Linux**: The binary is built for x86_64 architecture. For containerized deployment, see Dockerfile.super-pal
+- **Linux**: The binary is built for x86_64 architecture. For containerized deployment, see `docker/Dockerfile.super-pal`

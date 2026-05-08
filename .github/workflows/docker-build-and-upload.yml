@@ -39,7 +39,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64, linux/arm64
-          file: ./Dockerfile.super-pal
+          file: ./docker/Dockerfile.super-pal
           push: true
           tags: ${{ steps.meta-super-pal.outputs.tags }}
           labels: ${{ steps.meta-super-pal.outputs.labels }}
