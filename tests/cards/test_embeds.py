@@ -56,3 +56,27 @@ def test_build_card_embed_no_bio_no_stats():
     )
     assert embed.description is None
     assert len(embed.fields) == 0
+
+
+def test_build_card_embed_custom_action_label():
+    embed = build_card_embed(
+        display_name="Bingus",
+        avatar_url=None,
+        rarity="rare",
+        card_number=5,
+        drawn_by="Alice",
+        action_label="gifted by Gifter to",
+    )
+    assert "gifted by Gifter to Alice" in embed.footer.text
+    assert "drawn by" not in embed.footer.text
+
+
+def test_build_card_embed_default_action_label():
+    embed = build_card_embed(
+        display_name="Bingus",
+        avatar_url=None,
+        rarity="common",
+        card_number=1,
+        drawn_by="Alice",
+    )
+    assert "drawn by Alice" in embed.footer.text
