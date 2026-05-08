@@ -178,12 +178,28 @@ class TradeView(discord.ui.View):
 
 
 class GiftConfirmView(discord.ui.View):
-    def __init__(self, gifter_id: str, recipient: discord.Member, card_member_id: str, rarity: str):
+    def __init__(
+        self,
+        interaction: discord.Interaction,
+        gifter_id: str,
+        recipient: discord.Member,
+        card_member_id: str,
+        rarity: str,
+    ):
         super().__init__(timeout=60)
+        self.interaction = interaction
         self.gifter_id = gifter_id
         self.recipient = recipient
         self.card_member_id = card_member_id
         self.rarity = rarity
+
+    async def on_timeout(self) -> None:
+        try:
+            await self.interaction.edit_original_response(
+                content="Gift confirmation expired.", view=None
+            )
+        except discord.NotFound:
+            pass
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
     async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -623,12 +639,13 @@ async def gift_card_command(
     qty = await get_card_quantity(gifter_id, str(member.id), rarity)
     if qty < 1:
         await interaction.response.send_message(
-            f"You don't own a {rarity.upper()} {member.display_name} card.",
+            f"You don't own a {RARITY_LABELS[rarity]} {member.display_name} card.",
             ephemeral=True,
         )
         return
 
     view = GiftConfirmView(
+        interaction=interaction,
         gifter_id=gifter_id,
         recipient=recipient,
         card_member_id=str(member.id),
