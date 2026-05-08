@@ -659,23 +659,23 @@ async def gift_card_command(
 
 
 @bot.tree.command(name="card-leaderboard", description="Show the top 10 card collectors")
-@discord.app_commands.describe(type="What to rank players by")
-@discord.app_commands.choices(type=[
+@discord.app_commands.describe(sort_by="What to rank players by")
+@discord.app_commands.choices(sort_by=[
     discord.app_commands.Choice(name="Total Cards", value="total"),
     discord.app_commands.Choice(name="Legendary Cards", value="legendary"),
     discord.app_commands.Choice(name="Unique Members", value="unique"),
 ])
 async def card_leaderboard_command(
     interaction: discord.Interaction,
-    type: str = "total",
+    sort_by: str = "total",
 ) -> None:
     await interaction.response.defer()
-    rows = await get_leaderboard(type)
+    rows = await get_leaderboard(sort_by)
 
     title_map = {"total": "Total Cards", "legendary": "Legendary Cards", "unique": "Unique Members"}
     unit_map = {"total": "cards", "legendary": "legendary cards", "unique": "unique members"}
-    title = f"Top 10 — {title_map.get(type, 'Total Cards')}"
-    unit = unit_map.get(type, "cards")
+    title = f"Top 10 — {title_map.get(sort_by, 'Total Cards')}"
+    unit = unit_map.get(sort_by, "cards")
 
     if not rows:
         embed = discord.Embed(

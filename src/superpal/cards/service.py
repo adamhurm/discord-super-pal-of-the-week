@@ -686,7 +686,7 @@ async def get_leaderboard(sort_by: str = "total") -> list[dict]:
             SELECT uc.owner_id, m.display_name,
                 COUNT(DISTINCT uc.card_member_id) AS total
             FROM user_cards uc JOIN members m ON uc.owner_id = m.discord_id
-            WHERE m.is_excluded = 0
+            WHERE m.is_excluded = 0 AND uc.quantity > 0
             GROUP BY uc.owner_id, m.display_name
             ORDER BY total DESC LIMIT 10
         """
