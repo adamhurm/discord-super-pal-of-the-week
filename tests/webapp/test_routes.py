@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
 from superpal.webapp.app import create_app
 from superpal.cards.models import MagicLink
@@ -122,7 +122,6 @@ async def test_trade_in_without_session_shows_expired(client):
 @pytest.mark.asyncio
 async def test_trade_in_success_shows_result(client):
     from superpal.cards.models import UserCard
-    from unittest.mock import MagicMock
     from datetime import datetime, timezone
 
     link = _link()
@@ -287,8 +286,6 @@ async def test_admin_award_card_success_redirects(client):
 
 @pytest.mark.asyncio
 async def test_collection_shows_completion_pct(client):
-    from unittest.mock import MagicMock
-
     link = _link()
     fake_collection = {
         "owned": [{"member_id": "111", "display_name": "Alice", "avatar_url": None,

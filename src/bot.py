@@ -702,7 +702,7 @@ async def card_progress_command(interaction: discord.Interaction) -> None:
 
     unique_members_collected = len({c["member_id"] for c in owned})
     total_eligible = unique_members_collected + len(undiscovered)
-    collection_pct = round(unique_members_collected / total_eligible * 100) if total_eligible > 0 else 0
+    completion_pct = round(unique_members_collected / total_eligible * 100) if total_eligible > 0 else 0
 
     rarity_members: dict[str, set[str]] = {"common": set(), "uncommon": set(), "rare": set(), "legendary": set()}
     member_rarities: dict[str, set[str]] = {}
@@ -719,11 +719,11 @@ async def card_progress_command(interaction: discord.Interaction) -> None:
     embed = discord.Embed(title="Your Card Progress", color=discord.Color.blurple())
     embed.add_field(
         name="Collection",
-        value=f"{unique_members_collected}/{total_eligible} members ({collection_pct}%)",
+        value=f"{unique_members_collected}/{total_eligible} members ({completion_pct}%)",
         inline=False,
     )
     embed.add_field(
-        name="By Rarity",
+        name="Members by Rarity",
         value=(
             f"Common: {per_rarity['common']} · "
             f"Uncommon: {per_rarity['uncommon']} · "
