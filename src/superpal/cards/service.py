@@ -133,6 +133,67 @@ async def get_card_quantity(owner_id: str, card_member_id: str, rarity: str) -> 
     return row[0] if row else 0
 
 
+async def gift_card(
+    gifter_id: str,
+    recipient_id: str,
+    card_member_id: str,
+    rarity: str,
+    drawn_by_name: str = "",
+) -> tuple[Optional[UserCard], Optional[str]]:
+    """Transfer one copy of [card_member_id, rarity] from gifter to recipient.
+    Returns (UserCard, None) on success or (None, reason) on failure.
+    Reasons: 'self_gift', 'invalid_rarity', 'no_card'."""
+    if gifter_id == recipient_id:
+        return None, "self_gift"
+    if rarity not in RARITY_ORDER:
+        return None, "invalid_rarity"
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+
+        async with db.execute(
+            "SELECT quantity FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (gifter_id, card_member_id, rarity),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row[0] < 1:
+            return None, "no_card"
+
+        await db.execute(
+            "UPDATE user_cards SET quantity = quantity - 1 "
+            "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (gifter_id, card_member_id, rarity),
+        )
+        await db.execute(
+            "DELETE FROM user_cards WHERE owner_id = ? AND quantity <= 0",
+            (gifter_id,),
+        )
+
+        await db.execute("""
+            INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name)
+            VALUES (?, ?, ?, 1, ?, ?)
+            ON CONFLICT(owner_id, card_member_id, rarity)
+            DO UPDATE SET quantity = quantity + 1
+        """, (recipient_id, card_member_id, rarity, now, drawn_by_name))
+
+        await db.commit()
+
+        async with db.execute(
+            "SELECT id, owner_id, card_member_id, rarity, quantity, first_acquired_at, drawn_by_name "
+            "FROM user_cards WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+            (recipient_id, card_member_id, rarity),
+        ) as cur:
+            r = await cur.fetchone()
+
+    return UserCard(
+        id=r[0], owner_id=r[1], card_member_id=r[2],
+        rarity=r[3], quantity=r[4], first_acquired_at=r[5],
+        drawn_by_name=r[6],
+    ), None
+
+
 async def trade_in(owner_id: str, card_member_id: str, rarity: str, drawn_by_name: str = "") -> Optional[UserCard]:
     """Trade 3x [card_member_id, rarity] for a random card of the same rarity.
     Returns the new card, or None if insufficient duplicates or invalid rarity."""

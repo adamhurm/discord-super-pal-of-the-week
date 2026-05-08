@@ -507,3 +507,82 @@ async def test_decline_trade_already_resolved_returns_false(db):
     await svc.execute_trade(trade.id)
     result = await svc.decline_trade(trade.id)
     assert result is False
+
+
+# ─── Gift card tests ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_gift_card_transfers_card(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+    ])
+    # Give Alice a card to gift
+    await svc.award_card("111", "333", "rare", 1)
+
+    card, err = await svc.gift_card(
+        gifter_id="111",
+        recipient_id="222",
+        card_member_id="333",
+        rarity="rare",
+        drawn_by_name="Alice",
+    )
+
+    assert err is None
+    assert card is not None
+    assert card.owner_id == "222"
+    assert card.card_member_id == "333"
+    assert card.rarity == "rare"
+    # Alice's card should be gone
+    assert await svc.get_card_quantity("111", "333", "rare") == 0
+    # Bob should have it
+    assert await svc.get_card_quantity("222", "333", "rare") == 1
+
+
+@pytest.mark.asyncio
+async def test_gift_card_gifter_keeps_extra_copy(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+    ])
+    await svc.award_card("111", "333", "common", 3)
+
+    card, err = await svc.gift_card("111", "222", "333", "common", "Alice")
+
+    assert err is None
+    assert await svc.get_card_quantity("111", "333", "common") == 2
+    assert await svc.get_card_quantity("222", "333", "common") == 1
+
+
+@pytest.mark.asyncio
+async def test_gift_card_fails_when_not_owned(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+    ])
+
+    card, err = await svc.gift_card("111", "222", "333", "rare", "Alice")
+
+    assert card is None
+    assert err == "no_card"
+
+
+@pytest.mark.asyncio
+async def test_gift_card_fails_self_gift(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+    ])
+    await svc.award_card("111", "333", "common", 1)
+
+    card, err = await svc.gift_card("111", "111", "333", "common", "Alice")
+
+    assert card is None
+    assert err == "self_gift"
