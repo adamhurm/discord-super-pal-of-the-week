@@ -23,6 +23,7 @@ from superpal.cards.db import init_db, DB_PATH
 from superpal.cards.service import (
     draw_card, sync_members, generate_magic_link, trade_in, upgrade,
     create_trade_offer, execute_trade, decline_trade, TRADE_EXPIRY_MINUTES,
+    gift_card, get_card_quantity,
 )
 from superpal.cards.models import RARITY_LABELS
 from superpal.env import WEBAPP_BASE_URL
@@ -174,6 +175,76 @@ class TradeView(discord.ui.View):
                 await self.message.edit(content="Trade offer expired.", view=None)
             except discord.NotFound:
                 pass
+
+
+class GiftConfirmView(discord.ui.View):
+    def __init__(self, gifter_id: str, recipient: discord.Member, card_member_id: str, rarity: str):
+        super().__init__(timeout=60)
+        self.gifter_id = gifter_id
+        self.recipient = recipient
+        self.card_member_id = card_member_id
+        self.rarity = rarity
+
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if str(interaction.user.id) != self.gifter_id:
+            await interaction.response.send_message(
+                "Only the gifter can confirm this.", ephemeral=True
+            )
+            return
+
+        card, err = await gift_card(
+            gifter_id=self.gifter_id,
+            recipient_id=str(self.recipient.id),
+            card_member_id=self.card_member_id,
+            rarity=self.rarity,
+            drawn_by_name=interaction.user.display_name,
+        )
+        self.stop()
+
+        if card is None:
+            msg = {
+                "no_card": "You no longer have that card.",
+                "self_gift": "You can't gift a card to yourself.",
+            }.get(err or "", "Gift failed.")
+            await interaction.response.edit_message(content=msg, view=None)
+            return
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
+                (self.card_member_id,),
+            ) as cur:
+                row = await cur.fetchone()
+
+        display_name = row[0] if row else "Unknown"
+        avatar_url = row[1] if row else None
+        embed = build_card_embed(
+            display_name=display_name,
+            avatar_url=avatar_url,
+            rarity=self.rarity,
+            card_number=card.id,
+            drawn_by=self.recipient.display_name,
+            bio=row[2] if row else None,
+            stats_pairs=_parse_stats(row[3] if row else None),
+            action_label=f"gifted by {interaction.user.display_name} to",
+        )
+        await interaction.response.edit_message(content="Gift sent!", view=None)
+        if interaction.channel:
+            await interaction.channel.send(
+                content=f"{self.recipient.mention} just received a gift from {interaction.user.mention}!",
+                embed=embed,
+            )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if str(interaction.user.id) != self.gifter_id:
+            await interaction.response.send_message(
+                "Only the gifter can cancel this.", ephemeral=True
+            )
+            return
+        self.stop()
+        await interaction.response.edit_message(content="Gift cancelled.", view=None)
 
 
 ##################
@@ -521,6 +592,53 @@ async def propose_trade_command(
     )
     view.message = channel_msg
     await interaction.followup.send("Trade offer sent!", ephemeral=True)
+
+
+@bot.tree.command(name="card-gift", description="Give one of your cards to another player")
+@discord.app_commands.describe(
+    recipient="The server member to receive the gift",
+    member="The member card you want to gift",
+    rarity="The rarity of the card to gift",
+)
+@discord.app_commands.choices(rarity=[
+    discord.app_commands.Choice(name="Common", value="common"),
+    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+    discord.app_commands.Choice(name="Rare", value="rare"),
+    discord.app_commands.Choice(name="Legendary", value="legendary"),
+])
+async def gift_card_command(
+    interaction: discord.Interaction,
+    recipient: discord.Member,
+    member: discord.Member,
+    rarity: str,
+) -> None:
+    gifter_id = str(interaction.user.id)
+
+    if interaction.user.id == recipient.id:
+        await interaction.response.send_message(
+            "You can't gift a card to yourself.", ephemeral=True
+        )
+        return
+
+    qty = await get_card_quantity(gifter_id, str(member.id), rarity)
+    if qty < 1:
+        await interaction.response.send_message(
+            f"You don't own a {rarity.upper()} {member.display_name} card.",
+            ephemeral=True,
+        )
+        return
+
+    view = GiftConfirmView(
+        gifter_id=gifter_id,
+        recipient=recipient,
+        card_member_id=str(member.id),
+        rarity=rarity,
+    )
+    await interaction.response.send_message(
+        f"You're about to gift a **{RARITY_LABELS[rarity]} {member.display_name}** to {recipient.mention} — confirm?",
+        view=view,
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")
