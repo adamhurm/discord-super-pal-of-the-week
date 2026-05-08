@@ -586,3 +586,23 @@ async def test_gift_card_fails_self_gift(db):
 
     assert card is None
     assert err == "self_gift"
+
+
+@pytest.mark.asyncio
+async def test_gift_card_recipient_already_owns_copy(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+    ])
+    await svc.award_card("111", "333", "rare", 1)
+    await svc.award_card("222", "333", "rare", 1)  # Bob already has one
+
+    card, err = await svc.gift_card("111", "222", "333", "rare", "Alice")
+
+    assert err is None
+    assert card is not None
+    assert card.owner_id == "222"
+    assert await svc.get_card_quantity("222", "333", "rare") == 2
+    assert await svc.get_card_quantity("111", "333", "rare") == 0
