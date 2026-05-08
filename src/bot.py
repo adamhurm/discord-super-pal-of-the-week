@@ -23,7 +23,7 @@ from superpal.cards.db import init_db, DB_PATH
 from superpal.cards.service import (
     draw_card, sync_members, generate_magic_link, trade_in, upgrade,
     create_trade_offer, execute_trade, decline_trade, TRADE_EXPIRY_MINUTES,
-    gift_card, get_card_quantity,
+    gift_card, get_card_quantity, get_leaderboard,
 )
 from superpal.cards.models import RARITY_LABELS
 from superpal.env import WEBAPP_BASE_URL
@@ -656,6 +656,41 @@ async def gift_card_command(
         view=view,
         ephemeral=True,
     )
+
+
+@bot.tree.command(name="card-leaderboard", description="Show the top 10 card collectors")
+@discord.app_commands.describe(type="What to rank players by")
+@discord.app_commands.choices(type=[
+    discord.app_commands.Choice(name="Total Cards", value="total"),
+    discord.app_commands.Choice(name="Legendary Cards", value="legendary"),
+    discord.app_commands.Choice(name="Unique Members", value="unique"),
+])
+async def card_leaderboard_command(
+    interaction: discord.Interaction,
+    type: str = "total",
+) -> None:
+    await interaction.response.defer()
+    rows = await get_leaderboard(type)
+
+    title_map = {"total": "Total Cards", "legendary": "Legendary Cards", "unique": "Unique Members"}
+    unit_map = {"total": "cards", "legendary": "legendary cards", "unique": "unique members"}
+    title = f"Top 10 — {title_map.get(type, 'Total Cards')}"
+    unit = unit_map.get(type, "cards")
+
+    if not rows:
+        embed = discord.Embed(
+            title=title,
+            description="No cards have been collected yet!",
+            color=discord.Color(0x5865F2),
+        )
+    else:
+        lines = [
+            f"{rank}. {row['display_name']} — {row['total']} {unit}"
+            for rank, row in enumerate(rows, start=1)
+        ]
+        embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
+
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")
