@@ -578,21 +578,18 @@ async def super_pal_of_the_week():
             log.error("No non-bot members found in guild")
             return
 
-        # Verify member cache is complete
         log.info(f"Total guild members: {guild.member_count}")
         log.info(f"Cached members: {len(guild.members)}")
         log.info(f"Non-bot members: {len(true_member_list)}")
         if len(guild.members) < guild.member_count:
             log.warning("Member cache may be incomplete! Some users may be excluded from selection.")
 
-        # Remove current super pal from selection pool to avoid duplicates
+        # Exclude current super pal so they can't be re-selected
         eligible_members = [m for m in true_member_list if role not in m.roles]
-
         if not eligible_members:
             log.error("No eligible members for super pal selection (all members already have role)")
             return
 
-        # Select from eligible members only (cryptographically secure random)
         new_super_pal = secrets.choice(eligible_members)
         log.info(f'Selected new super pal of the week: {new_super_pal.name}')
 
