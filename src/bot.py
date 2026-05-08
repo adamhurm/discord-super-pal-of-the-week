@@ -23,7 +23,7 @@ from superpal.cards.db import init_db, DB_PATH
 from superpal.cards.service import (
     draw_card, sync_members, generate_magic_link, trade_in, upgrade,
     create_trade_offer, execute_trade, decline_trade, TRADE_EXPIRY_MINUTES,
-    gift_card, get_card_quantity, get_leaderboard,
+    gift_card, get_card_quantity, get_leaderboard, get_collection,
 )
 from superpal.cards.models import RARITY_LABELS
 from superpal.env import WEBAPP_BASE_URL
@@ -691,6 +691,53 @@ async def card_leaderboard_command(
         embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
 
     await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="card-progress", description="Check your card collection progress")
+async def card_progress_command(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True)
+    data = await get_collection(str(interaction.user.id))
+    owned: list[dict] = data["owned"]
+    undiscovered: list[dict] = data["undiscovered"]
+
+    unique_members_collected = len({c["member_id"] for c in owned})
+    total_eligible = unique_members_collected + len(undiscovered)
+    collection_pct = round(unique_members_collected / total_eligible * 100) if total_eligible > 0 else 0
+
+    rarity_members: dict[str, set[str]] = {"common": set(), "uncommon": set(), "rare": set(), "legendary": set()}
+    member_rarities: dict[str, set[str]] = {}
+    member_names: dict[str, str] = {}
+    for card in owned:
+        rarity_members[card["rarity"]].add(card["member_id"])
+        member_rarities.setdefault(card["member_id"], set()).add(card["rarity"])
+        member_names[card["member_id"]] = card["display_name"]
+
+    per_rarity = {r: len(s) for r, s in rarity_members.items()}
+    all_rarities = {"common", "uncommon", "rare", "legendary"}
+    complete_sets = sorted(member_names[mid] for mid, r in member_rarities.items() if r >= all_rarities)
+
+    embed = discord.Embed(title="Your Card Progress", color=discord.Color.blurple())
+    embed.add_field(
+        name="Collection",
+        value=f"{unique_members_collected}/{total_eligible} members ({collection_pct}%)",
+        inline=False,
+    )
+    embed.add_field(
+        name="By Rarity",
+        value=(
+            f"Common: {per_rarity['common']} · "
+            f"Uncommon: {per_rarity['uncommon']} · "
+            f"Rare: {per_rarity['rare']} · "
+            f"Legendary: {per_rarity['legendary']}"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Complete Sets",
+        value=", ".join(complete_sets) if complete_sets else "None yet",
+        inline=False,
+    )
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")
