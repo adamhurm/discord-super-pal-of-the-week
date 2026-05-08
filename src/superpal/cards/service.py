@@ -669,6 +669,41 @@ async def decline_trade(trade_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+async def get_leaderboard(sort_by: str = "total") -> list[dict]:
+    """Return top 10 players ranked by sort_by ('total', 'legendary', 'unique').
+    Returns list of dicts with keys: owner_id, display_name, total."""
+    if sort_by == "legendary":
+        sql = """
+            SELECT uc.owner_id, m.display_name,
+                COALESCE(SUM(CASE WHEN uc.rarity = 'legendary' THEN uc.quantity ELSE 0 END), 0) AS total
+            FROM user_cards uc JOIN members m ON uc.owner_id = m.discord_id
+            WHERE m.is_excluded = 0
+            GROUP BY uc.owner_id, m.display_name
+            ORDER BY total DESC LIMIT 10
+        """
+    elif sort_by == "unique":
+        sql = """
+            SELECT uc.owner_id, m.display_name,
+                COUNT(DISTINCT uc.card_member_id) AS total
+            FROM user_cards uc JOIN members m ON uc.owner_id = m.discord_id
+            WHERE m.is_excluded = 0
+            GROUP BY uc.owner_id, m.display_name
+            ORDER BY total DESC LIMIT 10
+        """
+    else:
+        sql = """
+            SELECT uc.owner_id, m.display_name, SUM(uc.quantity) AS total
+            FROM user_cards uc JOIN members m ON uc.owner_id = m.discord_id
+            WHERE m.is_excluded = 0
+            GROUP BY uc.owner_id, m.display_name
+            ORDER BY total DESC LIMIT 10
+        """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(sql) as cur:
+            rows = await cur.fetchall()
+    return [{"owner_id": r[0], "display_name": r[1], "total": r[2]} for r in rows]
+
+
 async def award_card(owner_id: str, card_member_id: str, rarity: str, quantity: int, drawn_by_name: str = "admin") -> Optional[UserCard]:
     """Manually award cards to a user. Returns None if rarity is invalid."""
     if rarity not in RARITY_ORDER:

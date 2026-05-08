@@ -606,3 +606,118 @@ async def test_gift_card_recipient_already_owns_copy(db):
     assert card.owner_id == "222"
     assert await svc.get_card_quantity("222", "333", "rare") == 2
     assert await svc.get_card_quantity("111", "333", "rare") == 0
+
+
+# ─── Leaderboard tests ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_total_empty(db):
+    db_mod, svc = db
+    assert await svc.get_leaderboard("total") == []
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_total_ranks_by_quantity(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 5)
+    await svc.award_card("bob", "card1", "common", 10)
+    result = await svc.get_leaderboard("total")
+    assert result[0]["display_name"] == "Bob" and result[0]["total"] == 10
+    assert result[1]["display_name"] == "Alice" and result[1]["total"] == 5
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_total_sums_across_rarities(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        {"discord_id": "card2", "display_name": "Card2", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 3)
+    await svc.award_card("alice", "card1", "rare", 2)
+    await svc.award_card("alice", "card2", "legendary", 1)
+    result = await svc.get_leaderboard("total")
+    assert result[0]["total"] == 6
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_excludes_excluded_players(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "excluded", "display_name": "Excluded", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 5)
+    await svc.award_card("excluded", "card1", "common", 100)
+    await svc.set_excluded("excluded", excluded=True)
+    result = await svc.get_leaderboard("total")
+    assert all(r["owner_id"] != "excluded" for r in result)
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_limits_to_ten(db):
+    db_mod, svc = db
+    members = [{"discord_id": str(i), "display_name": f"User{i}", "avatar_url": None} for i in range(15)]
+    members.append({"discord_id": "card1", "display_name": "Card1", "avatar_url": None})
+    await svc.sync_members(members)
+    for i in range(15):
+        await svc.award_card(str(i), "card1", "common", i + 1)
+    result = await svc.get_leaderboard("total")
+    assert len(result) == 10 and result[0]["total"] == 15
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_legendary_counts_only_legendary(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 50)
+    await svc.award_card("bob", "card1", "legendary", 3)
+    result = await svc.get_leaderboard("legendary")
+    assert result[0]["owner_id"] == "bob" and result[0]["total"] == 3
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_unique_counts_distinct_members(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        {"discord_id": "card2", "display_name": "Card2", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 5)
+    await svc.award_card("alice", "card2", "rare", 1)
+    await svc.award_card("bob", "card1", "common", 1)
+    await svc.award_card("bob", "card1", "legendary", 1)
+    result = await svc.get_leaderboard("unique")
+    alice_row = next(r for r in result if r["owner_id"] == "alice")
+    bob_row = next(r for r in result if r["owner_id"] == "bob")
+    assert alice_row["total"] == 2
+    assert bob_row["total"] == 1
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_default_is_total(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 7)
+    result = await svc.get_leaderboard()
+    assert result[0]["total"] == 7
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_result_keys(db):
+    db_mod, svc = db
+    await svc.sync_members([
+        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+    ])
+    await svc.award_card("alice", "card1", "common", 1)
+    result = await svc.get_leaderboard("total")
+    assert set(result[0].keys()) == {"owner_id", "display_name", "total"}
