@@ -1,5 +1,6 @@
 assets/*
 images/
+.worktrees/
 .venv
 .env*
 .DS_Store
