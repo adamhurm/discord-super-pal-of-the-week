@@ -198,7 +198,7 @@ class GiftConfirmView(discord.ui.View):
             await self.interaction.edit_original_response(
                 content="Gift confirmation expired.", view=None
             )
-        except discord.NotFound:
+        except discord.HTTPException:
             pass
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
@@ -209,6 +209,7 @@ class GiftConfirmView(discord.ui.View):
             )
             return
 
+        self.stop()
         card, err = await gift_card(
             gifter_id=self.gifter_id,
             recipient_id=str(self.recipient.id),
@@ -216,7 +217,6 @@ class GiftConfirmView(discord.ui.View):
             rarity=self.rarity,
             drawn_by_name=interaction.user.display_name,
         )
-        self.stop()
 
         if card is None:
             msg = {
