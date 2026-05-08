@@ -237,7 +237,7 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         )
 
 
-@bot.tree.command(name="draw-card", description="Draw a card from the Bringus deck (up to 5 per week)")
+@bot.tree.command(name="card-draw", description="Draw a card from the Bringus deck (up to 5 per week)")
 async def draw_card_command(interaction: discord.Interaction) -> None:
     await interaction.response.defer()
     member = interaction.user
@@ -277,7 +277,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="display-card", description="Show a card you own in the channel")
+@bot.tree.command(name="card-display", description="Show a card you own in the channel")
 @discord.app_commands.describe(
     member="The member whose card you want to display",
     rarity="The rarity of the card to display",
@@ -323,7 +323,7 @@ async def display_card_command(
     await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="my-collection", description="Get a private link to your card collection")
+@bot.tree.command(name="card-collection", description="Get a private link to your card collection")
 async def my_collection_command(interaction: discord.Interaction) -> None:
     url = await generate_magic_link(
         user_id=str(interaction.user.id),
@@ -344,7 +344,7 @@ async def my_collection_command(interaction: discord.Interaction) -> None:
         )
 
 
-@bot.tree.command(name="trade-in", description="Trade 3 duplicate cards for a random card of the same rarity")
+@bot.tree.command(name="card-trade-in", description="Trade 3 duplicate cards for a random card of the same rarity")
 @discord.app_commands.describe(
     member="The member whose card you want to trade in",
     rarity="The rarity of the card to trade",
@@ -397,7 +397,7 @@ async def trade_in_command(
     )
 
 
-@bot.tree.command(name="upgrade", description="Spend 5 duplicate cards to upgrade a member's card rarity")
+@bot.tree.command(name="card-upgrade", description="Spend 5 duplicate cards to upgrade a member's card rarity")
 @discord.app_commands.describe(
     member="The member whose card you want to upgrade",
     rarity="The current rarity of the card",
@@ -451,7 +451,7 @@ async def upgrade_command(
     )
 
 
-@bot.tree.command(name="propose-trade", description="Offer one of your cards in exchange for another player's card")
+@bot.tree.command(name="card-trade", description="Offer one of your cards in exchange for another player's card")
 @discord.app_commands.describe(
     recipient="The server member you want to trade with",
     offer_member="The member card you're offering",
@@ -549,6 +549,26 @@ async def admin_link_command(interaction: discord.Interaction) -> None:
             "I couldn't send you a DM. Please enable DMs from server members and try again.",
             ephemeral=True,
         )
+
+
+@bot.tree.command(name="announce", description="Post a message to the Super Pal channel (The Clippy only)")
+@discord.app_commands.describe(message="The message to post to the channel")
+async def announce_command(interaction: discord.Interaction, message: str) -> None:
+    member = interaction.user
+    role_ids = [r.id for r in getattr(member, "roles", [])]
+    if CLIPPY_ROLE_ID not in role_ids:
+        await interaction.response.send_message(
+            "You don't have permission to use this command.", ephemeral=True
+        )
+        return
+    channel = bot.get_channel(superpal_env.CHANNEL_ID)
+    if channel is None:
+        await interaction.response.send_message(
+            "Could not find the Super Pal channel.", ephemeral=True
+        )
+        return
+    await channel.send(message)
+    await interaction.response.send_message("Announcement posted!", ephemeral=True)
 
 
 ###############

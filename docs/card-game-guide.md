@@ -6,7 +6,7 @@ Collect cards of your fellow server members, trade duplicates, and upgrade your 
 
 ## Drawing Cards
 
-Use `/draw-card` in the server to receive one random card each week.
+Use `/card-draw` in the server to receive one random card each week.
 
 - The card is posted publicly in the channel as a Discord embed.
 - **Super Pal of the Week** holders get **2 draws per week** instead of one.
@@ -27,7 +27,7 @@ Duplicate cards stack — you can own multiple copies of the same member at the 
 
 ## Viewing Your Collection
 
-Run `/my-collection` and the bot will **DM you a private link**. The link is never posted to the channel.
+Run `/card-collection` and the bot will **DM you a private link**. The link is never posted to the channel.
 
 Clicking the link opens your collection page at [cards.bring-us.com](https://cards.bring-us.com), where you can see:
 
@@ -39,17 +39,17 @@ Clicking the link opens your collection page at [cards.bring-us.com](https://car
 
 - The link works **once**. The first click opens a 24-hour session and the link is spent.
 - Any attempt to reuse the same link shows an "expired" page.
-- After 24 hours your session expires. Just run `/my-collection` again for a fresh link.
+- After 24 hours your session expires. Just run `/card-collection` again for a fresh link.
 
 ---
 
 ## Trading In Duplicates
 
-`/trade-in @member rarity`
+`/card-trade-in @member rarity`
 
 Spend **3 copies** of the same [member + rarity] card to receive **1 random card of the same rarity** from the eligible member pool.
 
-**Example:** `/trade-in @Bingus common` — if you own 3× Common Bingus, you'll trade them in for a random Common card. You might get the same card back; it's random.
+**Example:** `/card-trade-in @Bingus common` — if you own 3× Common Bingus, you'll trade them in for a random Common card. You might get the same card back; it's random.
 
 The bot replies privately (ephemeral) with your new card embed.
 
@@ -57,7 +57,7 @@ The bot replies privately (ephemeral) with your new card embed.
 
 ## Upgrading Cards
 
-`/upgrade @member rarity`
+`/card-upgrade @member rarity`
 
 Spend **5 copies** of the same [member + rarity] card to receive **1 copy of the same member at the next rarity tier**.
 
@@ -69,7 +69,7 @@ Spend **5 copies** of the same [member + rarity] card to receive **1 copy of the
 
 **Legendary cards cannot be upgraded** — they're already at the top tier. The bot will tell you if you try.
 
-**Example:** `/upgrade @Dingus uncommon` — if you own 5× Uncommon Dingus, you'll receive 1× Rare Dingus.
+**Example:** `/card-upgrade @Dingus uncommon` — if you own 5× Uncommon Dingus, you'll receive 1× Rare Dingus.
 
 The bot replies privately (ephemeral) with your upgraded card embed.
 
@@ -81,13 +81,13 @@ The bot replies privately (ephemeral) with your upgraded card embed.
 Yes. There's no cap on how many cards you can own or how many duplicates can stack.
 
 **Do excluded members ever appear?**
-No. Members excluded by an admin are removed from the draw pool entirely and won't appear in `/draw-card`, `/trade-in`, or `/upgrade` results.
+No. Members excluded by an admin are removed from the draw pool entirely and won't appear in `/card-draw`, `/card-trade-in`, or `/card-upgrade` results.
 
 **What if I can't receive DMs?**
 The bot will let you know that it couldn't send the link. Open your Discord privacy settings and allow DMs from server members, then try again.
 
 **My link is expired but my session should still be active — what happened?**
-Sessions last 24 hours from the moment you first click the link, not from when the command was run. If 24 hours have passed, run `/my-collection` again.
+Sessions last 24 hours from the moment you first click the link, not from when the command was run. If 24 hours have passed, run `/card-collection` again.
 
 ---
 

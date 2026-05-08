@@ -48,7 +48,7 @@ The webapp's `lifespan` handler in `src/superpal/webapp/app.py` calls `init_db()
 
 ### Auth flow
 
-`/admin-link` or `/my-collection` in Discord → `generate_magic_link()` writes a token to `magic_links` table → bot DMs user a `WEBAPP_BASE_URL/link/{token}` URL → `use_magic_link()` validates and issues a session cookie → subsequent requests authenticate via `get_session_from_request()`.
+`/admin-link` or `/card-collection` in Discord → `generate_magic_link()` writes a token to `magic_links` table → bot DMs user a `WEBAPP_BASE_URL/link/{token}` URL → `use_magic_link()` validates and issues a session cookie → subsequent requests authenticate via `get_session_from_request()`.
 
 ### Deployment
 

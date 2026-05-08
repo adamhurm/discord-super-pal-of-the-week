@@ -14,10 +14,10 @@ COMMANDS_MSG = (
     '**!meow**\n\tSpam the channel with party cats.\n'
     '**!karatechop**\n\tMove a random user to AFK voice channel.\n\n'
     '**Bringus Card Game**\n'
-    '**/draw-card**\n\tDraw a random Bringus card (up to 5 per week; Super Pal gets 10). Resets every Sunday.\n'
-    '**/trade-in**\n\tTrade 3 duplicate cards of the same rarity for a new random card of that rarity.\n'
-    '**/upgrade**\n\tSpend 5 duplicate cards to upgrade a member\'s card to the next rarity tier.\n'
-    '**/my-collection**\n\tGet a private link to view your full card collection.'
+    '**/card-draw**\n\tDraw a random Bringus card (up to 5 per week; Super Pal gets 10). Resets every Sunday.\n'
+    '**/card-trade-in**\n\tTrade 3 duplicate cards of the same rarity for a new random card of that rarity.\n'
+    '**/card-upgrade**\n\tSpend 5 duplicate cards to upgrade a member\'s card to the next rarity tier.\n'
+    '**/card-collection**\n\tGet a private link to view your full card collection.'
 )
 
 GAMBLE_MSG = (
@@ -32,8 +32,8 @@ WELCOME_MSG = (
     'Welcome to the super pal channel.\n\n'
     'Use super pal commands by posting commands in chat. Examples:\n'
     '( !commands (for full list) | !karatechop | !spotw @name | !meow )\n\n'
-    'As Super Pal you get **10 card draws per week** — use `/draw-card` to collect Bringus cards, '
-    '`/trade-in` to swap duplicates, `/upgrade` to level up cards, and `/my-collection` to see your collection.'
+    'As Super Pal you get **10 card draws per week** — use `/card-draw` to collect Bringus cards, '
+    '`/card-trade-in` to swap duplicates, `/card-upgrade` to level up cards, and `/card-collection` to see your collection.'
 )
 
 RUNTIME_WARN_MSG = 'WARN: Super Pal will still run but you are very likely to encounter run-time errors.'
