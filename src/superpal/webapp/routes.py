@@ -45,6 +45,9 @@ async def _collection_context(user_id: str) -> dict:
             (user_id,),
         ) as cur:
             row = await cur.fetchone()
+    unique_members = len({c["member_id"] for c in data["owned"]})
+    total_eligible = unique_members + len(data["undiscovered"])
+    completion_pct = round(unique_members / total_eligible * 100) if total_eligible > 0 else 0
     return {
         "display_name": row[0] if row else "Unknown",
         "avatar_url": row[1] if row else None,
@@ -52,7 +55,8 @@ async def _collection_context(user_id: str) -> dict:
         "undiscovered": data["undiscovered"],
         "counts": data["counts"],
         "total_cards": sum(c["quantity"] for c in data["owned"]),
-        "unique_members": len({c["member_id"] for c in data["owned"]}),
+        "unique_members": unique_members,
+        "completion_pct": completion_pct,
     }
 
 

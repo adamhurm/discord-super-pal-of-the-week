@@ -283,3 +283,35 @@ async def test_admin_award_card_success_redirects(client):
         )
     assert response.status_code == 303
     assert response.headers["location"] == "/admin"
+
+
+@pytest.mark.asyncio
+async def test_collection_shows_completion_pct(client):
+    from unittest.mock import MagicMock
+
+    link = _link()
+    fake_collection = {
+        "owned": [{"member_id": "111", "display_name": "Alice", "avatar_url": None,
+                   "rarity": "common", "quantity": 1, "bio": None, "stats_pairs": []}],
+        "undiscovered": [{"discord_id": "222", "display_name": "Bob", "avatar_url": None}],
+        "counts": {"common": 1, "uncommon": 0, "rare": 0, "legendary": 0},
+    }
+
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=("Alice", None))
+
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
+        response = await client.get("/collection")
+    assert response.status_code == 200
+    assert "50%" in response.text

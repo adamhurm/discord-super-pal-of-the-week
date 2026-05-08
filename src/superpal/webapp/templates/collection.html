@@ -120,6 +120,7 @@
     <div>
       <h1>{{ display_name }}'s Collection</h1>
       <div class="subtitle">{{ total_cards }} card{{ 's' if total_cards != 1 else '' }} · {{ unique_members }} unique member{{ 's' if unique_members != 1 else '' }}</div>
+      <div class="subtitle">{{ completion_pct }}% of members collected</div>
     </div>
     <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help" style="margin-left:auto">?</button>
   </div>
