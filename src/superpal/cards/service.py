@@ -14,10 +14,14 @@ TRADE_EXPIRY_MINUTES = 10
 
 
 def _get_week_start() -> str:
-    """ISO date string for the Sunday of the current UTC week."""
-    today = datetime.now(timezone.utc).date()
-    sunday = today - timedelta(days=(today.weekday() + 1) % 7)
-    return sunday.isoformat()
+    """ISO datetime string for Sunday noon UTC marking the start of the current draw week."""
+    now = datetime.now(timezone.utc)
+    days_since_sunday = (now.weekday() + 1) % 7
+    last_sunday = now.date() - timedelta(days=days_since_sunday)
+    week_start = datetime(last_sunday.year, last_sunday.month, last_sunday.day, 12, 0, tzinfo=timezone.utc)
+    if now < week_start:
+        week_start -= timedelta(weeks=1)
+    return week_start.isoformat()
 
 
 def _roll_rarity() -> str:
