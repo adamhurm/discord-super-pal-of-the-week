@@ -880,7 +880,7 @@ async def get_fight_leaderboard(sort_by: str = "wins") -> list[dict]:
                   FROM members m
                   JOIN fights f
                     ON (f.challenger_id = m.discord_id OR f.opponent_id = m.discord_id)
-                  WHERE f.status = 'completed'
+                  WHERE f.status = 'completed' AND m.is_excluded = 0
                   GROUP BY m.discord_id
                   HAVING total_fights >= 3
                 )
@@ -903,7 +903,7 @@ async def get_fight_leaderboard(sort_by: str = "wins") -> list[dict]:
                 FROM members m
                 JOIN fights f
                   ON (f.challenger_id = m.discord_id OR f.opponent_id = m.discord_id)
-                WHERE f.status = 'completed'
+                WHERE f.status = 'completed' AND m.is_excluded = 0
                 GROUP BY m.discord_id ORDER BY total DESC LIMIT 10
             """
         elif sort_by == "pringle_balance":
@@ -921,13 +921,14 @@ async def get_fight_leaderboard(sort_by: str = "wins") -> list[dict]:
                 WHERE fl.action_type = 'run'
                   AND f.status = 'completed'
                   AND f.winner_id != fl.actor_id
+                  AND m.is_excluded = 0
                 GROUP BY fl.actor_id ORDER BY total DESC LIMIT 10
             """
         else:  # wins
             sql = """
                 SELECT m.discord_id, m.display_name, COUNT(*) AS total
                 FROM fights f JOIN members m ON m.discord_id = f.winner_id
-                WHERE f.status = 'completed'
+                WHERE f.status = 'completed' AND m.is_excluded = 0
                 GROUP BY f.winner_id ORDER BY total DESC LIMIT 10
             """
 
