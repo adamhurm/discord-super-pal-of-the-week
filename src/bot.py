@@ -377,6 +377,12 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
             )
             return
 
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message(
+                "This command must be used in a server.", ephemeral=True
+            )
+            return
+
         # Check if new super pal already has the role
         if role in new_super_pal.roles:
             await interaction.response.send_message(
@@ -386,7 +392,6 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
 
         # Promote new super pal and remove current super pal
         await new_super_pal.add_roles(role)
-        assert isinstance(interaction.user, discord.Member)
         await interaction.user.remove_roles(role)
 
         log.info(f"{new_super_pal.name} promoted by {interaction.user.name}")
@@ -705,7 +710,11 @@ async def propose_trade_command(
         return
 
     view = TradeView(trade.id, str(interaction.user.id), str(recipient.id))
-    assert isinstance(interaction.channel, discord.abc.Messageable)
+    if not isinstance(interaction.channel, discord.abc.Messageable):
+        await interaction.followup.send(
+            "This command must be used in a server channel.", ephemeral=True
+        )
+        return
     channel_msg = await interaction.channel.send(
         content=(
             f"{recipient.mention}, **{interaction.user.display_name}** wants to trade:\n\n"
@@ -913,7 +922,11 @@ async def card_fight_command(
         challenger_name=interaction.user.display_name,
         mode=mode,
     )
-    assert isinstance(interaction.channel, discord.abc.Messageable)
+    if not isinstance(interaction.channel, discord.abc.Messageable):
+        await interaction.followup.send(
+            "This command must be used in a server channel.", ephemeral=True
+        )
+        return
     channel_msg = await interaction.channel.send(
         content=(
             f"{opponent.mention}, **{interaction.user.display_name}** challenges you to a "
