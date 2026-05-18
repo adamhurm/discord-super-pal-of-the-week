@@ -52,8 +52,6 @@ intents.members = True  # Required to list all users in a guild
 intents.message_content = True  # Required to use spin-the-wheel and grab winner
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-_guild_members_cache: list[dict] = []
-
 CLIPPY_ROLE_ID = 1085646770006151259
 
 
@@ -94,46 +92,6 @@ def get_super_pal_role(guild: discord.Guild) -> Optional[discord.Role]:
     if not role:
         log.error(f"Super Pal role '{superpal_static.SUPER_PAL_ROLE_NAME}' not found in guild")
     return role
-
-
-async def promote_super_pal(
-    new_super_pal: discord.Member,
-    old_super_pal: Optional[discord.Member],
-    role: discord.Role,
-    channel: discord.TextChannel,
-    promoted_by: str
-) -> None:
-    """Promote a new super pal and demote the old one.
-
-    Args:
-        new_super_pal: Member to promote
-        old_super_pal: Current super pal to demote (if any)
-        role: Super Pal role
-        channel: Channel to send announcement
-        promoted_by: Name of person/process that triggered promotion
-    """
-    try:
-        # Remove role from old super pal if exists
-        if old_super_pal and role in old_super_pal.roles:
-            await old_super_pal.remove_roles(role)
-            log.info(f"{old_super_pal.name} removed from Super Pal role")
-
-        # Add role to new super pal
-        if role not in new_super_pal.roles:
-            await new_super_pal.add_roles(role)
-            log.info(f"{new_super_pal.name} promoted to Super Pal by {promoted_by}")
-
-            await channel.send(
-                f'Congratulations {new_super_pal.mention}! '
-                f'You have been promoted to super pal of the week by {promoted_by}. '
-                f'{superpal_static.WELCOME_MSG}'
-            )
-        else:
-            log.info(f"{new_super_pal.name} already has Super Pal role")
-
-    except Exception as e:
-        log.error(f"Error promoting super pal: {e}")
-        await channel.send(f"Sorry, there was an error promoting {new_super_pal.mention}.")
 
 
 ##################
@@ -1251,8 +1209,6 @@ async def on_ready():
             if not m.bot
         ]
         await sync_members(members_data)
-        _guild_members_cache.clear()
-        _guild_members_cache.extend(members_data)
         log.info("Synced %d members to card DB", len(members_data))
 
     if not super_pal_of_the_week.is_running():

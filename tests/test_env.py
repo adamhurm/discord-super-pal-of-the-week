@@ -14,7 +14,6 @@ def test_env_variables_loaded(mock_env, monkeypatch):
     assert superpal_env.TOKEN == 'test_token_12345'
     assert superpal_env.GUILD_ID == 123456789
     assert superpal_env.CHANNEL_ID == 987654321
-    assert superpal_env.OPENAI_API_KEY == 'sk-test-key-12345'
 
 
 def test_logger_exists(mock_env):
@@ -34,9 +33,6 @@ def test_emoji_guild_id_fallback(monkeypatch):
     monkeypatch.setenv('GUILD_ID', '123456')
     monkeypatch.setenv('CHANNEL_ID', '789012')
     monkeypatch.setenv('EMOJI_GUILD_ID', '123456')
-    monkeypatch.setenv('OPENAI_API_KEY', 'test_key')
-    monkeypatch.setenv('GPT_ASSISTANT_ID', 'asst_test')
-    monkeypatch.setenv('GPT_ASSISTANT_THREAD_ID', 'thread_test')
 
     import importlib
     from superpal import env as superpal_env
@@ -46,20 +42,3 @@ def test_emoji_guild_id_fallback(monkeypatch):
     assert superpal_env.EMOJI_GUILD_ID == 123456
 
 
-def test_art_channel_id_fallback(monkeypatch):
-    """Test that ART_CHANNEL_ID falls back to CHANNEL_ID when not set."""
-    monkeypatch.setenv('SUPERPAL_TOKEN', 'test_token')
-    monkeypatch.setenv('GUILD_ID', '123456')
-    monkeypatch.setenv('CHANNEL_ID', '789012')
-    monkeypatch.setenv('EMOJI_GUILD_ID', '123456')
-    monkeypatch.setenv('ART_CHANNEL_ID', '789012')
-    monkeypatch.setenv('OPENAI_API_KEY', 'test_key')
-    monkeypatch.setenv('GPT_ASSISTANT_ID', 'asst_test')
-    monkeypatch.setenv('GPT_ASSISTANT_THREAD_ID', 'thread_test')
-
-    import importlib
-    from superpal import env as superpal_env
-    importlib.reload(superpal_env)
-
-    # Should use CHANNEL_ID value
-    assert superpal_env.ART_CHANNEL_ID == 789012

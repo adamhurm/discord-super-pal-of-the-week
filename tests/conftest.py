@@ -13,10 +13,6 @@ def mock_env(monkeypatch):
         'GUILD_ID': '123456789',
         'EMOJI_GUILD_ID': '123456789',
         'CHANNEL_ID': '987654321',
-        'ART_CHANNEL_ID': '987654322',
-        'GPT_ASSISTANT_ID': 'asst_test123',
-        'GPT_ASSISTANT_THREAD_ID': 'thread_test123',
-        'OPENAI_API_KEY': 'sk-test-key-12345'
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
@@ -127,13 +123,3 @@ def mock_bot():
     return bot
 
 
-@pytest.fixture
-def mock_openai_client():
-    """Create a mock OpenAI client."""
-    client = AsyncMock()
-    client.images = AsyncMock()
-    client.images.generate = AsyncMock()
-    client.beta = AsyncMock()
-    client.beta.assistants = AsyncMock()
-    client.beta.threads = AsyncMock()
-    return client

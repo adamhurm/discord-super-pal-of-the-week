@@ -20,14 +20,6 @@ COMMANDS_MSG = (
     '**/card-collection**\n\tGet a private link to view your full card collection.'
 )
 
-GAMBLE_MSG = (
-    'Respond to the two polly polls to participate in Super Pal of the Week Gambling™.\n'
-    '- Choose your challenger\n'
-    '- Make your wager\n\n'
-    'You will be given 100 points weekly so feel free to go all-in.\n\n'
-    '*The National Problem Gambling Helpline (1-800-522-4700) is available 24/7 and is 100% confidential.*'
-)
-
 WELCOME_MSG = (
     'Welcome to the super pal channel.\n\n'
     'Use super pal commands by posting commands in chat. Examples:\n'
@@ -37,35 +29,6 @@ WELCOME_MSG = (
 )
 
 RUNTIME_WARN_MSG = 'WARN: Super Pal will still run but you are very likely to encounter run-time errors.'
-
-######################
-# GPT static content #
-######################
-GPT_PROMPT_MSG = (
-    'You are a helpful assistant named Super Pal Bot. '
-    'You help the members of a small Discord community called Bringus. '
-    'Each week a new super pal is chosen at random from the list of Bringus members.'
-)
-
-GPT_ASSISTANT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "is_member_super_pal",
-            "description": "Check if the given member is currently super pal",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "member": {
-                        "type": "string",
-                        "description": "The member name, e.g. clippy",
-                    },
-                },
-                "required": ["member"],
-            }
-        }
-    }
-]
 
 # Role and channel names
 SUPER_PAL_ROLE_NAME = 'Super Pal of the Week'
