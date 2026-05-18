@@ -1,6 +1,7 @@
 assets/*
 images/
 .worktrees/
+.superpowers/
 .venv
 .env*
 .DS_Store
