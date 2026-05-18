@@ -326,7 +326,8 @@ class FightChallengeView(discord.ui.View):
                     await user.send(
                         f"Your **{self.mode}** battle vs. "
                         f"**{self.challenger_name if uid == self.opponent_id else interaction.user.display_name}** "
-                        f"is ready!\n\nOpen the fight lobby: {url}"
+                        f"is ready!\n\nOpen the fight lobby: <{url}>",
+                        suppress_embeds=True,
                     )
                 except discord.Forbidden:
                     pass

@@ -69,11 +69,12 @@ CREATE TABLE IF NOT EXISTS player_items (
 );
 
 CREATE TABLE IF NOT EXISTS fight_tokens (
-    token      TEXT PRIMARY KEY,
-    fight_id   INTEGER NOT NULL REFERENCES fights(id),
-    player_id  TEXT NOT NULL REFERENCES members(discord_id),
-    created_at TIMESTAMP NOT NULL,
-    expires_at TIMESTAMP NOT NULL
+    token         TEXT PRIMARY KEY,
+    fight_id      INTEGER NOT NULL REFERENCES fights(id),
+    player_id     TEXT NOT NULL REFERENCES members(discord_id),
+    created_at    TIMESTAMP NOT NULL,
+    expires_at    TIMESTAMP NOT NULL,
+    session_token TEXT
 );
 
 CREATE TABLE IF NOT EXISTS fight_sessions (
@@ -169,6 +170,11 @@ async def init_db() -> None:
             pass  # column already exists
         try:
             await db.execute("ALTER TABLE members ADD COLUMN bank_debt INTEGER DEFAULT 0")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE fight_tokens ADD COLUMN session_token TEXT")
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists

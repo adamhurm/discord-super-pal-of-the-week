@@ -184,27 +184,35 @@ async def use_fight_token(token: str) -> Optional[tuple[int, str, str]]:
     """
     Validate and consume a fight token; create a session.
     Returns (fight_id, player_id, session_token) or None if invalid/expired.
+    Idempotent: repeated calls (e.g. from Discord's link preview) return the same session.
     """
     now = datetime.now(timezone.utc).isoformat()
-    session_token = str(uuid.uuid4())
-    expires = (datetime.now(timezone.utc) + timedelta(hours=FIGHT_SESSION_HOURS)).isoformat()
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT fight_id, player_id, expires_at FROM fight_tokens WHERE token = ?",
+            "SELECT fight_id, player_id, expires_at, session_token "
+            "FROM fight_tokens WHERE token = ?",
             (token,),
         ) as cur:
             row = await cur.fetchone()
         if not row or row[2] < now:
             return None
-        fight_id, player_id = row[0], row[1]
+        fight_id, player_id, _, existing_session = row[0], row[1], row[2], row[3]
 
+        if existing_session:
+            return fight_id, player_id, existing_session
+
+        session_token = str(uuid.uuid4())
+        expires = (datetime.now(timezone.utc) + timedelta(hours=FIGHT_SESSION_HOURS)).isoformat()
         await db.execute(
             "INSERT INTO fight_sessions (session_token, fight_id, player_id, expires_at) "
             "VALUES (?, ?, ?, ?)",
             (session_token, fight_id, player_id, expires),
         )
-        await db.execute("DELETE FROM fight_tokens WHERE token = ?", (token,))
+        await db.execute(
+            "UPDATE fight_tokens SET session_token = ? WHERE token = ?",
+            (session_token, token),
+        )
         await db.commit()
 
     return fight_id, player_id, session_token

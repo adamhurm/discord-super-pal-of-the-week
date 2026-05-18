@@ -369,9 +369,11 @@ async def test_fight_token_flow(db):
     assert p_id == "p1"
     assert len(session_tok) > 0
 
-    # Token is consumed — second use fails
+    # Token is idempotent — second use returns the same session
     result2 = await fs.use_fight_token(token)
-    assert result2 is None
+    assert result2 is not None
+    _, _, session_tok2 = result2
+    assert session_tok2 == session_tok
 
     # Session is valid
     info = await fs.get_fight_session(session_tok)
