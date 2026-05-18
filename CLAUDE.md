@@ -36,8 +36,26 @@ The webapp's `lifespan` handler in `src/superpal/webapp/app.py` calls `init_db()
 
 - **`db.py`** — `DB_PATH` (env `CARDS_DB_PATH`, default `cards.db`), schema definition, `init_db()` with inline migrations
 - **`service.py`** — all async business logic: draw, trade-in, upgrade, peer trades, magic links, admin ops
-- **`models.py`** — dataclasses (`Member`, `UserCard`, `MagicLink`, `PendingTrade`) and rarity constants
+- **`models.py`** — dataclasses (`Member`, `UserCard`, `MagicLink`, `PendingTrade`, `Fight`, `FightCard`, `FightLogEntry`, `PlayerItem`) and rarity constants
 - **`embeds.py`** — Discord embed builders for card draw results
+- **`fight_service.py`** — turn-based card fight system (see below)
+- **`pringle_service.py`** — Pringle economy: balances, item shop, fight payouts
+
+### Fight system
+
+Two fight modes: **basic** (attacks only) and **extended** (attacks + voluntary swap + items + run).
+
+Fight lifecycle: `pending` → `lobby` (both players accept) → `active` (both ready, coin-toss first turn) → `completed` or `expired`. Challenges expire after 5 min; inactive fights expire after 10 min.
+
+Card stats are derived from rarity at fight start (HP: common 80, uncommon 100, rare 130, legendary 170; ATK bonus: 0/5/10/20). Each turn a player rolls d20 for damage scaling (miss/glancing/direct/critical/nat20). Attacks: `vibe_check`, `body_slam`, `hype_strike`, `super_bringus_beam` (escalating base damage + min-roll requirement).
+
+Items in `player_items` (bought with Pringles): `heal_potion`, `super_potion`, `bringus_boost`, `smoke_screen`. After a card faints, the owning player must swap before the turn advances (`pending_swap_player_id` on the fight row).
+
+Fight auth is separate from collection auth: Discord bot DMs a `fight_token` URL → `use_fight_token()` validates and issues a `fight_session` cookie → WebSocket at `/ws/fight/{id}` handles real-time state updates. Fight connections are tracked in `routes.py:_fight_connections` (a `dict[fight_id, dict[player_id, WebSocket]]`).
+
+### Pringle economy
+
+Players have `pringle_balance` and `bank_debt` columns on `members`. Fight outcomes transfer 50 Pringles winner←loser; extended mode adds a 25 bonus for both sides. If the loser can't pay, the Bank of Bringus covers half the shortfall (tracked in `bank_debt`). Escape penalty (run roll 11–15) deducts an extra 25 from the escapee. Items are purchased via `pringle_service.buy_item()` at fixed Pringle costs.
 
 ### Webapp (`src/superpal/webapp/`)
 
