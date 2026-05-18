@@ -920,7 +920,7 @@ async def card_fight_leaderboard_command(
     if not rows:
         embed = discord.Embed(
             title=title,
-            description="No fights recorded yet!",
+            description="No data yet!",
             color=discord.Color(0x5865F2),
         )
     elif sort_by == "win_rate":

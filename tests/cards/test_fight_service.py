@@ -448,7 +448,7 @@ async def test_fight_leaderboard_win_rate_minimum_threshold(db):
             "INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, synced_at) "
             "VALUES ('p3', 'Carol', NULL, 0, ?)", (now,)
         )
-        # p1 and p2 each play 3 fights; p3 plays 2 fights
+        # p1 and p2 each play 4 fights; p3 plays 2 fights (below the 3-fight minimum)
         await _insert_completed_fight(conn, "p1", "p2", "p1", now)
         await _insert_completed_fight(conn, "p1", "p2", "p1", now)
         await _insert_completed_fight(conn, "p2", "p1", "p2", now)
@@ -504,3 +504,23 @@ async def test_fight_leaderboard_escapes(db):
     assert rows[0]["total"] == 2
     assert rows[1]["discord_id"] == "p2"
     assert rows[1]["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_excludes_excluded_members(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        # p1 wins 2 fights, then gets excluded
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await conn.execute("UPDATE members SET is_excluded = 1 WHERE discord_id = 'p1'")
+        await conn.execute("UPDATE members SET pringle_balance = 500 WHERE discord_id = 'p1'")
+        await conn.commit()
+
+    wins = await fs_mod.get_fight_leaderboard("wins")
+    assert all(r["discord_id"] != "p1" for r in wins), "excluded member appeared in wins"
+
+    balance = await fs_mod.get_fight_leaderboard("pringle_balance")
+    assert all(r["discord_id"] != "p1" for r in balance), "excluded member appeared in pringle_balance"
