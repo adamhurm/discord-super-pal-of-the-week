@@ -10,3 +10,13 @@ known-first-party = ["superpal"]
 
 [tool.ty.environment]
 python-version = "3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = ["asyncio: mark test as an asyncio test"]
+asyncio_mode = "auto"

@@ -1,20 +1,10 @@
-import importlib
-
 import aiosqlite
 import pytest
 
 
 @pytest.fixture
-async def db(tmp_path, monkeypatch):
-    db_file = str(tmp_path / "test.db")
-    monkeypatch.setenv("CARDS_DB_PATH", db_file)
-    import superpal.cards.db as db_mod
-    import superpal.cards.pringle_service as ps_mod
-    import superpal.cards.service as svc_mod
-
-    importlib.reload(db_mod)
-    importlib.reload(svc_mod)
-    importlib.reload(ps_mod)
+async def db(db_mods):
+    db_mod, svc_mod, _, ps_mod = db_mods
     await db_mod.init_db()
     # Seed two members
     await svc_mod.sync_members(

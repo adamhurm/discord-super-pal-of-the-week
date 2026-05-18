@@ -21,7 +21,7 @@ uv venv --python 3.13 && uv pip install -r requirements.txt -r requirements-dev.
 cd src && ../.venv/bin/python bot.py
 ```
 
-There is no linter/formatter configured in the project yet (no ruff, black, or mypy config).
+Linting and type checking use `ruff` and `ty`, configured in `pyproject.toml`. Pytest config is also in `pyproject.toml` under `[tool.pytest.ini_options]`.
 
 ## Architecture
 

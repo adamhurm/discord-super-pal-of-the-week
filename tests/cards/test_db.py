@@ -3,15 +3,8 @@ import pytest
 
 
 @pytest.fixture
-def tmp_db(tmp_path, monkeypatch):
-    db_file = str(tmp_path / "test_cards.db")
-    monkeypatch.setenv("CARDS_DB_PATH", db_file)
-    # Re-import to pick up patched env var
-    import importlib
-
-    import superpal.cards.db as db_mod
-
-    importlib.reload(db_mod)
+async def tmp_db(db_mods):
+    db_mod, *_ = db_mods
     return db_mod
 
 
