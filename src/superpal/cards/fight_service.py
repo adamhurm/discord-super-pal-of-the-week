@@ -858,3 +858,79 @@ async def expire_inactive_fights() -> None:
             (cutoff,),
         )
         await db.commit()
+
+
+async def get_fight_leaderboard(sort_by: str = "wins") -> list[dict]:
+    """Return top 10 players ranked by fight stats.
+
+    sort_by: 'wins' | 'win_rate' | 'fights_played' | 'pringle_balance' | 'escapes'
+    All rows: {discord_id, display_name, total}.
+    win_rate rows also include {total_fights} for display formatting.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        if sort_by == "win_rate":
+            async with db.execute("""
+                SELECT discord_id, display_name,
+                  CAST(wins AS REAL) / total_fights AS total,
+                  total_fights
+                FROM (
+                  SELECT m.discord_id, m.display_name,
+                    SUM(CASE WHEN f.winner_id = m.discord_id THEN 1 ELSE 0 END) AS wins,
+                    COUNT(*) AS total_fights
+                  FROM members m
+                  JOIN fights f
+                    ON (f.challenger_id = m.discord_id OR f.opponent_id = m.discord_id)
+                  WHERE f.status = 'completed'
+                  GROUP BY m.discord_id
+                  HAVING total_fights >= 3
+                )
+                ORDER BY total DESC LIMIT 10
+            """) as cur:
+                rows = await cur.fetchall()
+            return [
+                {
+                    "discord_id": r[0],
+                    "display_name": r[1],
+                    "total": r[2],
+                    "total_fights": r[3],
+                }
+                for r in rows
+            ]
+
+        if sort_by == "fights_played":
+            sql = """
+                SELECT m.discord_id, m.display_name, COUNT(*) AS total
+                FROM members m
+                JOIN fights f
+                  ON (f.challenger_id = m.discord_id OR f.opponent_id = m.discord_id)
+                WHERE f.status = 'completed'
+                GROUP BY m.discord_id ORDER BY total DESC LIMIT 10
+            """
+        elif sort_by == "pringle_balance":
+            sql = """
+                SELECT discord_id, display_name, pringle_balance AS total
+                FROM members WHERE is_excluded = 0
+                ORDER BY pringle_balance DESC LIMIT 10
+            """
+        elif sort_by == "escapes":
+            sql = """
+                SELECT fl.actor_id AS discord_id, m.display_name, COUNT(*) AS total
+                FROM fight_log fl
+                JOIN fights f ON f.id = fl.fight_id
+                JOIN members m ON m.discord_id = fl.actor_id
+                WHERE fl.action_type = 'run'
+                  AND f.status = 'completed'
+                  AND f.winner_id != fl.actor_id
+                GROUP BY fl.actor_id ORDER BY total DESC LIMIT 10
+            """
+        else:  # wins
+            sql = """
+                SELECT m.discord_id, m.display_name, COUNT(*) AS total
+                FROM fights f JOIN members m ON m.discord_id = f.winner_id
+                WHERE f.status = 'completed'
+                GROUP BY f.winner_id ORDER BY total DESC LIMIT 10
+            """
+
+        async with db.execute(sql) as cur:
+            rows = await cur.fetchall()
+    return [{"discord_id": r[0], "display_name": r[1], "total": r[2]} for r in rows]

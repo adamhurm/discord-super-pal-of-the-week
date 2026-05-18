@@ -380,3 +380,127 @@ async def test_fight_token_flow(db):
     assert info is not None
     assert info["fight_id"] == fight.id
     assert info["player_id"] == "p1"
+
+
+# ─── get_fight_leaderboard tests ────────────────────────────────────────────
+
+async def _insert_completed_fight(conn, challenger_id: str, opponent_id: str, winner_id: str, now: str) -> int:
+    cur = await conn.execute(
+        "INSERT INTO fights (mode, challenger_id, opponent_id, status, winner_id, "
+        "created_at, last_activity_at) VALUES ('quick', ?, ?, 'completed', ?, ?, ?)",
+        (challenger_id, opponent_id, winner_id, now, now),
+    )
+    return cur.lastrowid
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_wins(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        # p1 wins 2, p2 wins 1
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await _insert_completed_fight(conn, "p2", "p1", "p2", now)
+        await conn.commit()
+
+    rows = await fs_mod.get_fight_leaderboard("wins")
+    assert rows[0]["discord_id"] == "p1"
+    assert rows[0]["total"] == 2
+    assert rows[1]["discord_id"] == "p2"
+    assert rows[1]["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_wins_empty(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    rows = await fs_mod.get_fight_leaderboard("wins")
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_fights_played(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await _insert_completed_fight(conn, "p1", "p2", "p2", now)
+        await _insert_completed_fight(conn, "p2", "p1", "p1", now)
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await conn.commit()
+
+    rows = await fs_mod.get_fight_leaderboard("fights_played")
+    totals = {r["discord_id"]: r["total"] for r in rows}
+    assert totals["p1"] == 4
+    assert totals["p2"] == 4
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_win_rate_minimum_threshold(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        # Add a third member with only 2 fights (should not appear)
+        await conn.execute(
+            "INSERT INTO members (discord_id, display_name, avatar_url, is_excluded, synced_at) "
+            "VALUES ('p3', 'Carol', NULL, 0, ?)", (now,)
+        )
+        # p1 and p2 each play 3 fights; p3 plays 2 fights
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await _insert_completed_fight(conn, "p1", "p2", "p1", now)
+        await _insert_completed_fight(conn, "p2", "p1", "p2", now)
+        await _insert_completed_fight(conn, "p1", "p3", "p1", now)
+        await _insert_completed_fight(conn, "p3", "p2", "p3", now)
+        await conn.commit()
+
+    rows = await fs_mod.get_fight_leaderboard("win_rate")
+    discord_ids = [r["discord_id"] for r in rows]
+    # p3 has only 2 completed fights — must not appear
+    assert "p3" not in discord_ids
+    # p1: 3 wins / 4 fights = 0.75; p2: 1 win / 4 fights = 0.25
+    assert rows[0]["discord_id"] == "p1"
+    assert abs(rows[0]["total"] - 0.75) < 0.01
+    assert rows[0]["total_fights"] == 4
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_pringle_balance(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE members SET pringle_balance = 200 WHERE discord_id = 'p2'")
+        await conn.execute("UPDATE members SET pringle_balance = 50 WHERE discord_id = 'p1'")
+        await conn.commit()
+
+    rows = await fs_mod.get_fight_leaderboard("pringle_balance")
+    assert rows[0]["discord_id"] == "p2"
+    assert rows[0]["total"] == 200
+    assert rows[1]["discord_id"] == "p1"
+    assert rows[1]["total"] == 50
+
+
+@pytest.mark.asyncio
+async def test_fight_leaderboard_escapes(db):
+    db_mod, svc_mod, fs_mod, ps_mod = db
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        # p1 escapes 2 fights; p2 escapes 1 fight
+        fid1 = await _insert_completed_fight(conn, "p1", "p2", "p2", now)  # p1 ran, p2 wins
+        fid2 = await _insert_completed_fight(conn, "p1", "p2", "p2", now)  # p1 ran again
+        fid3 = await _insert_completed_fight(conn, "p2", "p1", "p1", now)  # p2 ran, p1 wins
+        for fid, actor in [(fid1, "p1"), (fid2, "p1"), (fid3, "p2")]:
+            await conn.execute(
+                "INSERT INTO fight_log (fight_id, actor_id, action_type, narrative_text) "
+                "VALUES (?, ?, 'run', 'Escape successful')",
+                (fid, actor),
+            )
+        await conn.commit()
+
+    rows = await fs_mod.get_fight_leaderboard("escapes")
+    assert rows[0]["discord_id"] == "p1"
+    assert rows[0]["total"] == 2
+    assert rows[1]["discord_id"] == "p2"
+    assert rows[1]["total"] == 1
