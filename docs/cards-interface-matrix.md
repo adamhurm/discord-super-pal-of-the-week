@@ -18,7 +18,8 @@ Tracks which card operations are available from each surface.
 | Peer trade | Offer to swap a card with another player (10-minute expiry) | ✅ `/card-trade` | ❌ |
 | Accept/decline trade | Respond to an incoming trade offer via interactive buttons | 🔧 button interaction | ❌ |
 | Gift card | Transfer one card to another player (requires confirmation) | ✅ `/card-gift` | ❌ |
-| Leaderboard | Top 10 collectors ranked by total cards, legendary count, or unique members | ✅ `/card-leaderboard` | ❌ |
+| Collection Leaderboard | Top 10 collectors ranked by total cards, legendary count, or unique members | ✅ `/card-collection-leaderboard` | ❌ |
+| Fight Leaderboard | Top 10 fighters ranked by wins, win rate, fights played, Pringle balance, or escapes | ✅ `/card-fight-leaderboard` | ❌ |
 | Progress | Check your collection completion stats | ✅ `/card-progress` | ❌ |
 
 ---
