@@ -27,6 +27,7 @@ from superpal.cards.service import (
 )
 from superpal.cards.models import RARITY_LABELS
 from superpal.env import WEBAPP_BASE_URL
+from superpal.schedule import next_sunday_noon_utc
 from superpal.cards.embeds import build_card_embed
 from superpal.cards.fight_service import (
     create_fight, accept_fight, create_fight_token, expire_pending_challenges,
@@ -1190,16 +1191,8 @@ async def heal_potion_reset():
 async def before_heal_potion_reset():
     await bot.wait_until_ready()
     try:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        days_since_sunday = (now.weekday() + 1) % 7
-        last_sunday = now.date() - datetime.timedelta(days=days_since_sunday)
-        next_sunday_noon = datetime.datetime(
-            last_sunday.year, last_sunday.month, last_sunday.day,
-            12, 0, tzinfo=datetime.timezone.utc,
-        )
-        if now >= next_sunday_noon:
-            next_sunday_noon += datetime.timedelta(weeks=1)
-        wait_seconds = (next_sunday_noon - now).total_seconds()
+        target = next_sunday_noon_utc()
+        wait_seconds = (target - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
         log.info("Heal potion reset sleeping %.0f s until Sunday noon UTC", wait_seconds)
         await asyncio.sleep(wait_seconds)
     except Exception as e:
@@ -1208,29 +1201,15 @@ async def before_heal_potion_reset():
 
 @super_pal_of_the_week.before_loop
 async def before_super_pal_of_the_week():
-    """Wait until Sunday at noon before starting the weekly task."""
+    """Wait until Sunday noon UTC before starting the weekly task."""
     await bot.wait_until_ready()
-
     try:
-        # Find amount of time until Sunday at noon
-        now = datetime.datetime.now()
-        current_day = datetime.date.today().isoweekday()
-        days_until_sunday = 7 - current_day
-
-        # If it's past noon on Sunday, add 7 days to timer
-        if current_day == 7 and now.hour > 12:
-            days_until_sunday = 7
-
-        time_diff = now + datetime.timedelta(days=days_until_sunday)
-        future = datetime.datetime(time_diff.year, time_diff.month, time_diff.day, 12, 0)
-
-        # Sleep task until Sunday at noon
-        sleep_duration = (future - now).total_seconds()
-        log.info(f'Sleeping for {future - now}. Will wake up Sunday at 12PM.')
-        await asyncio.sleep(sleep_duration)
-
+        target = next_sunday_noon_utc()
+        wait_seconds = (target - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+        log.info("Super pal task sleeping %.0f s until Sunday noon UTC", wait_seconds)
+        await asyncio.sleep(wait_seconds)
     except Exception as e:
-        log.error(f"Error in before_super_pal_of_the_week: {e}")
+        log.error("Error in before_super_pal_of_the_week: %s", e)
 
 
 ##############
