@@ -2,17 +2,19 @@
 
 ## Planned
 
+### Battle System
+Let players pit their cards against each other in the web UI. Cards have stats derived from rarity; players choose a card, battle runs, winner gets a reward.
+
+## Completed
+
 ### Card Gifting
-Send one of your cards to another player with no swap required. Good for birthdays, congratulations, or helping new players.
+Send one of your cards to another player with no swap required.
 - Command: `/card-gift @user @member rarity`
-- Guard: can only gift cards you own (quantity >= 1)
-- The service layer already has `award_card`; main work is a bot command
 
 ### Leaderboard
-Show who's winning — top collectors by total cards, by legendary count, and by unique members collected. Pure read on existing data, no new mechanics.
+Top collectors by total cards, by legendary count, and by unique members collected.
 - Command: `/card-leaderboard`
 
 ### Set Completion Milestone
-Give players a tangible goal. Celebrate finishing a rarity tier or collecting all versions of one member.
-- `/card-progress` command showing completion % per rarity and per member
-- Optional: banner on the web collection UI when a set is completed
+Completion % per rarity and per member; banner on web UI when a set is completed.
+- Command: `/card-progress`
