@@ -1,7 +1,5 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
-
 
 RARITY_ORDER: list[str] = ["common", "uncommon", "rare", "legendary"]
 
@@ -31,7 +29,7 @@ RARITY_LABELS: dict[str, str] = {
 class Member:
     discord_id: str
     display_name: str
-    avatar_url: Optional[str]
+    avatar_url: str | None
     is_excluded: bool
     synced_at: datetime
 
@@ -44,7 +42,7 @@ class UserCard:
     rarity: str
     quantity: int
     first_acquired_at: datetime
-    drawn_by_name: Optional[str] = None
+    drawn_by_name: str | None = None
 
 
 @dataclass
@@ -59,10 +57,10 @@ class MagicLink:
     token: str
     user_id: str
     link_type: str
-    created_at: datetime
-    consumed_at: Optional[datetime]
-    session_token: Optional[str]
-    session_expires_at: Optional[datetime]
+    created_at: str
+    consumed_at: str | None
+    session_token: str | None
+    session_expires_at: str | None
 
 
 @dataclass
@@ -72,10 +70,10 @@ class Fight:
     challenger_id: str
     opponent_id: str
     status: str
-    winner_id: Optional[str]
-    current_turn_player_id: Optional[str]
-    pending_swap_player_id: Optional[str]
-    channel_id: Optional[str]
+    winner_id: str | None
+    current_turn_player_id: str | None
+    pending_swap_player_id: str | None
+    channel_id: str | None
     challenger_ready: bool
     opponent_ready: bool
     challenger_atk_boost: int
@@ -83,10 +81,10 @@ class Fight:
     challenger_smoked: bool
     opponent_smoked: bool
     created_at: str
-    started_at: Optional[str]
-    completed_at: Optional[str]
-    expires_at: Optional[str]
-    last_activity_at: Optional[str]
+    started_at: str | None
+    completed_at: str | None
+    expires_at: str | None
+    last_activity_at: str | None
 
 
 @dataclass
@@ -107,11 +105,11 @@ class FightCard:
 class FightLogEntry:
     id: int
     fight_id: int
-    actor_id: Optional[str]
+    actor_id: str | None
     action_type: str
-    action_detail: Optional[str]
-    d20_roll: Optional[int]
-    damage_dealt: Optional[int]
+    action_detail: str | None
+    d20_roll: int | None
+    damage_dealt: int | None
     narrative_text: str
     created_at: str
 

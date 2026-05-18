@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+
 from freezegun import freeze_time
 
 from superpal.schedule import next_sunday_noon_utc

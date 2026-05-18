@@ -1,39 +1,42 @@
 import json
 import uuid
+from pathlib import Path
+
 import aiosqlite
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pathlib import Path
 
 from superpal.cards.db import DB_PATH
+from superpal.cards.fight_service import (
+    ATTACKS,
+    RARITY_STATS,
+    get_fight,
+    get_fight_session,
+    get_fight_state,
+    mark_player_ready,
+    process_action,
+    set_fight_cards,
+    use_fight_token,
+)
+from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
 from superpal.cards.service import (
     add_member,
     award_card,
-    use_magic_link,
-    get_collection,
     get_all_members_for_admin,
+    get_collection,
     get_pool_stats,
     reset_draw_log,
     set_excluded,
     set_forced_rarity,
     set_member_avatar,
     set_member_bio_stats,
-    sync_members as _sync_members,
     trade_in,
+    use_magic_link,
 )
-from superpal.cards.fight_service import (
-    use_fight_token,
-    get_fight_session,
-    get_fight,
-    get_fight_state,
-    set_fight_cards,
-    mark_player_ready,
-    process_action,
-    ATTACKS,
-    RARITY_STATS,
+from superpal.cards.service import (
+    sync_members as _sync_members,
 )
-from superpal.cards.pringle_service import get_player_items, ITEM_NAMES, ITEM_DESCRIPTIONS
 from superpal.webapp.auth import get_session_from_request, set_session_cookie
 
 # fight_id -> {player_id: WebSocket}
@@ -84,9 +87,7 @@ async def _admin_context() -> dict:
 
 async def _expired_command_for_token(token: str) -> str:
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT link_type FROM magic_links WHERE token = ?", (token,)
-        ) as cur:
+        async with db.execute("SELECT link_type FROM magic_links WHERE token = ?", (token,)) as cur:
             row = await cur.fetchone()
     return "/admin-link" if row and row[0] == "admin" else "/my-collection"
 
@@ -104,6 +105,7 @@ async def magic_link_landing(token: str, request: Request):
         ctx = await _collection_context(link.user_id)
         template, replace_url = "collection.html", "/collection"
     resp = templates.TemplateResponse(request, template, {**ctx, "replace_url": replace_url})
+    assert link.session_token is not None
     set_session_cookie(resp, link.session_token)
     return resp
 
@@ -135,12 +137,16 @@ async def collection_trade_in(
             (card.card_member_id,),
         ) as cur:
             row = await cur.fetchone()
-    return templates.TemplateResponse(request, "trade_result.html", {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
-        "rarity": card.rarity,
-        "quantity": card.quantity,
-    })
+    return templates.TemplateResponse(
+        request,
+        "trade_result.html",
+        {
+            "display_name": row[0] if row else "Unknown",
+            "avatar_url": row[1] if row else None,
+            "rarity": card.rarity,
+            "quantity": card.quantity,
+        },
+    )
 
 
 @router.get("/admin", response_class=HTMLResponse)
@@ -171,6 +177,7 @@ async def admin_sync(request: Request):
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     try:
         from bot import _guild_members_cache
+
         if _guild_members_cache:
             await _sync_members(_guild_members_cache)
     except ImportError:
@@ -206,7 +213,7 @@ async def admin_add_member(
 async def admin_set_member_avatar(
     member_id: str,
     request: Request,
-    image: UploadFile = File(...),
+    image: UploadFile = File(...),  # noqa: B008 — FastAPI sentinel pattern
 ):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
@@ -275,6 +282,7 @@ async def admin_set_bio_stats(
 
 # ─── Fight routes ────────────────────────────────────────────────────────────
 
+
 async def _resolve_fight_session(request: Request, fight_id: int) -> tuple[str | None, str | None]:
     """
     Determine the player_id for a fight request.
@@ -306,22 +314,17 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
     if ft:
         result = await use_fight_token(ft)
         if result is None:
-            return templates.TemplateResponse(request, "expired.html",
-                                              {"command": "/card-fight"})
+            return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
         _, player_id, session_token = result
-        return RedirectResponse(
-            url=f"/fight/{fight_id}/lobby?fs={session_token}", status_code=303
-        )
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={session_token}", status_code=303)
 
     player_id, _ = await _resolve_fight_session(request, fight_id)
     if not player_id:
-        return templates.TemplateResponse(request, "expired.html",
-                                          {"command": "/card-fight"})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
     fight = await get_fight(fight_id)
     if not fight or fight.status not in ("lobby", "active"):
-        return templates.TemplateResponse(request, "expired.html",
-                                          {"command": "/card-fight"})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
     if fight.status == "active":
         return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={session_token}", status_code=303)
@@ -343,16 +346,20 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
     data = await get_collection(player_id)
     owned_cards = [c for c in data["owned"] if c["quantity"] > 0]
 
-    return templates.TemplateResponse(request, "fight_lobby.html", {
-        "fight_id": fight_id,
-        "fight": fight,
-        "player_id": player_id,
-        "opponent_name": opponent_name,
-        "owned_cards": owned_cards,
-        "already_ready": already_ready,
-        "session_token": session_token,
-        "rarity_stats": RARITY_STATS,
-    })
+    return templates.TemplateResponse(
+        request,
+        "fight_lobby.html",
+        {
+            "fight_id": fight_id,
+            "fight": fight,
+            "player_id": player_id,
+            "opponent_name": opponent_name,
+            "owned_cards": owned_cards,
+            "already_ready": already_ready,
+            "session_token": session_token,
+            "rarity_stats": RARITY_STATS,
+        },
+    )
 
 
 @router.post("/fight/{fight_id}/lobby/ready")
@@ -360,13 +367,12 @@ async def fight_ready(
     fight_id: int,
     request: Request,
     fs: str = Form(""),
-    slots: list[str] = Form(default=[]),
+    slots: list[str] = Form(default=[]),  # noqa: B008 — FastAPI sentinel pattern
 ):
     """Mark the player as ready with chosen cards."""
     info = await get_fight_session(fs)
     if not info or info["fight_id"] != fight_id:
-        return templates.TemplateResponse(request, "expired.html",
-                                          {"command": "/card-fight"})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
     player_id = info["player_id"]
 
     fight = await get_fight(fight_id)
@@ -404,13 +410,11 @@ async def fight_ready(
 async def fight_battle(fight_id: int, request: Request, fs: str = ""):
     player_id, session_token = await _resolve_fight_session(request, fight_id)
     if not player_id:
-        return templates.TemplateResponse(request, "expired.html",
-                                          {"command": "/card-fight"})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
     fight = await get_fight(fight_id)
     if not fight or fight.status not in ("active", "completed"):
-        return templates.TemplateResponse(request, "expired.html",
-                                          {"command": "/card-fight"})
+        return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
     effective_fs = session_token or fs
     opponent_id = fight.opponent_id if player_id == fight.challenger_id else fight.challenger_id
@@ -423,17 +427,21 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
 
     items = await get_player_items(player_id)
 
-    return templates.TemplateResponse(request, "fight_battle.html", {
-        "fight_id": fight_id,
-        "player_id": player_id,
-        "opponent_id": opponent_id,
-        "opponent_name": opponent_name,
-        "fight_mode": fight.mode,
-        "session_token": effective_fs,
-        "attacks": ATTACKS,
-        "items": items,
-        "item_names": ITEM_NAMES,
-    })
+    return templates.TemplateResponse(
+        request,
+        "fight_battle.html",
+        {
+            "fight_id": fight_id,
+            "player_id": player_id,
+            "opponent_id": opponent_id,
+            "opponent_name": opponent_name,
+            "fight_mode": fight.mode,
+            "session_token": effective_fs,
+            "attacks": ATTACKS,
+            "items": items,
+            "item_names": ITEM_NAMES,
+        },
+    )
 
 
 async def _broadcast(fight_id: int, message: dict) -> None:

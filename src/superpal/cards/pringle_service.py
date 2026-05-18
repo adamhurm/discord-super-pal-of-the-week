@@ -89,7 +89,6 @@ async def award_fight_pringles(
     escape_penalty=True applies an extra -25 to the loser (11-15 run roll).
     Returns a summary dict of what was transferred.
     """
-    WIN_AWARD = 50
     LOSE_COST = 50
     EXTENDED_BONUS = 25
     ESCAPE_PENALTY = 25
@@ -134,7 +133,8 @@ async def award_fight_pringles(
             current = row2[0] if row2 and row2[0] is not None else 0
             escape_paid = min(current, ESCAPE_PENALTY)
             await db.execute(
-                "UPDATE members SET pringle_balance = MAX(0, pringle_balance - ?) WHERE discord_id = ?",
+                "UPDATE members SET pringle_balance = MAX(0, pringle_balance - ?) "
+                "WHERE discord_id = ?",
                 (ESCAPE_PENALTY, loser_id),
             )
             winner_receives += escape_paid
@@ -168,9 +168,7 @@ async def award_fight_pringles(
 async def reset_heal_potions_for_empty_players() -> int:
     """Reset Heal Potions to 2 for all players with 0 on hand. Returns count reset."""
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT discord_id FROM members WHERE is_excluded = 0"
-        ) as cur:
+        async with db.execute("SELECT discord_id FROM members WHERE is_excluded = 0") as cur:
             all_players = [r[0] for r in await cur.fetchall()]
 
         async with db.execute(

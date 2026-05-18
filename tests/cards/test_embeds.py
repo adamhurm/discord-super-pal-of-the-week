@@ -1,4 +1,5 @@
 import discord
+
 from superpal.cards.embeds import build_card_embed
 from superpal.cards.models import RARITY_COLORS
 

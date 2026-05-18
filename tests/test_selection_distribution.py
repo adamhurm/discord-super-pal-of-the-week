@@ -1,11 +1,13 @@
 """Statistical distribution tests for super pal selection logic."""
-import sys
+
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import secrets
-import pytest
 from unittest.mock import Mock
+
 import discord
 
 
@@ -30,7 +32,7 @@ class TestSelectionDistribution:
         role = Mock(spec=discord.Role)
         current = make_member("Current", has_role=True, role=role)
         others = [make_member(f"User{i}", role=role) for i in range(9)]
-        all_members = [current] + others
+        all_members = [current, *others]
 
         counts = {m.name: 0 for m in others}
         rounds = 10_000
@@ -53,7 +55,7 @@ class TestSelectionDistribution:
         others = [make_member(f"User{i}", role=role) for i in range(4)]
 
         for _ in range(1_000):
-            eligible = select_eligible([current] + others, role)
+            eligible = select_eligible([current, *others], role)
             chosen = secrets.choice(eligible)
             assert chosen is not current
 

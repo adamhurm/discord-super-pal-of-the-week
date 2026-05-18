@@ -1,7 +1,9 @@
 """Pytest configuration and shared fixtures for test suite."""
-import pytest
+
 from unittest.mock import AsyncMock, Mock
+
 import discord
+import pytest
 from discord.ext import commands
 
 
@@ -9,10 +11,10 @@ from discord.ext import commands
 def mock_env(monkeypatch):
     """Mock environment variables."""
     env_vars = {
-        'SUPERPAL_TOKEN': 'test_token_12345',
-        'GUILD_ID': '123456789',
-        'EMOJI_GUILD_ID': '123456789',
-        'CHANNEL_ID': '987654321',
+        "SUPERPAL_TOKEN": "test_token_12345",
+        "GUILD_ID": "123456789",
+        "EMOJI_GUILD_ID": "123456789",
+        "CHANNEL_ID": "987654321",
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
@@ -114,12 +116,10 @@ def mock_bot():
     """Create a mock Discord bot."""
     intents = discord.Intents.default()
     bot = Mock(spec=commands.Bot)
-    bot.command_prefix = '!'
+    bot.command_prefix = "!"
     bot.intents = intents
     bot.get_guild = Mock(return_value=None)
     bot.get_channel = Mock(return_value=None)
     bot.tree = Mock()
     bot.tree.sync = AsyncMock()
     return bot
-
-

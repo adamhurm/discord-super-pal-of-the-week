@@ -6,7 +6,7 @@ and validating required configuration.
 
 import logging
 import os
-from typing import Optional
+
 from dotenv import load_dotenv
 
 from . import static as superpal_static
@@ -14,11 +14,11 @@ from . import static as superpal_static
 ###########
 # Logging #
 ###########
-log = logging.getLogger('super-pal')
+log = logging.getLogger("super-pal")
 log.setLevel(logging.INFO)
-log_handler = logging.FileHandler(filename='discord-super-pal.log', encoding='utf-8', mode='w')
-dt_fmt = '%Y-%m-%d %H:%M:%S'
-formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
+log_handler = logging.FileHandler(filename="discord-super-pal.log", encoding="utf-8", mode="w")
+dt_fmt = "%Y-%m-%d %H:%M:%S"
+formatter = logging.Formatter("[{asctime}] [{levelname:<8}] {name}: {message}", dt_fmt, style="{")
 log_handler.setFormatter(formatter)
 log.addHandler(log_handler)
 
@@ -33,7 +33,7 @@ log.addHandler(console_handler)
 load_dotenv()
 
 
-def get_env(key: str, default: Optional[str] = None, required: bool = False) -> Optional[str]:
+def get_env(key: str, default: str | None = None, required: bool = False) -> str | None:
     """Get environment variable with optional default and required validation.
 
     Args:
@@ -53,7 +53,7 @@ def get_env(key: str, default: Optional[str] = None, required: bool = False) -> 
     return value
 
 
-def get_env_int(key: str, default: Optional[int] = None, required: bool = False) -> Optional[int]:
+def get_env_int(key: str, default: int | None = None, required: bool = False) -> int | None:
     """Get environment variable as integer.
 
     Args:
@@ -79,9 +79,9 @@ def get_env_int(key: str, default: Optional[int] = None, required: bool = False)
 
 # Required variables
 try:
-    TOKEN = get_env('SUPERPAL_TOKEN', required=True)
-    GUILD_ID = get_env_int('GUILD_ID', required=True)
-    CHANNEL_ID = get_env_int('CHANNEL_ID', required=True)
+    TOKEN = get_env("SUPERPAL_TOKEN", required=True)
+    GUILD_ID = get_env_int("GUILD_ID", required=True)
+    CHANNEL_ID = get_env_int("CHANNEL_ID", required=True)
 except ValueError as e:
     log.error(f"Missing required environment variables: {e}")
     log.error(f"{superpal_static.RUNTIME_WARN_MSG}")
@@ -90,12 +90,15 @@ except ValueError as e:
     CHANNEL_ID = None
 
 # Optional variables with defaults
-EMOJI_GUILD_ID = get_env_int('EMOJI_GUILD_ID', default=GUILD_ID)
+EMOJI_GUILD_ID = get_env_int("EMOJI_GUILD_ID", default=GUILD_ID)
 
-# Webapp configuration
-WEBAPP_HOST: str = get_env("WEBAPP_HOST", default="0.0.0.0")
-WEBAPP_PORT: int = get_env_int("WEBAPP_PORT", default=8080)
-WEBAPP_BASE_URL: str = get_env("WEBAPP_BASE_URL", default=f"http://localhost:{WEBAPP_PORT}")
+# Webapp configuration — or-fallbacks ensure non-None types when defaults are provided
+WEBAPP_HOST = get_env("WEBAPP_HOST", default="0.0.0.0") or "0.0.0.0"
+WEBAPP_PORT = get_env_int("WEBAPP_PORT", default=8080) or 8080
+WEBAPP_BASE_URL = (
+    get_env("WEBAPP_BASE_URL", default=f"http://localhost:{WEBAPP_PORT}")
+    or f"http://localhost:{WEBAPP_PORT}"
+)
 
 # Log configuration status
 log.info("Environment configuration loaded successfully")

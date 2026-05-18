@@ -9,35 +9,53 @@ import asyncio
 import datetime
 import json
 import secrets
-import uvicorn
-from typing import List, Optional
+from typing import cast
 
 import aiosqlite
 import discord
+import uvicorn
 from discord import app_commands
 from discord.ext import commands, tasks
 
-import superpal.static as superpal_static
 import superpal.env as superpal_env
-from superpal.cards.db import init_db, DB_PATH
-from superpal.cards.service import (
-    draw_card, sync_members, generate_magic_link, trade_in, upgrade,
-    create_trade_offer, execute_trade, decline_trade, TRADE_EXPIRY_MINUTES,
-    gift_card, get_card_quantity, get_leaderboard, get_collection,
-)
-from superpal.cards.models import RARITY_LABELS
-from superpal.env import WEBAPP_BASE_URL
-from superpal.schedule import next_sunday_noon_utc
+import superpal.static as superpal_static
+from superpal.cards.db import DB_PATH, init_db
 from superpal.cards.embeds import build_card_embed
 from superpal.cards.fight_service import (
-    create_fight, accept_fight, create_fight_token, expire_pending_challenges,
-    FIGHT_TOKEN_EXPIRY_MINUTES, get_fight_leaderboard,
+    FIGHT_TOKEN_EXPIRY_MINUTES,
+    accept_fight,
+    create_fight,
+    create_fight_token,
+    expire_pending_challenges,
+    get_fight_leaderboard,
 )
+from superpal.cards.models import RARITY_LABELS
 from superpal.cards.pringle_service import (
-    get_balance, get_player_items, buy_item,
+    ITEM_COSTS,
+    ITEM_DESCRIPTIONS,
+    ITEM_NAMES,
+    buy_item,
+    get_balance,
+    get_player_items,
     reset_heal_potions_for_empty_players,
-    ITEM_COSTS, ITEM_NAMES, ITEM_DESCRIPTIONS,
 )
+from superpal.cards.service import (
+    TRADE_EXPIRY_MINUTES,
+    create_trade_offer,
+    decline_trade,
+    draw_card,
+    execute_trade,
+    generate_magic_link,
+    get_card_quantity,
+    get_collection,
+    get_leaderboard,
+    gift_card,
+    sync_members,
+    trade_in,
+    upgrade,
+)
+from superpal.env import WEBAPP_BASE_URL
+from superpal.schedule import next_sunday_noon_utc
 
 FIGHT_CHALLENGE_TIMEOUT = FIGHT_TOKEN_EXPIRY_MINUTES * 60
 
@@ -50,9 +68,12 @@ log = superpal_env.log
 intents = discord.Intents.default()
 intents.members = True  # Required to list all users in a guild
 intents.message_content = True  # Required to use spin-the-wheel and grab winner
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 CLIPPY_ROLE_ID = 1085646770006151259
+
+# Shared guild member cache — set in on_ready, read by the webapp admin sync route
+_guild_members_cache: list[dict] | None = None
 
 
 def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
@@ -67,7 +88,7 @@ def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
 ##################
 # Helper Functions
 ##################
-def get_non_bot_members(guild: discord.Guild) -> List[discord.Member]:
+def get_non_bot_members(guild: discord.Guild) -> list[discord.Member]:
     """Get list of non-bot members from a guild.
 
     Args:
@@ -79,7 +100,7 @@ def get_non_bot_members(guild: discord.Guild) -> List[discord.Member]:
     return [m for m in guild.members if not m.bot]
 
 
-def get_super_pal_role(guild: discord.Guild) -> Optional[discord.Role]:
+def get_super_pal_role(guild: discord.Guild) -> discord.Role | None:
     """Get the Super Pal of the Week role from a guild.
 
     Args:
@@ -103,10 +124,12 @@ class TradeView(discord.ui.View):
         self.trade_id = trade_id
         self.proposer_id = proposer_id
         self.recipient_id = recipient_id
-        self.message: Optional[discord.Message] = None
+        self.message: discord.Message | None = None
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
-    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def accept_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if str(interaction.user.id) != self.recipient_id:
             await interaction.response.send_message(
                 "Only the trade recipient can accept this offer.", ephemeral=True
@@ -128,7 +151,9 @@ class TradeView(discord.ui.View):
             await interaction.response.edit_message(content=msg, view=None)
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
-    async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def decline_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if str(interaction.user.id) != self.recipient_id:
             await interaction.response.send_message(
                 "Only the trade recipient can decline this offer.", ephemeral=True
@@ -172,7 +197,9 @@ class GiftConfirmView(discord.ui.View):
             pass
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
-    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def confirm_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if str(interaction.user.id) != self.gifter_id:
             await interaction.response.send_message(
                 "Only the gifter can confirm this.", ephemeral=True
@@ -216,14 +243,19 @@ class GiftConfirmView(discord.ui.View):
             action_label=f"gifted by {interaction.user.display_name} to",
         )
         await interaction.response.edit_message(content="Gift sent!", view=None)
-        if interaction.channel:
+        if isinstance(interaction.channel, discord.abc.Messageable):
             await interaction.channel.send(
-                content=f"{self.recipient.mention} just received a gift from {interaction.user.mention}!",
+                content=(
+                    f"{self.recipient.mention} just received "
+                    f"a gift from {interaction.user.mention}!"
+                ),
                 embed=embed,
             )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         if str(interaction.user.id) != self.gifter_id:
             await interaction.response.send_message(
                 "Only the gifter can cancel this.", ephemeral=True
@@ -251,7 +283,7 @@ class FightChallengeView(discord.ui.View):
         self.opponent_id = opponent_id
         self.challenger_name = challenger_name
         self.mode = mode
-        self.message: Optional[discord.Message] = None
+        self.message: discord.Message | None = None
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
     async def accept_button(
@@ -271,20 +303,26 @@ class FightChallengeView(discord.ui.View):
             return
 
         await interaction.response.edit_message(
-            content=f"Challenge accepted! DMs are on their way.", view=None
+            content="Challenge accepted! DMs are on their way.", view=None
         )
 
         # DM both players their lobby magic links
-        challenger_url = await create_fight_token(self.fight_id, self.challenger_id, WEBAPP_BASE_URL)
+        challenger_url = await create_fight_token(
+            self.fight_id, self.challenger_id, WEBAPP_BASE_URL
+        )
         opponent_url = await create_fight_token(self.fight_id, self.opponent_id, WEBAPP_BASE_URL)
 
         for uid, url in ((self.challenger_id, challenger_url), (self.opponent_id, opponent_url)):
             user = interaction.client.get_user(int(uid))
             if user:
                 try:
+                    other_name = (
+                        self.challenger_name
+                        if uid == self.opponent_id
+                        else interaction.user.display_name
+                    )
                     await user.send(
-                        f"Your **{self.mode}** battle vs. "
-                        f"**{self.challenger_name if uid == self.opponent_id else interaction.user.display_name}** "
+                        f"Your **{self.mode}** battle vs. **{other_name}** "
                         f"is ready!\n\nOpen the fight lobby: <{url}>",
                         suppress_embeds=True,
                     )
@@ -315,7 +353,7 @@ class FightChallengeView(discord.ui.View):
 ##################
 # Slash commands #
 ##################
-@bot.tree.command(name='superpal')
+@bot.tree.command(name="superpal")
 @app_commands.checks.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord.Member) -> None:
     """Promote a user to Super Pal of the Week role.
@@ -324,56 +362,56 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         new_super_pal: choose the member you want to promote to super pal
     """
     try:
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
         if not channel:
             await interaction.response.send_message(
-                'Error: Could not find configured channel.',
-                ephemeral=True
+                "Error: Could not find configured channel.", ephemeral=True
             )
             return
 
+        assert interaction.guild is not None
         role = get_super_pal_role(interaction.guild)
         if not role:
             await interaction.response.send_message(
-                'Error: Super Pal role not found.',
-                ephemeral=True
+                "Error: Super Pal role not found.", ephemeral=True
             )
             return
 
         # Check if new super pal already has the role
         if role in new_super_pal.roles:
             await interaction.response.send_message(
-                f'{new_super_pal.mention} is already super pal of the week.',
-                ephemeral=True
+                f"{new_super_pal.mention} is already super pal of the week.", ephemeral=True
             )
             return
 
         # Promote new super pal and remove current super pal
         await new_super_pal.add_roles(role)
+        assert isinstance(interaction.user, discord.Member)
         await interaction.user.remove_roles(role)
 
-        log.info(f'{new_super_pal.name} promoted by {interaction.user.name}')
+        log.info(f"{new_super_pal.name} promoted by {interaction.user.name}")
 
         await interaction.response.send_message(
-            f'You have promoted {new_super_pal.mention} to super pal of the week!',
-            ephemeral=True
+            f"You have promoted {new_super_pal.mention} to super pal of the week!", ephemeral=True
         )
 
         await channel.send(
-            f'Congratulations {new_super_pal.mention}! '
-            f'You have been promoted to super pal of the week by {interaction.user.name}. '
-            f'{superpal_static.WELCOME_MSG}'
+            f"Congratulations {new_super_pal.mention}! "
+            f"You have been promoted to super pal of the week by {interaction.user.name}. "
+            f"{superpal_static.WELCOME_MSG}"
         )
 
     except Exception as e:
         log.error(f"Error in add_super_pal command: {e}")
         await interaction.response.send_message(
-            'Sorry, there was an error processing your request.',
-            ephemeral=True
+            "Sorry, there was an error processing your request.", ephemeral=True
         )
 
 
-@bot.tree.command(name="card-draw", description="Draw a card from the Bringus deck (up to 5 per week)")
+@bot.tree.command(
+    name="card-draw",
+    description="Draw a card from the Bringus deck (up to 5 per week)",
+)
 async def draw_card_command(interaction: discord.Interaction) -> None:
     await interaction.response.defer()
     member = interaction.user
@@ -382,7 +420,9 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
     )
     max_draws = 10 if is_super_pal else 5
 
-    card = await draw_card(owner_id=str(member.id), max_draws=max_draws, drawn_by_name=member.display_name)
+    card = await draw_card(
+        owner_id=str(member.id), max_draws=max_draws, drawn_by_name=member.display_name
+    )
     if card is None:
         limit_label = "10 draws" if is_super_pal else "5 draws"
         await interaction.followup.send(
@@ -418,12 +458,14 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
     member="The member whose card you want to display",
     rarity="The rarity of the card to display",
 )
-@discord.app_commands.choices(rarity=[
-    discord.app_commands.Choice(name="Common", value="common"),
-    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-    discord.app_commands.Choice(name="Rare", value="rare"),
-    discord.app_commands.Choice(name="Legendary", value="legendary"),
-])
+@discord.app_commands.choices(
+    rarity=[
+        discord.app_commands.Choice(name="Common", value="common"),
+        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+        discord.app_commands.Choice(name="Rare", value="rare"),
+        discord.app_commands.Choice(name="Legendary", value="legendary"),
+    ]
+)
 async def display_card_command(
     interaction: discord.Interaction,
     member: discord.Member,
@@ -480,17 +522,22 @@ async def my_collection_command(interaction: discord.Interaction) -> None:
         )
 
 
-@bot.tree.command(name="card-trade-in", description="Trade 3 duplicate cards for a random card of the same rarity")
+@bot.tree.command(
+    name="card-trade-in",
+    description="Trade 3 duplicate cards for a random card of the same rarity",
+)
 @discord.app_commands.describe(
     member="The member whose card you want to trade in",
     rarity="The rarity of the card to trade",
 )
-@discord.app_commands.choices(rarity=[
-    discord.app_commands.Choice(name="Common", value="common"),
-    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-    discord.app_commands.Choice(name="Rare", value="rare"),
-    discord.app_commands.Choice(name="Legendary", value="legendary"),
-])
+@discord.app_commands.choices(
+    rarity=[
+        discord.app_commands.Choice(name="Common", value="common"),
+        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+        discord.app_commands.Choice(name="Rare", value="rare"),
+        discord.app_commands.Choice(name="Legendary", value="legendary"),
+    ]
+)
 async def trade_in_command(
     interaction: discord.Interaction,
     member: discord.Member,
@@ -505,7 +552,7 @@ async def trade_in_command(
     )
     if card is None:
         await interaction.followup.send(
-            f"You need at least 3× {rarity.upper()} {member.display_name} to trade in.",
+            f"You need at least 3× {rarity.upper()} {member.display_name} to trade in.",  # noqa: RUF001
             ephemeral=True,
         )
         return
@@ -528,21 +575,24 @@ async def trade_in_command(
         bio=row[2] if row else None,
         stats_pairs=_parse_stats(row[3] if row else None),
     )
-    await interaction.followup.send(
-        "Trade complete! You received:", embed=embed, ephemeral=True
-    )
+    await interaction.followup.send("Trade complete! You received:", embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="card-upgrade", description="Spend 5 duplicate cards to upgrade a member's card rarity")
+@bot.tree.command(
+    name="card-upgrade",
+    description="Spend 5 duplicate cards to upgrade a member's card rarity",
+)
 @discord.app_commands.describe(
     member="The member whose card you want to upgrade",
     rarity="The current rarity of the card",
 )
-@discord.app_commands.choices(rarity=[
-    discord.app_commands.Choice(name="Common", value="common"),
-    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-    discord.app_commands.Choice(name="Rare", value="rare"),
-])
+@discord.app_commands.choices(
+    rarity=[
+        discord.app_commands.Choice(name="Common", value="common"),
+        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+        discord.app_commands.Choice(name="Rare", value="rare"),
+    ]
+)
 async def upgrade_command(
     interaction: discord.Interaction,
     member: discord.Member,
@@ -557,7 +607,7 @@ async def upgrade_command(
     )
     if card is None:
         await interaction.followup.send(
-            f"You need at least 5× {rarity.upper()} {member.display_name} to upgrade.",
+            f"You need at least 5× {rarity.upper()} {member.display_name} to upgrade.",  # noqa: RUF001
             ephemeral=True,
         )
         return
@@ -587,7 +637,10 @@ async def upgrade_command(
     )
 
 
-@bot.tree.command(name="card-trade", description="Offer one of your cards in exchange for another player's card")
+@bot.tree.command(
+    name="card-trade",
+    description="Offer one of your cards in exchange for another player's card",
+)
 @discord.app_commands.describe(
     recipient="The server member you want to trade with",
     offer_member="The member card you're offering",
@@ -629,23 +682,30 @@ async def propose_trade_command(
         return
 
     trade, err = await create_trade_offer(
-        str(interaction.user.id), str(recipient.id),
-        str(offer_member.id), offer_rarity,
-        str(request_member.id), request_rarity,
+        str(interaction.user.id),
+        str(recipient.id),
+        str(offer_member.id),
+        offer_rarity,
+        str(request_member.id),
+        request_rarity,
     )
     if trade is None:
         msg = {
             "invalid_rarity": "Invalid rarity specified.",
             "self_trade": "You can't trade with yourself.",
             "no_offer_card": (
-                f"You don't have a {offer_rarity.upper()} {offer_member.display_name} card to offer."
+                f"You don't have a {offer_rarity.upper()} "
+                f"{offer_member.display_name} card to offer."
             ),
-            "pending_exists": "You already have a pending trade offer. Wait for it to resolve first.",
+            "pending_exists": (
+                "You already have a pending trade offer. Wait for it to resolve first."
+            ),
         }.get(err or "", "Could not create trade offer.")
         await interaction.followup.send(msg, ephemeral=True)
         return
 
     view = TradeView(trade.id, str(interaction.user.id), str(recipient.id))
+    assert isinstance(interaction.channel, discord.abc.Messageable)
     channel_msg = await interaction.channel.send(
         content=(
             f"{recipient.mention}, **{interaction.user.display_name}** wants to trade:\n\n"
@@ -665,12 +725,14 @@ async def propose_trade_command(
     member="The member card you want to gift",
     rarity="The rarity of the card to gift",
 )
-@discord.app_commands.choices(rarity=[
-    discord.app_commands.Choice(name="Common", value="common"),
-    discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-    discord.app_commands.Choice(name="Rare", value="rare"),
-    discord.app_commands.Choice(name="Legendary", value="legendary"),
-])
+@discord.app_commands.choices(
+    rarity=[
+        discord.app_commands.Choice(name="Common", value="common"),
+        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
+        discord.app_commands.Choice(name="Rare", value="rare"),
+        discord.app_commands.Choice(name="Legendary", value="legendary"),
+    ]
+)
 async def gift_card_command(
     interaction: discord.Interaction,
     recipient: discord.Member,
@@ -701,7 +763,10 @@ async def gift_card_command(
         rarity=rarity,
     )
     await interaction.response.send_message(
-        f"You're about to gift a **{RARITY_LABELS[rarity]} {member.display_name}** to {recipient.mention} — confirm?",
+        (
+            f"You're about to gift a **{RARITY_LABELS[rarity]} {member.display_name}**"
+            f" to {recipient.mention} — confirm?"
+        ),
         view=view,
         ephemeral=True,
     )
@@ -709,11 +774,13 @@ async def gift_card_command(
 
 @bot.tree.command(name="card-collection-leaderboard", description="Show the top 10 card collectors")
 @discord.app_commands.describe(sort_by="What to rank players by")
-@discord.app_commands.choices(sort_by=[
-    discord.app_commands.Choice(name="Total Cards", value="total"),
-    discord.app_commands.Choice(name="Legendary Cards", value="legendary"),
-    discord.app_commands.Choice(name="Unique Members", value="unique"),
-])
+@discord.app_commands.choices(
+    sort_by=[
+        discord.app_commands.Choice(name="Total Cards", value="total"),
+        discord.app_commands.Choice(name="Legendary Cards", value="legendary"),
+        discord.app_commands.Choice(name="Unique Members", value="unique"),
+    ]
+)
 async def card_collection_leaderboard_command(
     interaction: discord.Interaction,
     sort_by: str = "total",
@@ -737,7 +804,9 @@ async def card_collection_leaderboard_command(
             f"{rank}. {row['display_name']} — {row['total']} {unit}"
             for rank, row in enumerate(rows, start=1)
         ]
-        embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
+        embed = discord.Embed(
+            title=title, description="\n".join(lines), color=discord.Color(0x5865F2)
+        )
 
     await interaction.followup.send(embed=embed)
 
@@ -751,9 +820,16 @@ async def card_progress_command(interaction: discord.Interaction) -> None:
 
     unique_members_collected = len({c["member_id"] for c in owned})
     total_eligible = unique_members_collected + len(undiscovered)
-    completion_pct = round(unique_members_collected / total_eligible * 100) if total_eligible > 0 else 0
+    completion_pct = (
+        round(unique_members_collected / total_eligible * 100) if total_eligible > 0 else 0
+    )
 
-    rarity_members: dict[str, set[str]] = {"common": set(), "uncommon": set(), "rare": set(), "legendary": set()}
+    rarity_members: dict[str, set[str]] = {
+        "common": set(),
+        "uncommon": set(),
+        "rare": set(),
+        "legendary": set(),
+    }
     member_rarities: dict[str, set[str]] = {}
     member_names: dict[str, str] = {}
     for card in owned:
@@ -763,7 +839,9 @@ async def card_progress_command(interaction: discord.Interaction) -> None:
 
     per_rarity = {r: len(s) for r, s in rarity_members.items()}
     all_rarities = {"common", "uncommon", "rare", "legendary"}
-    complete_sets = sorted(member_names[mid] for mid, r in member_rarities.items() if r >= all_rarities)
+    complete_sets = sorted(
+        member_names[mid] for mid, r in member_rarities.items() if r >= all_rarities
+    )
 
     embed = discord.Embed(title="Your Card Progress", color=discord.Color.blurple())
     embed.add_field(
@@ -794,10 +872,12 @@ async def card_progress_command(interaction: discord.Interaction) -> None:
     opponent="The player to challenge",
     mode="Battle mode: quick (1v1) or extended (3v3)",
 )
-@discord.app_commands.choices(mode=[
-    discord.app_commands.Choice(name="Quick (1v1)", value="quick"),
-    discord.app_commands.Choice(name="Extended (3v3)", value="extended"),
-])
+@discord.app_commands.choices(
+    mode=[
+        discord.app_commands.Choice(name="Quick (1v1)", value="quick"),
+        discord.app_commands.Choice(name="Extended (3v3)", value="extended"),
+    ]
+)
 async def card_fight_command(
     interaction: discord.Interaction,
     opponent: discord.Member,
@@ -833,6 +913,7 @@ async def card_fight_command(
         challenger_name=interaction.user.display_name,
         mode=mode,
     )
+    assert isinstance(interaction.channel, discord.abc.Messageable)
     channel_msg = await interaction.channel.send(
         content=(
             f"{opponent.mention}, **{interaction.user.display_name}** challenges you to a "
@@ -847,13 +928,15 @@ async def card_fight_command(
 
 @bot.tree.command(name="card-fight-leaderboard", description="Show the top 10 fight stats")
 @discord.app_commands.describe(sort_by="What to rank players by")
-@discord.app_commands.choices(sort_by=[
-    discord.app_commands.Choice(name="Most Wins", value="wins"),
-    discord.app_commands.Choice(name="Best Win Rate", value="win_rate"),
-    discord.app_commands.Choice(name="Most Fights Played", value="fights_played"),
-    discord.app_commands.Choice(name="Pringle Balance", value="pringle_balance"),
-    discord.app_commands.Choice(name="Most Escapes", value="escapes"),
-])
+@discord.app_commands.choices(
+    sort_by=[
+        discord.app_commands.Choice(name="Most Wins", value="wins"),
+        discord.app_commands.Choice(name="Best Win Rate", value="win_rate"),
+        discord.app_commands.Choice(name="Most Fights Played", value="fights_played"),
+        discord.app_commands.Choice(name="Pringle Balance", value="pringle_balance"),
+        discord.app_commands.Choice(name="Most Escapes", value="escapes"),
+    ]
+)
 async def card_fight_leaderboard_command(
     interaction: discord.Interaction,
     sort_by: str = "wins",
@@ -884,26 +967,33 @@ async def card_fight_leaderboard_command(
         )
     elif sort_by == "win_rate":
         lines = [
-            f"{rank}. {row['display_name']} — {round(row['total'] * 100)}% ({row['total_fights']} fights)"
+            f"{rank}. {row['display_name']} — "
+            f"{round(row['total'] * 100)}% ({row['total_fights']} fights)"
             for rank, row in enumerate(rows, start=1)
         ]
-        embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
+        embed = discord.Embed(
+            title=title, description="\n".join(lines), color=discord.Color(0x5865F2)
+        )
     else:
         unit = unit_map.get(sort_by, "")
         lines = [
             f"{rank}. {row['display_name']} — {row['total']} {unit}"
             for rank, row in enumerate(rows, start=1)
         ]
-        embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
+        embed = discord.Embed(
+            title=title, description="\n".join(lines), color=discord.Color(0x5865F2)
+        )
 
     await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="card-shop", description="Browse or buy items from the Pringle shop")
 @discord.app_commands.describe(action="list: show items, buy: purchase an item")
-@discord.app_commands.choices(action=[
-    discord.app_commands.Choice(name="list", value="list"),
-])
+@discord.app_commands.choices(
+    action=[
+        discord.app_commands.Choice(name="list", value="list"),
+    ]
+)
 async def card_shop_command(interaction: discord.Interaction, action: str = "list") -> None:
     await interaction.response.defer(ephemeral=True)
     player_id = str(interaction.user.id)
@@ -923,12 +1013,14 @@ async def card_shop_command(interaction: discord.Interaction, action: str = "lis
 
 @bot.tree.command(name="card-shop-buy", description="Buy an item from the Pringle shop")
 @discord.app_commands.describe(item="Item to purchase")
-@discord.app_commands.choices(item=[
-    discord.app_commands.Choice(name="Heal Potion (50 🟣)", value="heal_potion"),
-    discord.app_commands.Choice(name="Super Potion (100 🟣)", value="super_potion"),
-    discord.app_commands.Choice(name="Bringus Boost (75 🟣)", value="bringus_boost"),
-    discord.app_commands.Choice(name="Smoke Screen (60 🟣)", value="smoke_screen"),
-])
+@discord.app_commands.choices(
+    item=[
+        discord.app_commands.Choice(name="Heal Potion (50 🟣)", value="heal_potion"),
+        discord.app_commands.Choice(name="Super Potion (100 🟣)", value="super_potion"),
+        discord.app_commands.Choice(name="Bringus Boost (75 🟣)", value="bringus_boost"),
+        discord.app_commands.Choice(name="Smoke Screen (60 🟣)", value="smoke_screen"),
+    ]
+)
 async def card_shop_buy_command(interaction: discord.Interaction, item: str) -> None:
     await interaction.response.defer(ephemeral=True)
     player_id = str(interaction.user.id)
@@ -936,8 +1028,7 @@ async def card_shop_buy_command(interaction: discord.Interaction, item: str) -> 
     if success:
         balance = await get_balance(player_id)
         await interaction.followup.send(
-            f"Purchased **{ITEM_NAMES[item]}**! "
-            f"Remaining balance: {balance} Pringles 🟣",
+            f"Purchased **{ITEM_NAMES[item]}**! Remaining balance: {balance} Pringles 🟣",
             ephemeral=True,
         )
     else:
@@ -948,12 +1039,19 @@ async def card_shop_buy_command(interaction: discord.Interaction, item: str) -> 
         await interaction.followup.send(msg, ephemeral=True)
 
 
-@bot.tree.command(name="card-pringles", description="Check your Pringle balance or trade in for a card draw")
-@discord.app_commands.describe(action="balance: show balance, trade-in: spend 100 Pringles for a card draw")
-@discord.app_commands.choices(action=[
-    discord.app_commands.Choice(name="balance", value="balance"),
-    discord.app_commands.Choice(name="trade-in (100 Pringles → 1 draw)", value="trade-in"),
-])
+@bot.tree.command(
+    name="card-pringles",
+    description="Check your Pringle balance or trade in for a card draw",
+)
+@discord.app_commands.describe(
+    action="balance: show balance, trade-in: spend 100 Pringles for a card draw",
+)
+@discord.app_commands.choices(
+    action=[
+        discord.app_commands.Choice(name="balance", value="balance"),
+        discord.app_commands.Choice(name="trade-in (100 Pringles → 1 draw)", value="trade-in"),
+    ]
+)
 async def card_pringles_command(interaction: discord.Interaction, action: str = "balance") -> None:
     await interaction.response.defer(ephemeral=True)
     player_id = str(interaction.user.id)
@@ -987,13 +1085,15 @@ async def card_pringles_command(interaction: discord.Interaction, action: str = 
             for r in getattr(interaction.user, "roles", [])
         )
         max_draws = 10 if is_super_pal else 5
-        card = await draw_card(owner_id=player_id, max_draws=max_draws + 1,
-                               drawn_by_name=interaction.user.display_name)
+        card = await draw_card(
+            owner_id=player_id, max_draws=max_draws + 1, drawn_by_name=interaction.user.display_name
+        )
         if card is None:
             # Refund if draw fails (shouldn't happen but be safe)
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute(
-                    "UPDATE members SET pringle_balance = pringle_balance + 100 WHERE discord_id = ?",
+                    "UPDATE members SET pringle_balance = pringle_balance + 100 "
+                    "WHERE discord_id = ?",
                     (player_id,),
                 )
                 await db.commit()
@@ -1026,7 +1126,10 @@ async def card_pringles_command(interaction: discord.Interaction, action: str = 
         )
 
 
-@bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")
+@bot.tree.command(
+    name="admin-link",
+    description="Get a private admin dashboard link (The Clippy only)",
+)
 async def admin_link_command(interaction: discord.Interaction) -> None:
     member = interaction.user
     role_ids = [r.id for r in getattr(member, "roles", [])]
@@ -1042,7 +1145,8 @@ async def admin_link_command(interaction: discord.Interaction) -> None:
     )
     try:
         await member.send(
-            f"Here's your private admin dashboard link (valid for 24 hours after first click):\n{url}"
+            "Here's your private admin dashboard link "
+            f"(valid for 24 hours after first click):\n{url}"
         )
         await interaction.response.send_message(
             "Check your DMs for your admin link!", ephemeral=True
@@ -1054,7 +1158,10 @@ async def admin_link_command(interaction: discord.Interaction) -> None:
         )
 
 
-@bot.tree.command(name="announce", description="Post a message to the Super Pal channel (The Clippy only)")
+@bot.tree.command(
+    name="announce",
+    description="Post a message to the Super Pal channel (The Clippy only)",
+)
 @discord.app_commands.describe(message="The message to post to the channel")
 async def announce_command(interaction: discord.Interaction, message: str) -> None:
     member = interaction.user
@@ -1064,7 +1171,7 @@ async def announce_command(interaction: discord.Interaction, message: str) -> No
             "You don't have permission to use this command.", ephemeral=True
         )
         return
-    channel = bot.get_channel(superpal_env.CHANNEL_ID)
+    channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
     if channel is None:
         await interaction.response.send_message(
             "Could not find the Super Pal channel.", ephemeral=True
@@ -1077,16 +1184,16 @@ async def announce_command(interaction: discord.Interaction, message: str) -> No
 ###############
 # Looped task #
 ###############
-@tasks.loop(hours=24*7)
+@tasks.loop(hours=24 * 7)
 async def super_pal_of_the_week():
     """Weekly task to choose a new Super Pal of the Week."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
+        guild = bot.get_guild(superpal_env.GUILD_ID or 0)
         if not guild:
             log.error(f"Could not find guild with ID {superpal_env.GUILD_ID}")
             return
 
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
         if not channel:
             log.error(f"Could not find channel with ID {superpal_env.CHANNEL_ID}")
             return
@@ -1104,8 +1211,10 @@ async def super_pal_of_the_week():
         log.info(f"Total guild members: {guild.member_count}")
         log.info(f"Cached members: {len(guild.members)}")
         log.info(f"Non-bot members: {len(true_member_list)}")
-        if len(guild.members) < guild.member_count:
-            log.warning("Member cache may be incomplete! Some users may be excluded from selection.")
+        if len(guild.members) < (guild.member_count or 0):
+            log.warning(
+                "Member cache may be incomplete! Some users may be excluded from selection."
+            )
 
         # Exclude current super pal so they can't be re-selected
         eligible_members = [m for m in true_member_list if role not in m.roles]
@@ -1114,21 +1223,21 @@ async def super_pal_of_the_week():
             return
 
         new_super_pal = secrets.choice(eligible_members)
-        log.info(f'Selected new super pal of the week: {new_super_pal.name}')
+        log.info(f"Selected new super pal of the week: {new_super_pal.name}")
 
         # Remove role from all current super pals
         for member in true_member_list:
             if role in member.roles:
                 await member.remove_roles(role)
-                log.info(f'{member.name} removed from super pal role')
+                log.info(f"{member.name} removed from super pal role")
 
         # Add role to new super pal
         await new_super_pal.add_roles(role)
-        log.info(f'{new_super_pal.name} promoted to super pal')
+        log.info(f"{new_super_pal.name} promoted to super pal")
 
         await channel.send(
-            f'Congratulations to {new_super_pal.mention}, '
-            f'the super pal of the week! {superpal_static.WELCOME_MSG}'
+            f"Congratulations to {new_super_pal.mention}, "
+            f"the super pal of the week! {superpal_static.WELCOME_MSG}"
         )
 
     except Exception as e:
@@ -1187,17 +1296,17 @@ async def on_command_error(ctx, error):
 @bot.event
 async def on_ready():
     """Initialize bot when ready."""
-    log.info(f'Bot logged in as {bot.user}')
-    log.info(f'Connected to {len(bot.guilds)} guilds')
+    log.info(f"Bot logged in as {bot.user}")
+    log.info(f"Connected to {len(bot.guilds)} guilds")
 
     try:
         await bot.tree.sync()
-        log.info('Slash commands synced')
+        log.info("Slash commands synced")
     except Exception as e:
-        log.error(f'Error syncing slash commands: {e}')
+        log.error(f"Error syncing slash commands: {e}")
 
     await init_db()
-    guild = bot.get_guild(superpal_env.GUILD_ID)
+    guild = bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild:
         members_data = [
             {
@@ -1208,16 +1317,18 @@ async def on_ready():
             for m in guild.members
             if not m.bot
         ]
+        global _guild_members_cache
+        _guild_members_cache = members_data
         await sync_members(members_data)
         log.info("Synced %d members to card DB", len(members_data))
 
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
-        log.info('Weekly task started')
+        log.info("Weekly task started")
 
     if not heal_potion_reset.is_running():
         heal_potion_reset.start()
-        log.info('Heal potion reset task started')
+        log.info("Heal potion reset task started")
 
 
 @bot.event
@@ -1227,12 +1338,14 @@ async def on_message(message: discord.Message):
         # Skip bot messages
         if message.author.bot:
             # Check if this is from Spin The Wheel bot
-            guild = bot.get_guild(superpal_env.GUILD_ID)
+            guild = bot.get_guild(superpal_env.GUILD_ID or 0)
             if not guild:
                 await bot.process_commands(message)
                 return
 
-            spin_the_wheel_role = discord.utils.get(guild.roles, name=superpal_static.SPIN_THE_WHEEL_ROLE_NAME)
+            spin_the_wheel_role = discord.utils.get(
+                guild.roles, name=superpal_static.SPIN_THE_WHEEL_ROLE_NAME
+            )
             member = guild.get_member(message.author.id)
 
             # Only check embedded messages from Spin The Wheel Bot
@@ -1262,7 +1375,7 @@ async def handle_spin_the_wheel_message(message: discord.Message, guild: discord
             if embed.description is None:
                 continue
 
-            if len(embed.description) > 0 and embed.description[0] == '🏆':
+            if len(embed.description) > 0 and embed.description[0] == "🏆":
                 super_pal_role = get_super_pal_role(guild)
                 if not super_pal_role:
                     return
@@ -1275,7 +1388,7 @@ async def handle_spin_the_wheel_message(message: discord.Message, guild: discord
                     log.error(f"Could not find member: {new_super_pal_name}")
                     return
 
-                log.info(f'{new_super_pal.name} was chosen by wheel spin')
+                log.info(f"{new_super_pal.name} was chosen by wheel spin")
 
                 # Remove existing Super Pal of the Week
                 true_member_list = get_non_bot_members(guild)
@@ -1287,9 +1400,9 @@ async def handle_spin_the_wheel_message(message: discord.Message, guild: discord
                 await new_super_pal.add_roles(super_pal_role)
 
                 await message.channel.send(
-                    f'Congratulations {new_super_pal.mention}! '
-                    f'You have been promoted to super pal of the week by wheel spin. '
-                    f'{superpal_static.WELCOME_MSG}'
+                    f"Congratulations {new_super_pal.mention}! "
+                    f"You have been promoted to super pal of the week by wheel spin. "
+                    f"{superpal_static.WELCOME_MSG}"
                 )
 
     except Exception as e:
@@ -1299,13 +1412,13 @@ async def handle_spin_the_wheel_message(message: discord.Message, guild: discord
 ################
 # Bot commands #
 ################
-@bot.command(name='spotw', pass_context=True)
+@bot.command(name="spotw", pass_context=True)
 @commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def spotw_command(ctx, new_super_pal: discord.Member):
     """Promote users to Super Pal of the Week (legacy command)."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        guild = bot.get_guild(superpal_env.GUILD_ID or 0)
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
 
         if not guild or not channel:
             await ctx.send("Error: Could not find guild or channel.")
@@ -1320,29 +1433,29 @@ async def spotw_command(ctx, new_super_pal: discord.Member):
 
         # Promote new user and remove current super pal
         if role not in new_super_pal.roles:
-            log.info(f'{new_super_pal.name} promoted by {current_super_pal.name}')
+            log.info(f"{new_super_pal.name} promoted by {current_super_pal.name}")
             await new_super_pal.add_roles(role)
             await current_super_pal.remove_roles(role)
             await channel.send(
-                f'Congratulations {new_super_pal.mention}! '
-                f'You have been promoted to super pal of the week by {current_super_pal.name}. '
-                f'{superpal_static.WELCOME_MSG}'
+                f"Congratulations {new_super_pal.mention}! "
+                f"You have been promoted to super pal of the week by {current_super_pal.name}. "
+                f"{superpal_static.WELCOME_MSG}"
             )
         else:
-            await ctx.send(f'{new_super_pal.mention} is already super pal of the week.')
+            await ctx.send(f"{new_super_pal.mention} is already super pal of the week.")
 
     except Exception as e:
         log.error(f"Error in spotw command: {e}")
         await ctx.send("Sorry, there was an error processing your request.")
 
 
-@bot.command(name='spinthewheel', pass_context=True)
+@bot.command(name="spinthewheel", pass_context=True)
 @commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def spinthewheel(ctx):
     """Spin the wheel for a random Super Pal of the Week."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        guild = bot.get_guild(superpal_env.GUILD_ID or 0)
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
 
         if not guild or not channel:
             await ctx.send("Error: Could not find guild or channel.")
@@ -1358,21 +1471,21 @@ async def spinthewheel(ctx):
         true_name_str = ", ".join(true_name_list)
 
         # Send Spin the Wheel command
-        await channel.send(f'?pick {true_name_str}')
-        log.info('Spinning the wheel for new super pal')
+        await channel.send(f"?pick {true_name_str}")
+        log.info("Spinning the wheel for new super pal")
 
     except Exception as e:
         log.error(f"Error in spinthewheel command: {e}")
         await ctx.send("Sorry, there was an error spinning the wheel.")
 
 
-@bot.command(name='commands', pass_context=True)
+@bot.command(name="commands", pass_context=True)
 @commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def list_commands(ctx):
     """Display information about available commands."""
     try:
-        log.info(f'{ctx.message.author.name} used help command')
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        log.info(f"{ctx.message.author.name} used help command")
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
         if channel:
             await channel.send(superpal_static.COMMANDS_MSG)
         else:
@@ -1383,22 +1496,22 @@ async def list_commands(ctx):
         await ctx.send("Sorry, there was an error displaying commands.")
 
 
-@bot.command(name='cacaw', pass_context=True)
+@bot.command(name="cacaw", pass_context=True)
 @commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def cacaw(ctx):
     """Send party parrot discord emoji."""
     try:
-        log.info(f'{ctx.message.author.name} used cacaw command')
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
-        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
+        log.info(f"{ctx.message.author.name} used cacaw command")
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
+        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID or 0)
 
         if not emoji_guild:
             await ctx.send("Error: Emoji guild not found.")
             return
 
-        partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name='partyparrot')
+        partyparrot_emoji = discord.utils.get(emoji_guild.emojis, name="partyparrot")
 
-        if partyparrot_emoji:
+        if partyparrot_emoji and channel:
             await channel.send(str(partyparrot_emoji) * superpal_static.EMOJI_SPAM_COUNT)
         else:
             await ctx.send("Partyparrot emoji not found!")
@@ -1408,22 +1521,22 @@ async def cacaw(ctx):
         await ctx.send("Sorry, there was an error.")
 
 
-@bot.command(name='meow', pass_context=True)
+@bot.command(name="meow", pass_context=True)
 @commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def meow(ctx):
     """Send party cat discord emoji."""
     try:
-        log.info(f'{ctx.message.author.name} used meow command')
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
-        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID)
+        log.info(f"{ctx.message.author.name} used meow command")
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
+        emoji_guild = bot.get_guild(superpal_env.EMOJI_GUILD_ID or 0)
 
         if not emoji_guild:
             await ctx.send("Error: Emoji guild not found.")
             return
 
-        partymeow_emoji = discord.utils.get(emoji_guild.emojis, name='partymeow')
+        partymeow_emoji = discord.utils.get(emoji_guild.emojis, name="partymeow")
 
-        if partymeow_emoji:
+        if partymeow_emoji and channel:
             await channel.send(str(partymeow_emoji) * superpal_static.EMOJI_SPAM_COUNT)
         else:
             await ctx.send("Partymeow emoji not found!")
@@ -1433,13 +1546,13 @@ async def meow(ctx):
         await ctx.send("Sorry, there was an error.")
 
 
-@bot.command(name='karatechop', pass_context=True)
+@bot.command(name="karatechop", pass_context=True)
 @commands.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
 async def karate_chop(ctx):
     """Randomly remove one user from voice chat."""
     try:
-        guild = bot.get_guild(superpal_env.GUILD_ID)
-        channel = bot.get_channel(superpal_env.CHANNEL_ID)
+        guild = bot.get_guild(superpal_env.GUILD_ID or 0)
+        channel = cast(discord.TextChannel | None, bot.get_channel(superpal_env.CHANNEL_ID or 0))
         current_super_pal = ctx.message.author
 
         if not guild or not channel:
@@ -1450,32 +1563,36 @@ async def karate_chop(ctx):
 
         # Check if anyone is in voice channels
         if not any(active_members):
-            log.info(f'{current_super_pal.name} used karate chop, but no one is in voice channels')
-            await channel.send(f'There is no one to karate chop, {current_super_pal.mention}!')
+            log.info(f"{current_super_pal.name} used karate chop, but no one is in voice channels")
+            await channel.send(f"There is no one to karate chop, {current_super_pal.mention}!")
             return
 
         # Flatten user list, filter out bots, and choose random user
         def flatten(nested):
             return [x for y in nested for x in y]
+
         true_member_list = [m for m in flatten(active_members) if not m.bot]
 
         if not true_member_list:
-            await channel.send('No users found in voice channels!')
+            await channel.send("No users found in voice channels!")
             return
 
         chopped_member = secrets.choice(true_member_list)
-        log.info(f'{chopped_member.name} karate chopped')
+        log.info(f"{chopped_member.name} karate chopped")
 
         # Check that an 'AFK' channel exists
-        afk_channels = [c for c in guild.voice_channels if superpal_static.AFK_CHANNEL_KEYWORD in c.name]
+        afk_channels = [
+            c for c in guild.voice_channels if superpal_static.AFK_CHANNEL_KEYWORD in c.name
+        ]
 
         if afk_channels:
             await chopped_member.move_to(afk_channels[0])
-            await channel.send(f'karate chopped {chopped_member.mention}!')
+            await channel.send(f"karate chopped {chopped_member.mention}!")
         else:
             await channel.send(
-                f'{chopped_member.mention} would have been chopped, but an AFK channel was not found.\n'
-                'Please complain to the server owner.'
+                f"{chopped_member.mention} would have been chopped, "
+                "but an AFK channel was not found.\n"
+                "Please complain to the server owner."
             )
 
     except Exception as e:
@@ -1487,11 +1604,13 @@ async def karate_chop(ctx):
 # Start the bot
 ################
 async def _main() -> None:
-    from superpal.webapp.app import create_app
     from superpal.env import WEBAPP_HOST, WEBAPP_PORT
+    from superpal.webapp.app import create_app
+
     webapp = create_app()
     config = uvicorn.Config(webapp, host=WEBAPP_HOST, port=WEBAPP_PORT, log_level="info")
     server = uvicorn.Server(config)
+    assert superpal_env.TOKEN is not None, "SUPERPAL_TOKEN is required to start the bot"
     async with bot:
         await asyncio.gather(
             bot.start(superpal_env.TOKEN),

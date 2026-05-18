@@ -1,10 +1,11 @@
-import pytest
-import aiosqlite
 import importlib
 from datetime import datetime, timedelta, timezone
+
+import aiosqlite
+import pytest
 from freezegun import freeze_time
+
 from superpal.cards.service import _get_week_start
-from superpal.schedule import next_sunday_noon_utc
 
 
 @pytest.fixture
@@ -13,6 +14,7 @@ async def db(tmp_path, monkeypatch):
     monkeypatch.setenv("CARDS_DB_PATH", db_file)
     import superpal.cards.db as db_mod
     import superpal.cards.service as svc_mod
+
     importlib.reload(db_mod)
     importlib.reload(svc_mod)
     await db_mod.init_db()
@@ -35,11 +37,13 @@ async def test_sync_members_upserts(db):
 
 @pytest.mark.asyncio
 async def test_draw_card_returns_card(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
     card = await svc.draw_card(owner_id="111", max_draws=1)
     assert card is not None
     assert card.rarity in ("common", "uncommon", "rare", "legendary")
@@ -49,10 +53,12 @@ async def test_draw_card_returns_card(db):
 
 @pytest.mark.asyncio
 async def test_draw_card_respects_weekly_limit(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        ]
+    )
     await svc.draw_card(owner_id="111", max_draws=1)
     second = await svc.draw_card(owner_id="111", max_draws=1)
     assert second is None
@@ -60,10 +66,12 @@ async def test_draw_card_respects_weekly_limit(db):
 
 @pytest.mark.asyncio
 async def test_draw_card_super_pal_gets_two(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        ]
+    )
     first = await svc.draw_card(owner_id="111", max_draws=2)
     second = await svc.draw_card(owner_id="111", max_draws=2)
     third = await svc.draw_card(owner_id="111", max_draws=2)
@@ -74,11 +82,13 @@ async def test_draw_card_super_pal_gets_two(db):
 
 @pytest.mark.asyncio
 async def test_draw_card_excluded_member_not_in_pool(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Excluded", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Excluded", "avatar_url": None},
+        ]
+    )
     await svc.set_excluded("222", excluded=True)
     # Draw many times; excluded member should never appear
     results = set()
@@ -91,15 +101,21 @@ async def test_draw_card_excluded_member_not_in_pool(db):
 
 @pytest.mark.asyncio
 async def test_draw_card_increments_quantity_on_duplicate(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        ]
+    )
     # Force two draws of the same member+rarity by patching random
     import unittest.mock as mock
+
     import superpal.cards.service as svc_mod
-    with mock.patch.object(svc_mod, "_roll_rarity", return_value="common"), \
-         mock.patch("random.choice", return_value="111"):
+
+    with (
+        mock.patch.object(svc_mod, "_roll_rarity", return_value="common"),
+        mock.patch("random.choice", return_value="111"),
+    ):
         await svc.draw_card(owner_id="111", max_draws=2)
         card = await svc.draw_card(owner_id="111", max_draws=2)
     assert card is not None
@@ -109,16 +125,19 @@ async def test_draw_card_increments_quantity_on_duplicate(db):
 @pytest.mark.asyncio
 async def test_trade_in_requires_three(db):
     db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
     # Give owner 2 copies of Bob's common card
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('111', '222', 'common', 2, ?)",
-            (datetime.now(timezone.utc).isoformat(),)
+            (datetime.now(timezone.utc).isoformat(),),
         )
         await conn.commit()
     result = await svc.trade_in("111", "222", "common")
@@ -128,18 +147,22 @@ async def test_trade_in_requires_three(db):
 @pytest.mark.asyncio
 async def test_trade_in_succeeds_with_three(db):
     db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('111', '222', 'common', 3, ?)",
-            (datetime.now(timezone.utc).isoformat(),)
+            (datetime.now(timezone.utc).isoformat(),),
         )
         await conn.commit()
     import unittest.mock as mock
+
     with mock.patch("random.choice", return_value="111"):
         result = await svc.trade_in("111", "222", "common")
     assert result is not None
@@ -152,10 +175,12 @@ async def test_trade_in_succeeds_with_three(db):
 
 @pytest.mark.asyncio
 async def test_upgrade_legendary_rejected(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        ]
+    )
     result = await svc.upgrade("111", "111", "legendary")
     assert result is None
 
@@ -163,14 +188,17 @@ async def test_upgrade_legendary_rejected(db):
 @pytest.mark.asyncio
 async def test_upgrade_requires_five(db):
     db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        ]
+    )
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('111', '111', 'common', 4, ?)",
-            (datetime.now(timezone.utc).isoformat(),)
+            (datetime.now(timezone.utc).isoformat(),),
         )
         await conn.commit()
     result = await svc.upgrade("111", "111", "common")
@@ -180,14 +208,17 @@ async def test_upgrade_requires_five(db):
 @pytest.mark.asyncio
 async def test_upgrade_succeeds(db):
     db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+        ]
+    )
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('111', '111', 'common', 5, ?)",
-            (datetime.now(timezone.utc).isoformat(),)
+            (datetime.now(timezone.utc).isoformat(),),
         )
         await conn.commit()
     result = await svc.upgrade("111", "111", "common")
@@ -200,7 +231,7 @@ async def test_upgrade_succeeds(db):
 
 @pytest.mark.asyncio
 async def test_magic_link_reusable_within_24h(db):
-    db_mod, svc = db
+    _db_mod, svc = db
     url = await svc.generate_magic_link("111", "collection", "http://localhost:8080")
     token = url.split("/")[-1]
     link1 = await svc.use_magic_link(token)
@@ -253,7 +284,7 @@ async def test_set_member_avatar_updates_url(db):
 
 @pytest.mark.asyncio
 async def test_award_card_creates_entry(db):
-    db_mod, svc = db
+    _db_mod, svc = db
     await svc.add_member("owner1", "Owner")
     await svc.add_member("card1", "Card Member")
     card = await svc.award_card("owner1", "card1", "rare", 2)
@@ -266,7 +297,7 @@ async def test_award_card_creates_entry(db):
 
 @pytest.mark.asyncio
 async def test_award_card_increments_existing(db):
-    db_mod, svc = db
+    _db_mod, svc = db
     await svc.add_member("owner1", "Owner")
     await svc.add_member("card1", "Card Member")
     await svc.award_card("owner1", "card1", "common", 1)
@@ -276,7 +307,7 @@ async def test_award_card_increments_existing(db):
 
 @pytest.mark.asyncio
 async def test_award_card_rejects_invalid_rarity(db):
-    db_mod, svc = db
+    _db_mod, svc = db
     await svc.add_member("owner1", "Owner")
     await svc.add_member("card1", "Card Member")
     result = await svc.award_card("owner1", "card1", "mythic", 1)
@@ -285,17 +316,21 @@ async def test_award_card_rejects_invalid_rarity(db):
 
 # ─── Peer trade tests ────────────────────────────────────────────────────────
 
+
 async def _setup_trade_members(svc, db_mod):
     """Insert four members and give proposer a common card of card_a."""
-    await svc.sync_members([
-        {"discord_id": "proposer", "display_name": "Proposer", "avatar_url": None},
-        {"discord_id": "recipient", "display_name": "Recipient", "avatar_url": None},
-        {"discord_id": "card_a", "display_name": "Card A", "avatar_url": None},
-        {"discord_id": "card_b", "display_name": "Card B", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "proposer", "display_name": "Proposer", "avatar_url": None},
+            {"discord_id": "recipient", "display_name": "Recipient", "avatar_url": None},
+            {"discord_id": "card_a", "display_name": "Card A", "avatar_url": None},
+            {"discord_id": "card_b", "display_name": "Card B", "avatar_url": None},
+        ]
+    )
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('proposer', 'card_a', 'common', 1, ?)",
             (datetime.now(timezone.utc).isoformat(),),
         )
@@ -318,13 +353,15 @@ async def test_create_trade_offer_returns_trade(db):
 
 @pytest.mark.asyncio
 async def test_create_trade_offer_rejects_missing_card(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "proposer", "display_name": "Proposer", "avatar_url": None},
-        {"discord_id": "recipient", "display_name": "Recipient", "avatar_url": None},
-        {"discord_id": "card_a", "display_name": "Card A", "avatar_url": None},
-        {"discord_id": "card_b", "display_name": "Card B", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "proposer", "display_name": "Proposer", "avatar_url": None},
+            {"discord_id": "recipient", "display_name": "Recipient", "avatar_url": None},
+            {"discord_id": "card_a", "display_name": "Card A", "avatar_url": None},
+            {"discord_id": "card_b", "display_name": "Card B", "avatar_url": None},
+        ]
+    )
     trade, err = await svc.create_trade_offer(
         "proposer", "recipient", "card_a", "common", "card_b", "rare"
     )
@@ -350,12 +387,13 @@ async def test_create_trade_offer_rejects_duplicate_pending(db):
     # Give proposer a second card so the first offer succeeds
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('proposer', 'card_a', 'rare', 1, ?)",
             (datetime.now(timezone.utc).isoformat(),),
         )
         await conn.commit()
-    trade1, err1 = await svc.create_trade_offer(
+    _trade1, err1 = await svc.create_trade_offer(
         "proposer", "recipient", "card_a", "common", "card_b", "rare"
     )
     assert err1 is None
@@ -378,7 +416,8 @@ async def test_create_trade_offer_allows_after_first_resolved(db):
     # Give proposer the card again for the second offer
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('proposer', 'card_a', 'common', 1, ?) "
             "ON CONFLICT(owner_id, card_member_id, rarity) DO UPDATE SET quantity = quantity + 1",
             (datetime.now(timezone.utc).isoformat(),),
@@ -398,7 +437,8 @@ async def test_execute_trade_swaps_cards(db):
     # Give recipient card_b/rare
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('recipient', 'card_b', 'rare', 1, ?)",
             (datetime.now(timezone.utc).isoformat(),),
         )
@@ -422,7 +462,8 @@ async def test_execute_trade_fails_if_proposer_card_gone(db):
     await _setup_trade_members(svc, db_mod)
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('recipient', 'card_b', 'rare', 1, ?)",
             (datetime.now(timezone.utc).isoformat(),),
         )
@@ -465,7 +506,8 @@ async def test_execute_trade_fails_if_expired(db):
             "INSERT INTO pending_trades "
             "(proposer_id, recipient_id, offer_member_id, offer_rarity, "
             "request_member_id, request_rarity, status, created_at, expires_at) "
-            "VALUES ('proposer', 'recipient', 'card_a', 'common', 'card_b', 'rare', 'pending', ?, ?)",
+            "VALUES ('proposer', 'recipient', 'card_a', 'common', "
+            "'card_b', 'rare', 'pending', ?, ?)",
             (past, past),
         )
         await conn.commit()
@@ -499,7 +541,8 @@ async def test_decline_trade_already_resolved_returns_false(db):
     await _setup_trade_members(svc, db_mod)
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES ('recipient', 'card_b', 'rare', 1, ?)",
             (datetime.now(timezone.utc).isoformat(),),
         )
@@ -514,14 +557,17 @@ async def test_decline_trade_already_resolved_returns_false(db):
 
 # ─── Gift card tests ────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_gift_card_transfers_card(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+        ]
+    )
     # Give Alice a card to gift
     await svc.award_card("111", "333", "rare", 1)
 
@@ -546,15 +592,17 @@ async def test_gift_card_transfers_card(db):
 
 @pytest.mark.asyncio
 async def test_gift_card_gifter_keeps_extra_copy(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+        ]
+    )
     await svc.award_card("111", "333", "common", 3)
 
-    card, err = await svc.gift_card("111", "222", "333", "common", "Alice")
+    _card, err = await svc.gift_card("111", "222", "333", "common", "Alice")
 
     assert err is None
     assert await svc.get_card_quantity("111", "333", "common") == 2
@@ -563,12 +611,14 @@ async def test_gift_card_gifter_keeps_extra_copy(db):
 
 @pytest.mark.asyncio
 async def test_gift_card_fails_when_not_owned(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+        ]
+    )
 
     card, err = await svc.gift_card("111", "222", "333", "rare", "Alice")
 
@@ -578,11 +628,13 @@ async def test_gift_card_fails_when_not_owned(db):
 
 @pytest.mark.asyncio
 async def test_gift_card_fails_self_gift(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+        ]
+    )
     await svc.award_card("111", "333", "common", 1)
 
     card, err = await svc.gift_card("111", "111", "333", "common", "Alice")
@@ -593,12 +645,14 @@ async def test_gift_card_fails_self_gift(db):
 
 @pytest.mark.asyncio
 async def test_gift_card_recipient_already_owns_copy(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "333", "display_name": "CardMember", "avatar_url": None},
+        ]
+    )
     await svc.award_card("111", "333", "rare", 1)
     await svc.award_card("222", "333", "rare", 1)  # Bob already has one
 
@@ -613,57 +667,70 @@ async def test_gift_card_recipient_already_owns_copy(db):
 
 # ─── Leaderboard tests ───────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_total_empty(db):
-    db_mod, svc = db
+    _db_mod, svc = db
     assert await svc.get_leaderboard("total") == []
+
 
 @pytest.mark.asyncio
 async def test_get_leaderboard_total_ranks_by_quantity(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 5)
     await svc.award_card("bob", "card1", "common", 10)
     result = await svc.get_leaderboard("total")
     assert result[0]["display_name"] == "Bob" and result[0]["total"] == 10
     assert result[1]["display_name"] == "Alice" and result[1]["total"] == 5
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_total_sums_across_rarities(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-        {"discord_id": "card2", "display_name": "Card2", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+            {"discord_id": "card2", "display_name": "Card2", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 3)
     await svc.award_card("alice", "card1", "rare", 2)
     await svc.award_card("alice", "card2", "legendary", 1)
     result = await svc.get_leaderboard("total")
     assert result[0]["total"] == 6
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_excludes_excluded_players(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "excluded", "display_name": "Excluded", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "excluded", "display_name": "Excluded", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 5)
     await svc.award_card("excluded", "card1", "common", 100)
     await svc.set_excluded("excluded", excluded=True)
     result = await svc.get_leaderboard("total")
     assert all(r["owner_id"] != "excluded" for r in result)
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_limits_to_ten(db):
-    db_mod, svc = db
-    members = [{"discord_id": str(i), "display_name": f"User{i}", "avatar_url": None} for i in range(15)]
+    _db_mod, svc = db
+    members = [
+        {"discord_id": str(i), "display_name": f"User{i}", "avatar_url": None} for i in range(15)
+    ]
     members.append({"discord_id": "card1", "display_name": "Card1", "avatar_url": None})
     await svc.sync_members(members)
     for i in range(15):
@@ -671,28 +738,34 @@ async def test_get_leaderboard_limits_to_ten(db):
     result = await svc.get_leaderboard("total")
     assert len(result) == 10 and result[0]["total"] == 15
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_legendary_counts_only_legendary(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 50)
     await svc.award_card("bob", "card1", "legendary", 3)
     result = await svc.get_leaderboard("legendary")
     assert result[0]["owner_id"] == "bob" and result[0]["total"] == 3
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_unique_counts_distinct_members(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-        {"discord_id": "card2", "display_name": "Card2", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "bob", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+            {"discord_id": "card2", "display_name": "Card2", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 5)
     await svc.award_card("alice", "card2", "rare", 1)
     await svc.award_card("bob", "card1", "common", 1)
@@ -703,24 +776,30 @@ async def test_get_leaderboard_unique_counts_distinct_members(db):
     assert alice_row["total"] == 2
     assert bob_row["total"] == 1
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_default_is_total(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 7)
     result = await svc.get_leaderboard()
     assert result[0]["total"] == 7
 
+
 @pytest.mark.asyncio
 async def test_get_leaderboard_result_keys(db):
-    db_mod, svc = db
-    await svc.sync_members([
-        {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
-    ])
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card1", "avatar_url": None},
+        ]
+    )
     await svc.award_card("alice", "card1", "common", 1)
     result = await svc.get_leaderboard("total")
     assert set(result[0].keys()) == {"owner_id", "display_name", "total"}

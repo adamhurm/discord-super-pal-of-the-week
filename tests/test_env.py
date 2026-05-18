@@ -1,17 +1,21 @@
 """Tests for superpal.env module."""
-import sys
+
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 def test_env_variables_loaded(mock_env, monkeypatch):
     """Test that environment variables are loaded correctly."""
     # Need to reload module after setting env vars
     import importlib
+
     from superpal import env as superpal_env
+
     importlib.reload(superpal_env)
 
-    assert superpal_env.TOKEN == 'test_token_12345'
+    assert superpal_env.TOKEN == "test_token_12345"
     assert superpal_env.GUILD_ID == 123456789
     assert superpal_env.CHANNEL_ID == 987654321
 
@@ -19,26 +23,28 @@ def test_env_variables_loaded(mock_env, monkeypatch):
 def test_logger_exists(mock_env):
     """Test that logger is properly configured."""
     import importlib
+
     from superpal import env as superpal_env
+
     importlib.reload(superpal_env)
 
     assert superpal_env.log is not None
-    assert superpal_env.log.name == 'super-pal'
+    assert superpal_env.log.name == "super-pal"
 
 
 def test_emoji_guild_id_fallback(monkeypatch):
     """Test that EMOJI_GUILD_ID falls back to GUILD_ID when not set."""
     # Set up minimal env
-    monkeypatch.setenv('SUPERPAL_TOKEN', 'test_token')
-    monkeypatch.setenv('GUILD_ID', '123456')
-    monkeypatch.setenv('CHANNEL_ID', '789012')
-    monkeypatch.setenv('EMOJI_GUILD_ID', '123456')
+    monkeypatch.setenv("SUPERPAL_TOKEN", "test_token")
+    monkeypatch.setenv("GUILD_ID", "123456")
+    monkeypatch.setenv("CHANNEL_ID", "789012")
+    monkeypatch.setenv("EMOJI_GUILD_ID", "123456")
 
     import importlib
+
     from superpal import env as superpal_env
+
     importlib.reload(superpal_env)
 
     # Should use GUILD_ID value
     assert superpal_env.EMOJI_GUILD_ID == 123456
-
-

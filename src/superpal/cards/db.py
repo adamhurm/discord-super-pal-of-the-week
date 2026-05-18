@@ -1,4 +1,5 @@
 import os
+
 import aiosqlite
 
 DB_PATH: str = os.getenv("CARDS_DB_PATH", "cards.db")
@@ -119,7 +120,8 @@ CREATE TABLE IF NOT EXISTS pending_trades (
     offer_member_id   TEXT NOT NULL REFERENCES members(discord_id),
     offer_rarity      TEXT NOT NULL CHECK(offer_rarity IN ('common','uncommon','rare','legendary')),
     request_member_id TEXT NOT NULL REFERENCES members(discord_id),
-    request_rarity    TEXT NOT NULL CHECK(request_rarity IN ('common','uncommon','rare','legendary')),
+    request_rarity    TEXT NOT NULL
+                      CHECK(request_rarity IN ('common','uncommon','rare','legendary')),
     status            TEXT NOT NULL DEFAULT 'pending'
                       CHECK(status IN ('pending','accepted','declined','expired')),
     created_at        TIMESTAMP NOT NULL,

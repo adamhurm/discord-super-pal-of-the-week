@@ -3,7 +3,6 @@ import random
 import uuid
 from datetime import datetime, timedelta, timezone
 from math import floor
-from typing import Optional
 
 import aiosqlite
 
@@ -17,24 +16,24 @@ INACTIVITY_EXPIRE_MINUTES = 10
 AUTO_PASS_MINUTES = 3
 
 RARITY_STATS: dict[str, dict] = {
-    "common":    {"hp": 80,  "atk_bonus": 0},
-    "uncommon":  {"hp": 100, "atk_bonus": 5},
-    "rare":      {"hp": 130, "atk_bonus": 10},
+    "common": {"hp": 80, "atk_bonus": 0},
+    "uncommon": {"hp": 100, "atk_bonus": 5},
+    "rare": {"hp": 130, "atk_bonus": 10},
     "legendary": {"hp": 170, "atk_bonus": 20},
 }
 
 ATTACKS: dict[str, dict] = {
-    "vibe_check":          {"name": "Vibe Check",          "base_damage": 15, "min_roll": 1},
-    "body_slam":           {"name": "Body Slam",            "base_damage": 20, "min_roll": 6},
-    "hype_strike":         {"name": "Hype Strike",          "base_damage": 25, "min_roll": 10},
-    "super_bringus_beam":  {"name": "Super Bringus Beam",   "base_damage": 35, "min_roll": 14},
+    "vibe_check": {"name": "Vibe Check", "base_damage": 15, "min_roll": 1},
+    "body_slam": {"name": "Body Slam", "base_damage": 20, "min_roll": 6},
+    "hype_strike": {"name": "Hype Strike", "base_damage": 25, "min_roll": 10},
+    "super_bringus_beam": {"name": "Super Bringus Beam", "base_damage": 35, "min_roll": 14},
 }
 
 ITEM_EFFECTS: dict[str, dict] = {
-    "heal_potion":   {"hp_restore": 40},
-    "super_potion":  {"hp_restore": 80},
+    "heal_potion": {"hp_restore": 40},
+    "super_potion": {"hp_restore": 80},
     "bringus_boost": {"atk_boost_turns": 3},
-    "smoke_screen":  {"smoke_screen": True},
+    "smoke_screen": {"smoke_screen": True},
 }
 
 
@@ -59,18 +58,28 @@ def calc_damage(attack_key: str, atk_bonus: int, roll: int) -> tuple[int, str]:
     return floor((base + atk_bonus) * 2.0), "nat20"
 
 
-def _row_to_fight(row: tuple) -> Fight:
+def _row_to_fight(row: aiosqlite.Row) -> Fight:
     return Fight(
-        id=row[0], mode=row[1],
-        challenger_id=row[2], opponent_id=row[3],
-        status=row[4], winner_id=row[5],
-        current_turn_player_id=row[6], pending_swap_player_id=row[7],
+        id=row[0],
+        mode=row[1],
+        challenger_id=row[2],
+        opponent_id=row[3],
+        status=row[4],
+        winner_id=row[5],
+        current_turn_player_id=row[6],
+        pending_swap_player_id=row[7],
         channel_id=row[8],
-        challenger_ready=bool(row[9]), opponent_ready=bool(row[10]),
-        challenger_atk_boost=row[11], opponent_atk_boost=row[12],
-        challenger_smoked=bool(row[13]), opponent_smoked=bool(row[14]),
-        created_at=row[15], started_at=row[16],
-        completed_at=row[17], expires_at=row[18], last_activity_at=row[19],
+        challenger_ready=bool(row[9]),
+        opponent_ready=bool(row[10]),
+        challenger_atk_boost=row[11],
+        opponent_atk_boost=row[12],
+        challenger_smoked=bool(row[13]),
+        opponent_smoked=bool(row[14]),
+        created_at=row[15],
+        started_at=row[16],
+        completed_at=row[17],
+        expires_at=row[18],
+        last_activity_at=row[19],
     )
 
 
@@ -83,7 +92,7 @@ _FIGHT_SELECT = (
 )
 
 
-async def get_fight(fight_id: int) -> Optional[Fight]:
+async def get_fight(fight_id: int) -> Fight | None:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(f"{_FIGHT_SELECT} WHERE id = ?", (fight_id,)) as cur:
             row = await cur.fetchone()
@@ -100,9 +109,16 @@ async def get_fight_cards(fight_id: int) -> list[FightCard]:
             rows = await cur.fetchall()
     return [
         FightCard(
-            id=r[0], fight_id=r[1], player_id=r[2], card_member_id=r[3],
-            rarity=r[4], slot=r[5], hp_current=r[6], hp_max=r[7],
-            is_active=bool(r[8]), is_fainted=bool(r[9]),
+            id=r[0],
+            fight_id=r[1],
+            player_id=r[2],
+            card_member_id=r[3],
+            rarity=r[4],
+            slot=r[5],
+            hp_current=r[6],
+            hp_max=r[7],
+            is_active=bool(r[8]),
+            is_fainted=bool(r[9]),
         )
         for r in rows
     ]
@@ -119,11 +135,17 @@ async def get_fight_log(fight_id: int, limit: int = 20) -> list[FightLogEntry]:
             rows = await cur.fetchall()
     return [
         FightLogEntry(
-            id=r[0], fight_id=r[1], actor_id=r[2], action_type=r[3],
-            action_detail=r[4], d20_roll=r[5], damage_dealt=r[6],
-            narrative_text=r[7], created_at=r[8],
+            id=r[0],
+            fight_id=r[1],
+            actor_id=r[2],
+            action_type=r[3],
+            action_detail=r[4],
+            d20_roll=r[5],
+            damage_dealt=r[6],
+            narrative_text=r[7],
+            created_at=r[8],
         )
-        for r in reversed(rows)
+        for r in reversed(list(rows))
     ]
 
 
@@ -131,7 +153,7 @@ async def create_fight(
     challenger_id: str,
     opponent_id: str,
     mode: str,
-    channel_id: Optional[str] = None,
+    channel_id: str | None = None,
 ) -> Fight:
     now = datetime.now(timezone.utc).isoformat()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=CHALLENGE_EXPIRY_MINUTES)).isoformat()
@@ -145,10 +167,11 @@ async def create_fight(
         await db.commit()
         async with db.execute(f"{_FIGHT_SELECT} WHERE id = ?", (fight_id,)) as c:
             row = await c.fetchone()
+    assert row is not None
     return _row_to_fight(row)
 
 
-async def accept_fight(fight_id: int) -> Optional[Fight]:
+async def accept_fight(fight_id: int) -> Fight | None:
     """Set fight status to 'lobby'. Returns None if fight is not in pending state."""
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
@@ -180,7 +203,7 @@ async def create_fight_token(fight_id: int, player_id: str, base_url: str) -> st
     return f"{base_url}/fight/{fight_id}/lobby?ft={token}"
 
 
-async def use_fight_token(token: str) -> Optional[tuple[int, str, str]]:
+async def use_fight_token(token: str) -> tuple[int, str, str] | None:
     """
     Validate and consume a fight token; create a session.
     Returns (fight_id, player_id, session_token) or None if invalid/expired.
@@ -218,7 +241,7 @@ async def use_fight_token(token: str) -> Optional[tuple[int, str, str]]:
     return fight_id, player_id, session_token
 
 
-async def get_fight_session(session_token: str) -> Optional[dict]:
+async def get_fight_session(session_token: str) -> dict | None:
     """Validate a fight session token. Returns {fight_id, player_id} or None."""
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
@@ -262,14 +285,22 @@ async def set_fight_cards(
             await db.execute(
                 "INSERT INTO fight_cards (fight_id, player_id, card_member_id, rarity, "
                 "slot, hp_current, hp_max, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (fight_id, player_id, slot_info["card_member_id"], rarity,
-                 slot_info["slot"], hp, hp, is_active),
+                (
+                    fight_id,
+                    player_id,
+                    slot_info["card_member_id"],
+                    rarity,
+                    slot_info["slot"],
+                    hp,
+                    hp,
+                    is_active,
+                ),
             )
         await db.commit()
     return True
 
 
-async def mark_player_ready(fight_id: int, player_id: str) -> tuple[bool, Optional[str]]:
+async def mark_player_ready(fight_id: int, player_id: str) -> tuple[bool, str | None]:
     """
     Mark a player as ready. Returns (both_ready, first_turn_player_id).
     If both are ready, starts the fight with a coin toss.
@@ -286,13 +317,12 @@ async def mark_player_ready(fight_id: int, player_id: str) -> tuple[bool, Option
 
         is_challenger = player_id == fight.challenger_id
         col = "challenger_ready" if is_challenger else "opponent_ready"
-        await db.execute(
-            f"UPDATE fights SET {col} = 1 WHERE id = ?", (fight_id,)
-        )
+        await db.execute(f"UPDATE fights SET {col} = 1 WHERE id = ?", (fight_id,))
 
         # Reload to check both ready
         async with db.execute(f"{_FIGHT_SELECT} WHERE id = ?", (fight_id,)) as cur:
             row = await cur.fetchone()
+        assert row is not None
         fight = _row_to_fight(row)
 
         if not (fight.challenger_ready and fight.opponent_ready):
@@ -308,8 +338,7 @@ async def mark_player_ready(fight_id: int, player_id: str) -> tuple[bool, Option
             (first_turn, now, now, fight_id),
         )
         await db.execute(
-            "INSERT INTO fight_log (fight_id, action_type, narrative_text) "
-            "VALUES (?, 'system', ?)",
+            "INSERT INTO fight_log (fight_id, action_type, narrative_text) VALUES (?, 'system', ?)",
             (fight_id, f"The fight begins! Coin toss: <@{first_turn}> goes first."),
         )
         await db.commit()
@@ -328,18 +357,20 @@ async def get_fight_state(fight_id: int) -> dict:
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT discord_id, display_name, avatar_url FROM members "
-            "WHERE discord_id IN (?, ?)",
+            "SELECT discord_id, display_name, avatar_url FROM members WHERE discord_id IN (?, ?)",
             (fight.challenger_id, fight.opponent_id),
         ) as cur:
-            member_rows = {r[0]: {"display_name": r[1], "avatar_url": r[2]} for r in await cur.fetchall()}
+            member_rows = {
+                r[0]: {"display_name": r[1], "avatar_url": r[2]} for r in await cur.fetchall()
+            }
 
         # Get card member names
         card_member_ids = list({c.card_member_id for c in cards})
         if card_member_ids:
             placeholders = ",".join("?" * len(card_member_ids))
             async with db.execute(
-                f"SELECT discord_id, display_name FROM members WHERE discord_id IN ({placeholders})",
+                "SELECT discord_id, display_name FROM members "
+                f"WHERE discord_id IN ({placeholders})",
                 card_member_ids,
             ) as cur:
                 card_names = {r[0]: r[1] for r in await cur.fetchall()}
@@ -405,24 +436,31 @@ def _is_challenger(fight: Fight, player_id: str) -> bool:
 async def _log_action(
     db: aiosqlite.Connection,
     fight_id: int,
-    actor_id: Optional[str],
+    actor_id: str | None,
     action_type: str,
     narrative: str,
-    d20_roll: Optional[int] = None,
-    damage: Optional[int] = None,
-    detail: Optional[dict] = None,
+    d20_roll: int | None = None,
+    damage: int | None = None,
+    detail: dict | None = None,
 ) -> None:
     await db.execute(
         "INSERT INTO fight_log (fight_id, actor_id, action_type, action_detail, "
         "d20_roll, damage_dealt, narrative_text) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (fight_id, actor_id, action_type,
-         json.dumps(detail) if detail else None, d20_roll, damage, narrative),
+        (
+            fight_id,
+            actor_id,
+            action_type,
+            json.dumps(detail) if detail else None,
+            d20_roll,
+            damage,
+            narrative,
+        ),
     )
 
 
 async def _get_active_card(
     db: aiosqlite.Connection, fight_id: int, player_id: str
-) -> Optional[tuple]:
+) -> aiosqlite.Row | None:
     async with db.execute(
         "SELECT id, rarity, hp_current, hp_max FROM fight_cards "
         "WHERE fight_id = ? AND player_id = ? AND is_active = 1 AND is_fainted = 0",
@@ -431,12 +469,11 @@ async def _get_active_card(
         return await cur.fetchone()
 
 
-async def _apply_damage(
-    db: aiosqlite.Connection, card_id: int, damage: int
-) -> tuple[int, bool]:
+async def _apply_damage(db: aiosqlite.Connection, card_id: int, damage: int) -> tuple[int, bool]:
     """Apply damage to a card. Returns (new_hp, fainted)."""
     async with db.execute("SELECT hp_current FROM fight_cards WHERE id = ?", (card_id,)) as cur:
         row = await cur.fetchone()
+    assert row is not None
     new_hp = max(0, row[0] - damage)
     fainted = new_hp == 0
     await db.execute(
@@ -452,24 +489,22 @@ async def _check_all_fainted(db: aiosqlite.Connection, fight_id: int, player_id:
         (fight_id, player_id),
     ) as cur:
         row = await cur.fetchone()
+    assert row is not None
     return row[0] == 0
 
 
-async def _has_non_fainted_cards(
-    db: aiosqlite.Connection, fight_id: int, player_id: str
-) -> bool:
+async def _has_non_fainted_cards(db: aiosqlite.Connection, fight_id: int, player_id: str) -> bool:
     async with db.execute(
         "SELECT COUNT(*) FROM fight_cards WHERE fight_id = ? AND player_id = ? "
         "AND is_fainted = 0 AND is_active = 0",
         (fight_id, player_id),
     ) as cur:
         row = await cur.fetchone()
+    assert row is not None
     return row[0] > 0
 
 
-async def _finish_fight(
-    db: aiosqlite.Connection, fight_id: int, winner_id: str
-) -> None:
+async def _finish_fight(db: aiosqlite.Connection, fight_id: int, winner_id: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "UPDATE fights SET status = 'completed', winner_id = ?, completed_at = ? WHERE id = ?",
@@ -504,9 +539,14 @@ async def _handle_attack(
     smoked_col = "challenger_smoked" if is_ch else "opponent_smoked"
     if smoked:
         await db.execute(f"UPDATE fights SET {smoked_col} = 0 WHERE id = ?", (fight.id,))
-        await _log_action(db, fight.id, player_id, "attack",
-                          f"<@{player_id}>'s {ATTACKS[attack_key]['name']} was blocked by Smoke Screen!",
-                          detail=detail)
+        await _log_action(
+            db,
+            fight.id,
+            player_id,
+            "attack",
+            f"<@{player_id}>'s {ATTACKS[attack_key]['name']} was blocked by Smoke Screen!",
+            detail=detail,
+        )
         await _advance_turn(db, fight.id, opponent_id)
         return False, "smoked"
 
@@ -539,8 +579,9 @@ async def _handle_attack(
 
     if damage == 0:
         narrative = f"<@{player_id}> used **{attack_name}** — rolled {roll}, missed!"
-        await _log_action(db, fight.id, player_id, "attack", narrative,
-                          d20_roll=roll, damage=0, detail=detail)
+        await _log_action(
+            db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=0, detail=detail
+        )
         await _advance_turn(db, fight.id, opponent_id)
         return False, narrative
 
@@ -559,8 +600,9 @@ async def _handle_attack(
     if fainted:
         narrative += f"\n<@{opponent_id}>'s card has fainted!"
 
-    await _log_action(db, fight.id, player_id, "attack", narrative,
-                      d20_roll=roll, damage=damage, detail=detail)
+    await _log_action(
+        db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=damage, detail=detail
+    )
 
     if fainted:
         all_fainted = await _check_all_fainted(db, fight.id, opponent_id)
@@ -613,7 +655,7 @@ async def _handle_item(
         active_card = await _get_active_card(db, fight.id, player_id)
         if not active_card:
             raise ValueError("no_active_card")
-        card_id, rarity, hp_cur, hp_max = active_card
+        card_id, _rarity, hp_cur, hp_max = active_card
         new_hp = min(hp_max, hp_cur + hp_restore)
         await db.execute(
             "UPDATE fight_cards SET hp_current = ? WHERE id = ?",
@@ -626,17 +668,15 @@ async def _handle_item(
         )
     elif item_type == "bringus_boost":
         col = "challenger_atk_boost" if is_ch else "opponent_atk_boost"
-        await db.execute(
-            f"UPDATE fights SET {col} = 3 WHERE id = ?", (fight.id,)
-        )
+        await db.execute(f"UPDATE fights SET {col} = 3 WHERE id = ?", (fight.id,))
         narrative = f"<@{player_id}> activated **Bringus Boost**! +10 ATK for the next 3 turns."
     elif item_type == "smoke_screen":
         # Smoke screen makes the OPPONENT's next attack miss
         opp_smoked_col = "opponent_smoked" if is_ch else "challenger_smoked"
-        await db.execute(
-            f"UPDATE fights SET {opp_smoked_col} = 1 WHERE id = ?", (fight.id,)
+        await db.execute(f"UPDATE fights SET {opp_smoked_col} = 1 WHERE id = ?", (fight.id,))
+        narrative = (
+            f"<@{player_id}> deployed **Smoke Screen**! <@{opponent_id}>'s next attack will miss."
         )
-        narrative = f"<@{player_id}> deployed **Smoke Screen**! <@{opponent_id}>'s next attack will miss."
 
     await _log_action(db, fight.id, player_id, "item", narrative)
     await _advance_turn(db, fight.id, opponent_id)
@@ -667,9 +707,7 @@ async def _handle_swap(
         "UPDATE fight_cards SET is_active = 0 WHERE fight_id = ? AND player_id = ?",
         (fight.id, player_id),
     )
-    await db.execute(
-        "UPDATE fight_cards SET is_active = 1 WHERE id = ?", (card_id,)
-    )
+    await db.execute("UPDATE fight_cards SET is_active = 1 WHERE id = ?", (card_id,))
 
     async with db.execute(
         "SELECT display_name FROM members WHERE discord_id = ?", (card_member_id,)
@@ -728,8 +766,7 @@ async def _handle_run(
         return True, True, roll, narrative
     else:
         narrative = (
-            f"<@{player_id}> attempted to flee — rolled {roll}! "
-            "Failed to escape! Loses their turn."
+            f"<@{player_id}> attempted to flee — rolled {roll}! Failed to escape! Loses their turn."
         )
         await _log_action(db, fight.id, player_id, "run", narrative, d20_roll=roll)
         await _advance_turn(db, fight.id, opponent_id)
@@ -768,7 +805,7 @@ async def process_action(
             if not slot:
                 return False, "missing_slot", {}
             try:
-                narrative = await _handle_swap(db, fight, player_id, int(slot), forced=True)
+                await _handle_swap(db, fight, player_id, int(slot), forced=True)
             except ValueError as e:
                 return False, str(e), {}
             await db.commit()
@@ -784,14 +821,16 @@ async def process_action(
         if action == "attack":
             attack_key = detail.get("attack_key", "")
             try:
-                fight_ended, narrative = await _handle_attack(db, fight, player_id, attack_key, detail)
+                fight_ended, _narrative = await _handle_attack(
+                    db, fight, player_id, attack_key, detail
+                )
             except ValueError as e:
                 return False, str(e), {}
 
         elif action == "item":
             item_type = detail.get("item_type", "")
             try:
-                narrative = await _handle_item(db, fight, player_id, item_type)
+                await _handle_item(db, fight, player_id, item_type)
             except ValueError as e:
                 return False, str(e), {}
 
@@ -802,13 +841,13 @@ async def process_action(
             if not slot:
                 return False, "missing_slot", {}
             try:
-                narrative = await _handle_swap(db, fight, player_id, int(slot), forced=False)
+                await _handle_swap(db, fight, player_id, int(slot), forced=False)
             except ValueError as e:
                 return False, str(e), {}
 
         elif action == "run":
             try:
-                fight_ended, escaped, roll, narrative = await _handle_run(db, fight, player_id)
+                fight_ended, escaped, roll, _narrative = await _handle_run(db, fight, player_id)
                 if fight_ended and escaped and roll < 16:
                     escape_penalty = True
             except ValueError as e:
@@ -848,9 +887,7 @@ async def expire_pending_challenges() -> None:
 
 async def expire_inactive_fights() -> None:
     """Expire active/lobby fights with no activity for 10 minutes."""
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(minutes=INACTIVITY_EXPIRE_MINUTES)
-    ).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=INACTIVITY_EXPIRE_MINUTES)).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE fights SET status = 'expired' "

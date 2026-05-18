@@ -1,9 +1,11 @@
-import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient, ASGITransport
-from superpal.webapp.app import create_app
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
 from superpal.cards.models import MagicLink
-from datetime import datetime, timezone, timedelta
+from superpal.webapp.app import create_app
 
 
 @pytest.fixture
@@ -101,7 +103,6 @@ async def test_admin_collection_session_cant_access_admin(client):
     assert "expired" in response.text.lower()
 
 
-
 @pytest.mark.asyncio
 async def test_admin_exclude_without_session_shows_expired(client):
     with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
@@ -149,13 +150,17 @@ async def test_trade_in_without_session_shows_expired(client):
 
 @pytest.mark.asyncio
 async def test_trade_in_success_shows_result(client):
-    from superpal.cards.models import UserCard
     from datetime import datetime, timezone
+
+    from superpal.cards.models import UserCard
 
     link = _link()
     received_card = UserCard(
-        id=42, owner_id="111", card_member_id="222",
-        rarity="common", quantity=1,
+        id=42,
+        owner_id="111",
+        card_member_id="222",
+        rarity="common",
+        quantity=1,
         first_acquired_at=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -252,6 +257,7 @@ async def test_admin_set_avatar_without_session_shows_expired(client):
 @pytest.mark.asyncio
 async def test_admin_set_avatar_success_redirects(client, tmp_path, monkeypatch):
     import superpal.webapp.routes as routes_mod
+
     monkeypatch.setattr(routes_mod, "IMAGES_DIR", tmp_path)
     link = _link(link_type="admin")
     with (
@@ -293,10 +299,14 @@ async def test_admin_award_card_collection_session_shows_expired(client):
 @pytest.mark.asyncio
 async def test_admin_award_card_success_redirects(client):
     from superpal.cards.models import UserCard
+
     link = _link(link_type="admin")
     received = UserCard(
-        id=1, owner_id="111", card_member_id="222",
-        rarity="common", quantity=1,
+        id=1,
+        owner_id="111",
+        card_member_id="222",
+        rarity="common",
+        quantity=1,
         first_acquired_at=datetime.now(timezone.utc).isoformat(),
     )
     with (
@@ -316,8 +326,17 @@ async def test_admin_award_card_success_redirects(client):
 async def test_collection_shows_completion_pct(client):
     link = _link()
     fake_collection = {
-        "owned": [{"member_id": "111", "display_name": "Alice", "avatar_url": None,
-                   "rarity": "common", "quantity": 1, "bio": None, "stats_pairs": []}],
+        "owned": [
+            {
+                "member_id": "111",
+                "display_name": "Alice",
+                "avatar_url": None,
+                "rarity": "common",
+                "quantity": 1,
+                "bio": None,
+                "stats_pairs": [],
+            }
+        ],
         "undiscovered": [{"discord_id": "222", "display_name": "Bob", "avatar_url": None}],
         "counts": {"common": 1, "uncommon": 0, "rare": 0, "legendary": 0},
     }

@@ -1,7 +1,9 @@
 """Tests for superpal.static module."""
-import sys
+
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from superpal import static as superpal_static
 
@@ -28,5 +30,3 @@ def test_runtime_warn_message_exists():
     """Test that RUNTIME_WARN_MSG exists."""
     assert superpal_static.RUNTIME_WARN_MSG is not None
     assert len(superpal_static.RUNTIME_WARN_MSG) > 0
-
-

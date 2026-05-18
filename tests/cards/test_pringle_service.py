@@ -1,6 +1,7 @@
 import importlib
-import pytest
+
 import aiosqlite
+import pytest
 
 
 @pytest.fixture
@@ -8,17 +9,20 @@ async def db(tmp_path, monkeypatch):
     db_file = str(tmp_path / "test.db")
     monkeypatch.setenv("CARDS_DB_PATH", db_file)
     import superpal.cards.db as db_mod
-    import superpal.cards.service as svc_mod
     import superpal.cards.pringle_service as ps_mod
+    import superpal.cards.service as svc_mod
+
     importlib.reload(db_mod)
     importlib.reload(svc_mod)
     importlib.reload(ps_mod)
     await db_mod.init_db()
     # Seed two members
-    await svc_mod.sync_members([
-        {"discord_id": "player1", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "player2", "display_name": "Bob", "avatar_url": None},
-    ])
+    await svc_mod.sync_members(
+        [
+            {"discord_id": "player1", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "player2", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
     return db_mod, svc_mod, ps_mod
 
 
@@ -32,9 +36,7 @@ async def test_get_balance_defaults_zero(db):
 async def test_buy_item_success(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 200 WHERE discord_id = 'player1'"
-        )
+        await conn.execute("UPDATE members SET pringle_balance = 200 WHERE discord_id = 'player1'")
         await conn.commit()
     ok, reason = await ps.buy_item("player1", "heal_potion")
     assert ok is True
@@ -65,12 +67,8 @@ async def test_buy_item_unknown_type(db):
 async def test_award_fight_pringles_full_pay_quick(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'"
-        )
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player2'"
-        )
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'")
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player2'")
         await conn.commit()
     result = await ps.award_fight_pringles("player1", "player2", "quick")
     assert result["loser_paid"] == 50
@@ -86,12 +84,8 @@ async def test_award_fight_pringles_full_pay_quick(db):
 async def test_award_fight_pringles_extended_bonus(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'"
-        )
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player2'"
-        )
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'")
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player2'")
         await conn.commit()
     await ps.award_fight_pringles("player1", "player2", "extended")
     # winner: 100 + 50 (win) + 25 (extended) = 175
@@ -104,12 +98,8 @@ async def test_award_fight_pringles_extended_bonus(db):
 async def test_bank_of_bringus_partial_pay(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'"
-        )
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 30 WHERE discord_id = 'player2'"
-        )
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'")
+        await conn.execute("UPDATE members SET pringle_balance = 30 WHERE discord_id = 'player2'")
         await conn.commit()
     result = await ps.award_fight_pringles("player1", "player2", "quick")
     assert result["loser_paid"] == 30
@@ -132,9 +122,7 @@ async def test_bank_of_bringus_partial_pay(db):
 async def test_bank_of_bringus_zero_pay(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'"
-        )
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'")
         # player2 has 0 Pringles
         await conn.commit()
     result = await ps.award_fight_pringles("player1", "player2", "quick")
@@ -149,16 +137,11 @@ async def test_bank_of_bringus_zero_pay(db):
 async def test_award_fight_pringles_escape_penalty(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'"
-        )
-        await conn.execute(
-            "UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player2'"
-        )
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player1'")
+        await conn.execute("UPDATE members SET pringle_balance = 100 WHERE discord_id = 'player2'")
         await conn.commit()
     # player2 escaped (11-15 roll) — they lose + escape penalty
-    result = await ps.award_fight_pringles("player1", "player2", "extended",
-                                           escape_penalty=True)
+    result = await ps.award_fight_pringles("player1", "player2", "extended", escape_penalty=True)
     # player2: 100 - 50 (loss) + 25 (extended) - 25 (escape) = 50
     assert await ps.get_balance("player2") == 50
     assert result["escape_paid"] == 25
@@ -166,7 +149,7 @@ async def test_award_fight_pringles_escape_penalty(db):
 
 @pytest.mark.asyncio
 async def test_reset_heal_potions_empty_players(db):
-    db_mod, _, ps = db
+    _db_mod, _, ps = db
     count = await ps.reset_heal_potions_for_empty_players()
     assert count == 2  # both players have 0 heal potions
     items1 = await ps.get_player_items("player1")
@@ -180,7 +163,8 @@ async def test_reset_heal_potions_skips_players_with_heals(db):
     db_mod, _, ps = db
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO player_items (player_id, item_type, quantity) VALUES ('player1', 'heal_potion', 1)"
+            "INSERT INTO player_items (player_id, item_type, quantity) "
+            "VALUES ('player1', 'heal_potion', 1)"
         )
         await conn.commit()
     count = await ps.reset_heal_potions_for_empty_players()

@@ -1,19 +1,24 @@
 """Tests for bot.py module - core bot functionality."""
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
-import discord
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 import datetime
+from unittest.mock import AsyncMock, Mock, patch
+
+import discord
+import pytest
 
 
 class TestSuperPalPromotion:
     """Tests for super pal promotion functionality."""
 
     @pytest.mark.asyncio
-    async def test_promote_new_super_pal(self, mock_env, mock_interaction, mock_member, mock_super_pal_role, mock_channel):
+    async def test_promote_new_super_pal(
+        self, mock_env, mock_interaction, mock_member, mock_super_pal_role, mock_channel
+    ):
         """Test promoting a new user to super pal."""
         # Setup
         new_super_pal = Mock(spec=discord.Member)
@@ -26,8 +31,8 @@ class TestSuperPalPromotion:
         mock_interaction.guild.roles = [mock_super_pal_role]
 
         # Mock discord.utils.get to return the role
-        with patch('discord.utils.get', return_value=mock_super_pal_role):
-            with patch('bot.bot') as mock_bot:
+        with patch("discord.utils.get", return_value=mock_super_pal_role):
+            with patch("bot.bot") as mock_bot:
                 mock_bot.get_channel = Mock(return_value=mock_channel)
 
                 # Import and test the function logic
@@ -38,7 +43,7 @@ class TestSuperPalPromotion:
                 if role not in new_super_pal.roles:
                     await new_super_pal.add_roles(role)
                     await mock_interaction.user.remove_roles(role)
-                    await channel.send(f'Congratulations {new_super_pal.mention}!')
+                    await channel.send(f"Congratulations {new_super_pal.mention}!")
 
         # Verify
         new_super_pal.add_roles.assert_called_once_with(mock_super_pal_role)
@@ -101,7 +106,9 @@ class TestWeeklyTask:
         assert days_until_sunday == 7
 
     @pytest.mark.asyncio
-    async def test_pick_random_super_pal_excludes_bots(self, mock_guild, mock_member, mock_bot_member, mock_super_pal_role):
+    async def test_pick_random_super_pal_excludes_bots(
+        self, mock_guild, mock_member, mock_bot_member, mock_super_pal_role
+    ):
         """Test that bot members are excluded from super pal selection."""
         # Setup
         mock_guild.members = [mock_member, mock_bot_member]
@@ -129,7 +136,9 @@ class TestWeeklyTask:
         mock_member.remove_roles.assert_called_once_with(mock_super_pal_role)
 
     @pytest.mark.asyncio
-    async def test_exclude_current_super_pal_from_selection(self, mock_guild, mock_member, mock_super_pal_role):
+    async def test_exclude_current_super_pal_from_selection(
+        self, mock_guild, mock_member, mock_super_pal_role
+    ):
         """Test that current super pal is excluded from selection pool."""
         # Setup - create members where one already has the role
         current_super_pal = Mock(spec=discord.Member)
@@ -213,7 +222,7 @@ class TestSpinTheWheel:
         mock_embed.description = "🏆 Winner: <@TestUser>!"
 
         # Parse winner name
-        if mock_embed.description and mock_embed.description[0] == '🏆':
+        if mock_embed.description and mock_embed.description[0] == "🏆":
             winner_name = mock_embed.description[12:-2]
             assert winner_name == "TestUser"
 
@@ -225,7 +234,7 @@ class TestSpinTheWheel:
         mock_embed.description = "Spinning the wheel..."
 
         # Should not process
-        is_winner_embed = mock_embed.description and mock_embed.description[0] == '🏆'
+        is_winner_embed = mock_embed.description and mock_embed.description[0] == "🏆"
         assert is_winner_embed is False
 
     @pytest.mark.asyncio
@@ -317,10 +326,11 @@ class TestFunCommands:
 
         def flatten(nested):
             return [x for y in nested for x in y]
+
         true_member_list = [m for m in flatten(active_members) if not m.bot]
 
         # Check for AFK channel
-        afk_channels = [c for c in mock_guild.voice_channels if 'AFK' in c.name]
+        afk_channels = [c for c in mock_guild.voice_channels if "AFK" in c.name]
 
         assert len(true_member_list) > 0
         assert len(afk_channels) > 0

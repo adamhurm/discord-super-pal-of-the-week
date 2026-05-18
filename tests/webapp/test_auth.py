@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from superpal.webapp.auth import get_session_from_request, SESSION_COOKIE_NAME
+
 from superpal.cards.models import MagicLink
-from datetime import datetime, timezone, timedelta
+from superpal.webapp.auth import SESSION_COOKIE_NAME, get_session_from_request
 
 
 def _make_link(link_type="collection") -> MagicLink:
