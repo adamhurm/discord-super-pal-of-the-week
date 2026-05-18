@@ -1201,7 +1201,6 @@ async def before_heal_potion_reset():
 
 @super_pal_of_the_week.before_loop
 async def before_super_pal_of_the_week():
-    """Wait until Sunday noon UTC before starting the weekly task."""
     await bot.wait_until_ready()
     try:
         target = next_sunday_noon_utc()
