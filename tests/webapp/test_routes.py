@@ -33,15 +33,43 @@ def _link(link_type="collection") -> MagicLink:
 @pytest.mark.asyncio
 async def test_link_redirect_on_valid_token(client):
     link = _link()
-    with patch("superpal.webapp.routes.consume_magic_link", new=AsyncMock(return_value=link)):
+    fake_collection = {
+        "owned": [],
+        "undiscovered": [],
+        "counts": {"common": 0, "uncommon": 0, "rare": 0, "legendary": 0},
+    }
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=("TestUser", None))
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+    with (
+        patch("superpal.webapp.routes.use_magic_link", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
         response = await client.get("/link/abc123", follow_redirects=False)
-    assert response.status_code in (302, 303)
+    assert response.status_code == 200
     assert "bringus_session" in response.cookies
 
 
 @pytest.mark.asyncio
 async def test_link_expired_returns_expired_page(client):
-    with patch("superpal.webapp.routes.consume_magic_link", new=AsyncMock(return_value=None)):
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=None)
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+    with (
+        patch("superpal.webapp.routes.use_magic_link", new=AsyncMock(return_value=None)),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
         response = await client.get("/link/deadbeef", follow_redirects=False)
     assert response.status_code == 200
     assert "expired" in response.text.lower()

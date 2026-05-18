@@ -63,7 +63,3 @@ Required: `SUPERPAL_TOKEN`, `GUILD_ID`, `CHANNEL_ID`
 Optional: `EMOJI_GUILD_ID`, `ART_CHANNEL_ID`, `OPENAI_API_KEY`, `GPT_ASSISTANT_ID`, `GPT_ASSISTANT_THREAD_ID`, `WEBAPP_PORT` (default 8080), `WEBAPP_BASE_URL`, `CARDS_DB_PATH`
 
 All loaded via `python-dotenv` in `src/superpal/env.py`; missing required vars log an error but don't hard-crash at import time.
-
-### Known pre-existing test failures
-
-`tests/webapp/test_routes.py::test_link_redirect_on_valid_token` and `test_link_expired_returns_expired_page` both fail because they patch a non-existent `consume_magic_link` symbol (the real function is `use_magic_link`). These were broken before v1.4.x and are not regressions.
