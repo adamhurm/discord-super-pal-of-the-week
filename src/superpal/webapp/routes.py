@@ -1,7 +1,7 @@
 import json
 import uuid
 import aiosqlite
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -22,7 +22,22 @@ from superpal.cards.service import (
     sync_members as _sync_members,
     trade_in,
 )
+from superpal.cards.fight_service import (
+    use_fight_token,
+    get_fight_session,
+    get_fight,
+    get_fight_state,
+    set_fight_cards,
+    mark_player_ready,
+    process_action,
+    ATTACKS,
+    RARITY_STATS,
+)
+from superpal.cards.pringle_service import get_player_items, ITEM_NAMES, ITEM_DESCRIPTIONS
 from superpal.webapp.auth import get_session_from_request, set_session_cookie
+
+# fight_id -> {player_id: WebSocket}
+_fight_connections: dict[int, dict[str, WebSocket]] = {}
 
 IMAGES_DIR = Path(DB_PATH).parent / "images"
 
@@ -256,3 +271,219 @@ async def admin_set_bio_stats(
         json.dumps(stats_dict) if stats_dict else "",
     )
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ─── Fight routes ────────────────────────────────────────────────────────────
+
+async def _resolve_fight_session(request: Request, fight_id: int) -> tuple[str | None, str | None]:
+    """
+    Determine the player_id for a fight request.
+    Returns (player_id, session_token) or (None, None) if unauthenticated.
+    Checks the `fs` query param first, then falls back to bringus_session.
+    """
+    fs = request.query_params.get("fs")
+    if fs:
+        info = await get_fight_session(fs)
+        if info and info["fight_id"] == fight_id:
+            return info["player_id"], fs
+
+    # Fallback: regular bringus_session (e.g., player is already logged in)
+    session = await get_session_from_request(request)
+    if session:
+        fight = await get_fight(fight_id)
+        if fight and session.user_id in (fight.challenger_id, fight.opponent_id):
+            return session.user_id, None
+
+    return None, None
+
+
+@router.get("/fight/{fight_id}/lobby", response_class=HTMLResponse)
+async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = ""):
+    """Fight lobby: pick cards and click Ready."""
+    session_token = fs
+
+    # Consume a one-time fight token if present
+    if ft:
+        result = await use_fight_token(ft)
+        if result is None:
+            return templates.TemplateResponse(request, "expired.html",
+                                              {"command": "/card-fight"})
+        _, player_id, session_token = result
+        return RedirectResponse(
+            url=f"/fight/{fight_id}/lobby?fs={session_token}", status_code=303
+        )
+
+    player_id, _ = await _resolve_fight_session(request, fight_id)
+    if not player_id:
+        return templates.TemplateResponse(request, "expired.html",
+                                          {"command": "/card-fight"})
+
+    fight = await get_fight(fight_id)
+    if not fight or fight.status not in ("lobby", "active"):
+        return templates.TemplateResponse(request, "expired.html",
+                                          {"command": "/card-fight"})
+
+    if fight.status == "active":
+        return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={session_token}", status_code=303)
+
+    # Determine which player is ready
+    is_challenger = player_id == fight.challenger_id
+    already_ready = fight.challenger_ready if is_challenger else fight.opponent_ready
+
+    # Load opponent name
+    opponent_id = fight.opponent_id if is_challenger else fight.challenger_id
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?", (opponent_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    opponent_name = row[0] if row else opponent_id
+
+    # Load user's cards for the picker
+    data = await get_collection(player_id)
+    owned_cards = [c for c in data["owned"] if c["quantity"] > 0]
+
+    return templates.TemplateResponse(request, "fight_lobby.html", {
+        "fight_id": fight_id,
+        "fight": fight,
+        "player_id": player_id,
+        "opponent_name": opponent_name,
+        "owned_cards": owned_cards,
+        "already_ready": already_ready,
+        "session_token": session_token,
+        "rarity_stats": RARITY_STATS,
+    })
+
+
+@router.post("/fight/{fight_id}/lobby/ready")
+async def fight_ready(
+    fight_id: int,
+    request: Request,
+    fs: str = Form(""),
+    slots: list[str] = Form(default=[]),
+):
+    """Mark the player as ready with chosen cards."""
+    info = await get_fight_session(fs)
+    if not info or info["fight_id"] != fight_id:
+        return templates.TemplateResponse(request, "expired.html",
+                                          {"command": "/card-fight"})
+    player_id = info["player_id"]
+
+    fight = await get_fight(fight_id)
+    if not fight or fight.status != "lobby":
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+
+    required_slots = 1 if fight.mode == "quick" else 3
+    if len(slots) != required_slots:
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+
+    card_slots = []
+    for i, slot_val in enumerate(slots, start=1):
+        try:
+            member_id, rarity = slot_val.split(":", 1)
+        except ValueError:
+            return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        card_slots.append({"card_member_id": member_id, "rarity": rarity, "slot": i})
+
+    ok = await set_fight_cards(fight_id, player_id, card_slots)
+    if not ok:
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+
+    both_ready, _ = await mark_player_ready(fight_id, player_id)
+
+    if both_ready:
+        # Notify the other connected WS client (if any) that the fight started
+        state = await get_fight_state(fight_id)
+        await _broadcast(fight_id, {"type": "state", "data": state})
+        return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={fs}", status_code=303)
+
+    return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+
+
+@router.get("/fight/{fight_id}/battle", response_class=HTMLResponse)
+async def fight_battle(fight_id: int, request: Request, fs: str = ""):
+    player_id, session_token = await _resolve_fight_session(request, fight_id)
+    if not player_id:
+        return templates.TemplateResponse(request, "expired.html",
+                                          {"command": "/card-fight"})
+
+    fight = await get_fight(fight_id)
+    if not fight or fight.status not in ("active", "completed"):
+        return templates.TemplateResponse(request, "expired.html",
+                                          {"command": "/card-fight"})
+
+    effective_fs = session_token or fs
+    opponent_id = fight.opponent_id if player_id == fight.challenger_id else fight.challenger_id
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?", (opponent_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    opponent_name = row[0] if row else opponent_id
+
+    items = await get_player_items(player_id)
+
+    return templates.TemplateResponse(request, "fight_battle.html", {
+        "fight_id": fight_id,
+        "player_id": player_id,
+        "opponent_id": opponent_id,
+        "opponent_name": opponent_name,
+        "fight_mode": fight.mode,
+        "session_token": effective_fs,
+        "attacks": ATTACKS,
+        "items": items,
+        "item_names": ITEM_NAMES,
+    })
+
+
+async def _broadcast(fight_id: int, message: dict) -> None:
+    conns = _fight_connections.get(fight_id, {})
+    dead = []
+    for pid, ws in conns.items():
+        try:
+            await ws.send_json(message)
+        except Exception:
+            dead.append(pid)
+    for pid in dead:
+        conns.pop(pid, None)
+
+
+@router.websocket("/ws/fight/{fight_id}")
+async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
+    info = await get_fight_session(fs) if fs else None
+    if not info or info["fight_id"] != fight_id:
+        await websocket.close(code=4003)
+        return
+    player_id = info["player_id"]
+
+    fight = await get_fight(fight_id)
+    if not fight or fight.status not in ("active", "completed"):
+        await websocket.close(code=4004)
+        return
+
+    await websocket.accept()
+    _fight_connections.setdefault(fight_id, {})[player_id] = websocket
+
+    try:
+        state = await get_fight_state(fight_id)
+        await websocket.send_json({"type": "state", "data": state})
+
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action")
+            detail = data.get("detail", {})
+
+            success, err, new_state = await process_action(fight_id, player_id, action, detail)
+            if not success:
+                await websocket.send_json({"type": "error", "message": err})
+                continue
+
+            await _broadcast(fight_id, {"type": "state", "data": new_state})
+
+            if new_state.get("status") == "completed":
+                break
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _fight_connections.get(fight_id, {}).pop(player_id, None)

@@ -66,6 +66,64 @@ class MagicLink:
 
 
 @dataclass
+class Fight:
+    id: int
+    mode: str
+    challenger_id: str
+    opponent_id: str
+    status: str
+    winner_id: Optional[str]
+    current_turn_player_id: Optional[str]
+    pending_swap_player_id: Optional[str]
+    channel_id: Optional[str]
+    challenger_ready: bool
+    opponent_ready: bool
+    challenger_atk_boost: int
+    opponent_atk_boost: int
+    challenger_smoked: bool
+    opponent_smoked: bool
+    created_at: str
+    started_at: Optional[str]
+    completed_at: Optional[str]
+    expires_at: Optional[str]
+    last_activity_at: Optional[str]
+
+
+@dataclass
+class FightCard:
+    id: int
+    fight_id: int
+    player_id: str
+    card_member_id: str
+    rarity: str
+    slot: int
+    hp_current: int
+    hp_max: int
+    is_active: bool
+    is_fainted: bool
+
+
+@dataclass
+class FightLogEntry:
+    id: int
+    fight_id: int
+    actor_id: Optional[str]
+    action_type: str
+    action_detail: Optional[str]
+    d20_roll: Optional[int]
+    damage_dealt: Optional[int]
+    narrative_text: str
+    created_at: str
+
+
+@dataclass
+class PlayerItem:
+    player_id: str
+    item_type: str
+    quantity: int
+
+
+@dataclass
 class PendingTrade:
     id: int
     proposer_id: str

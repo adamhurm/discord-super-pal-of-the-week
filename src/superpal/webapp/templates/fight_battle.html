@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle — Bringus Card Game</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 16px; }
+    h1 { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #72767d; font-size: 12px; margin-bottom: 16px; }
+    .arena { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .player-panel { background: #2b2d31; border-radius: 8px; padding: 12px; }
+    .player-panel.you { border: 1px solid #5865f2; }
+    .panel-name { font-size: 12px; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: 1px; color: #72767d; margin-bottom: 8px; }
+    .panel-name.you-label { color: #5865f2; }
+    .card-row { margin-bottom: 8px; padding: 8px; background: #313338; border-radius: 6px;
+                border-left: 3px solid #3f4147; }
+    .card-row.active { border-left-color: #5865f2; }
+    .card-row.fainted { opacity: 0.4; }
+    .card-row-name { font-size: 12px; font-weight: 600; color: #fff; }
+    .card-row-rarity { font-size: 10px; color: #72767d; text-transform: uppercase;
+                       letter-spacing: 1px; margin-top: 1px; }
+    .hp-bar-wrap { margin-top: 5px; background: #1e1f22; border-radius: 3px;
+                   height: 6px; overflow: hidden; }
+    .hp-bar { height: 100%; background: #27ae60; transition: width 0.3s; border-radius: 3px; }
+    .hp-bar.yellow { background: #f39c12; }
+    .hp-bar.red { background: #e74c3c; }
+    .hp-text { font-size: 10px; color: #b9bbbe; margin-top: 2px; }
+    .status-badge { display: inline-block; padding: 2px 6px; border-radius: 3px;
+                    font-size: 10px; font-weight: 700; margin-top: 3px; }
+    .status-boost { background: #f39c12; color: #7d4f00; }
+    .status-smoked { background: #e74c3c; color: #fff; }
+    .actions { margin-bottom: 16px; }
+    .action-group { margin-bottom: 10px; }
+    .action-label { font-size: 11px; font-weight: 700; color: #72767d; letter-spacing: 1px;
+                    text-transform: uppercase; margin-bottom: 5px; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .btn { padding: 7px 14px; border: none; border-radius: 5px; font-size: 12px;
+           font-weight: 700; cursor: pointer; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-attack { background: #5865f2; color: #fff; }
+    .btn-attack:not(:disabled):hover { background: #4752c4; }
+    .btn-item { background: #27ae60; color: #fff; }
+    .btn-item:not(:disabled):hover { background: #1e8449; }
+    .btn-swap { background: #f39c12; color: #7d4f00; }
+    .btn-swap:not(:disabled):hover { background: #d68910; }
+    .btn-run { background: #e74c3c; color: #fff; }
+    .btn-run:not(:disabled):hover { background: #cb4335; }
+    .turn-banner { padding: 10px 14px; border-radius: 6px; font-size: 13px;
+                   font-weight: 700; margin-bottom: 14px; text-align: center; }
+    .your-turn { background: #5865f2; color: #fff; }
+    .their-turn { background: #2b2d31; color: #72767d; border: 1px solid #3f4147; }
+    .swap-prompt { background: #f39c12; color: #1e1f22; padding: 10px 14px;
+                   border-radius: 6px; font-size: 13px; font-weight: 700;
+                   margin-bottom: 14px; text-align: center; }
+    .log { background: #2b2d31; border-radius: 8px; padding: 12px; max-height: 220px;
+           overflow-y: auto; }
+    .log-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #72767d;
+                 text-transform: uppercase; margin-bottom: 8px; }
+    .log-entry { font-size: 12px; color: #b9bbbe; padding: 5px 0;
+                 border-bottom: 1px solid #3f4147; line-height: 1.5; }
+    .log-entry:last-child { border-bottom: none; }
+    .result-banner { background: #27ae60; color: #fff; padding: 16px; border-radius: 8px;
+                     text-align: center; font-size: 1.1rem; font-weight: 700;
+                     margin-bottom: 16px; }
+    .result-banner.loss { background: #e74c3c; }
+    .result-banner.draw { background: #72767d; }
+    .spinner { color: #72767d; font-size: 12px; padding: 10px 0; }
+    .card-row-common    { border-left-color: #95a5a6; }
+    .card-row-uncommon  { border-left-color: #27ae60; }
+    .card-row-rare      { border-left-color: #2980b9; }
+    .card-row-legendary { border-left-color: #f39c12; }
+  </style>
+</head>
+<body>
+  <h1>Battle</h1>
+  <div class="subtitle">
+    {{ fight_mode | capitalize }} Mode — vs. {{ opponent_name }}
+  </div>
+
+  <div id="result-area"></div>
+  <div id="turn-banner" class="turn-banner their-turn">Connecting…</div>
+  <div id="swap-prompt" style="display:none" class="swap-prompt"></div>
+
+  <div class="arena">
+    <div id="my-panel" class="player-panel you">
+      <div class="panel-name you-label">You</div>
+      <div id="my-cards" class="spinner">Loading…</div>
+    </div>
+    <div id="opp-panel" class="player-panel">
+      <div class="panel-name">{{ opponent_name }}</div>
+      <div id="opp-cards" class="spinner">Loading…</div>
+    </div>
+  </div>
+
+  <div class="actions" id="actions" style="display:none">
+    <div class="action-group">
+      <div class="action-label">Attack</div>
+      <div class="btn-row">
+        {% for key, atk in attacks.items() %}
+        <button class="btn btn-attack" onclick="sendAttack('{{ key }}')">
+          {{ atk.name }}<br><small>{{ atk.base_damage }} dmg (min {{ atk.min_roll }})</small>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if items %}
+    <div class="action-group">
+      <div class="action-label">Items</div>
+      <div class="btn-row">
+        {% for item_type, qty in items.items() %}
+        <button class="btn btn-item" onclick="useItem('{{ item_type }}')">
+          {{ item_names[item_type] }} ×{{ qty }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if fight_mode == "extended" %}
+    <div class="action-group" id="swap-group" style="display:none">
+      <div class="action-label">Swap Card</div>
+      <div class="btn-row" id="swap-buttons"></div>
+    </div>
+    <div class="action-group">
+      <div class="btn-row">
+        <button class="btn btn-run" onclick="sendRun()">Attempt to Run</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="log">
+    <div class="log-title">Battle Log</div>
+    <div id="log-entries"></div>
+  </div>
+
+  <script>
+    const MY_PLAYER_ID = "{{ player_id }}";
+    const OPP_PLAYER_ID = "{{ opponent_id }}";
+    const FIGHT_ID = {{ fight_id }};
+    const FS = "{{ session_token }}";
+    const MODE = "{{ fight_mode }}";
+    const ITEM_NAMES = {{ item_names | tojson }};
+
+    let ws;
+    let lastState = null;
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws/fight/${FIGHT_ID}?fs=${FS}`);
+      ws.onopen = () => {};
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "state") renderState(msg.data);
+        else if (msg.type === "error") showError(msg.message);
+      };
+      ws.onclose = () => {
+        setTimeout(connect, 2000);
+      };
+    }
+
+    function hpColor(cur, max) {
+      const pct = cur / max;
+      if (pct > 0.5) return "";
+      if (pct > 0.25) return "yellow";
+      return "red";
+    }
+
+    function rarityClass(r) {
+      return `card-row-${r}`;
+    }
+
+    function renderCards(cards, containerId, isMe) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = cards.map(c => {
+        const pct = Math.round(c.hp_current / c.hp_max * 100);
+        const color = hpColor(c.hp_current, c.hp_max);
+        const activeClass = c.is_active ? " active" : "";
+        const faintedClass = c.is_fainted ? " fainted" : "";
+        const rarityC = rarityClass(c.rarity);
+        const labels = c.is_active ? "<span class='status-badge' style='background:#5865f2;color:#fff'>Active</span>" : "";
+        return `
+          <div class="card-row ${rarityC}${activeClass}${faintedClass}" data-slot="${c.slot}" data-fainted="${c.is_fainted}">
+            <div class="card-row-name">${c.display_name}${c.is_fainted ? " 💀" : ""}</div>
+            <div class="card-row-rarity">${c.rarity.toUpperCase()} · Slot ${c.slot}</div>
+            ${!c.is_fainted ? `
+            <div class="hp-bar-wrap">
+              <div class="hp-bar ${color}" style="width:${pct}%"></div>
+            </div>
+            <div class="hp-text">${c.hp_current} / ${c.hp_max} HP</div>` : ""}
+            ${labels}
+          </div>`;
+      }).join("");
+    }
+
+    function renderState(state) {
+      lastState = state;
+      const me = state.challenger.player_id === MY_PLAYER_ID ? state.challenger : state.opponent;
+      const opp = state.challenger.player_id === MY_PLAYER_ID ? state.opponent : state.challenger;
+
+      renderCards(me.cards, "my-cards", true);
+      renderCards(opp.cards, "opp-cards", false);
+
+      // Status badges
+      const myBadges = [];
+      if (me.atk_boost > 0) myBadges.push(`<span class="status-badge status-boost">BOOST +10 ATK (${me.atk_boost}t)</span>`);
+      if (me.smoked) myBadges.push(`<span class="status-badge status-smoked">SMOKED</span>`);
+      if (myBadges.length) document.getElementById("my-panel").insertAdjacentHTML("beforeend", myBadges.join(" "));
+
+      // Result
+      const resultArea = document.getElementById("result-area");
+      if (state.status === "completed") {
+        const won = state.winner_id === MY_PLAYER_ID;
+        const cls = won ? "" : " loss";
+        resultArea.innerHTML = `<div class="result-banner${cls}">${won ? "🏆 You Win! +50 Pringles (or more)" : "💀 You Lost. -50 Pringles"}</div>`;
+        document.getElementById("actions").style.display = "none";
+        document.getElementById("turn-banner").style.display = "none";
+        renderLog(state.log);
+        return;
+      }
+
+      // Pending swap
+      const swapPrompt = document.getElementById("swap-prompt");
+      const actionsEl = document.getElementById("actions");
+      const turnBanner = document.getElementById("turn-banner");
+
+      if (state.pending_swap_player_id === MY_PLAYER_ID) {
+        swapPrompt.style.display = "block";
+        swapPrompt.textContent = "Your card fainted! Choose your next fighter:";
+        actionsEl.style.display = "block";
+        turnBanner.style.display = "none";
+        buildSwapButtons(me.cards, true);
+        document.getElementById("swap-group").style.display = "block";
+        // Hide attack/item buttons during forced swap
+        document.querySelectorAll(".btn-attack, .btn-item, .btn-run").forEach(b => b.disabled = true);
+      } else {
+        swapPrompt.style.display = "none";
+        document.querySelectorAll(".btn-attack, .btn-item, .btn-run").forEach(b => b.disabled = false);
+
+        const isMyTurn = state.current_turn_player_id === MY_PLAYER_ID;
+        turnBanner.style.display = "block";
+        turnBanner.className = `turn-banner ${isMyTurn ? "your-turn" : "their-turn"}`;
+        turnBanner.textContent = isMyTurn ? "Your turn!" : `Waiting for ${opp.display_name}…`;
+        actionsEl.style.display = isMyTurn ? "block" : "none";
+
+        if (isMyTurn && MODE === "extended") {
+          buildSwapButtons(me.cards, false);
+          const hasNonActive = me.cards.some(c => !c.is_active && !c.is_fainted);
+          document.getElementById("swap-group").style.display = hasNonActive ? "block" : "none";
+        }
+      }
+
+      renderLog(state.log);
+    }
+
+    function buildSwapButtons(cards, forcedOnly) {
+      const container = document.getElementById("swap-buttons");
+      const candidates = forcedOnly
+        ? cards.filter(c => !c.is_active && !c.is_fainted)
+        : cards.filter(c => !c.is_active && !c.is_fainted);
+      container.innerHTML = candidates.map(c =>
+        `<button class="btn btn-swap" onclick="sendSwap(${c.slot})">
+          Slot ${c.slot}: ${c.display_name} (${c.hp_current} HP)
+        </button>`
+      ).join("");
+    }
+
+    function renderLog(entries) {
+      const el = document.getElementById("log-entries");
+      el.innerHTML = entries.map(e =>
+        `<div class="log-entry">${formatNarrative(e.narrative_text)}</div>`
+      ).join("");
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function formatNarrative(text) {
+      return text.replace(/<@(\w+)>/g, (_, id) => {
+        if (id === MY_PLAYER_ID) return "<strong>You</strong>";
+        return `<strong>${document.querySelector("#opp-panel .panel-name").textContent}</strong>`;
+      });
+    }
+
+    function showError(msg) {
+      const banner = document.getElementById("turn-banner");
+      const prev = banner.textContent;
+      banner.textContent = "Error: " + msg;
+      setTimeout(() => { banner.textContent = prev; }, 2000);
+    }
+
+    function sendAttack(attackKey) {
+      ws.send(JSON.stringify({ action: "attack", detail: { attack_key: attackKey } }));
+    }
+
+    function useItem(itemType) {
+      ws.send(JSON.stringify({ action: "item", detail: { item_type: itemType } }));
+    }
+
+    function sendSwap(slot) {
+      ws.send(JSON.stringify({ action: "swap", detail: { slot: slot } }));
+    }
+
+    function sendRun() {
+      if (!confirm("Attempt to flee? (D20 roll determines outcome)")) return;
+      ws.send(JSON.stringify({ action: "run", detail: {} }));
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) connect();
+    });
+
+    connect();
+  </script>
+</body>
+</html>

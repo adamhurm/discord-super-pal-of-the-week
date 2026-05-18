@@ -28,6 +28,17 @@ from superpal.cards.service import (
 from superpal.cards.models import RARITY_LABELS
 from superpal.env import WEBAPP_BASE_URL
 from superpal.cards.embeds import build_card_embed
+from superpal.cards.fight_service import (
+    create_fight, accept_fight, create_fight_token, expire_pending_challenges,
+    FIGHT_TOKEN_EXPIRY_MINUTES,
+)
+from superpal.cards.pringle_service import (
+    get_balance, get_player_items, buy_item,
+    reset_heal_potions_for_empty_players,
+    ITEM_COSTS, ITEM_NAMES, ITEM_DESCRIPTIONS,
+)
+
+FIGHT_CHALLENGE_TIMEOUT = FIGHT_TOKEN_EXPIRY_MINUTES * 60
 
 # Get logger
 log = superpal_env.log
@@ -261,6 +272,84 @@ class GiftConfirmView(discord.ui.View):
             return
         self.stop()
         await interaction.response.edit_message(content="Gift cancelled.", view=None)
+
+
+#######################
+# Fight UI View       #
+#######################
+class FightChallengeView(discord.ui.View):
+    def __init__(
+        self,
+        fight_id: int,
+        challenger_id: str,
+        opponent_id: str,
+        challenger_name: str,
+        mode: str,
+    ):
+        super().__init__(timeout=FIGHT_CHALLENGE_TIMEOUT)
+        self.fight_id = fight_id
+        self.challenger_id = challenger_id
+        self.opponent_id = opponent_id
+        self.challenger_name = challenger_name
+        self.mode = mode
+        self.message: Optional[discord.Message] = None
+
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
+    async def accept_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if str(interaction.user.id) != self.opponent_id:
+            await interaction.response.send_message(
+                "Only the challenged player can accept.", ephemeral=True
+            )
+            return
+        self.stop()
+        fight = await accept_fight(self.fight_id)
+        if fight is None:
+            await interaction.response.edit_message(
+                content="This challenge has already expired or been resolved.", view=None
+            )
+            return
+
+        await interaction.response.edit_message(
+            content=f"Challenge accepted! DMs are on their way.", view=None
+        )
+
+        # DM both players their lobby magic links
+        challenger_url = await create_fight_token(self.fight_id, self.challenger_id, WEBAPP_BASE_URL)
+        opponent_url = await create_fight_token(self.fight_id, self.opponent_id, WEBAPP_BASE_URL)
+
+        for uid, url in ((self.challenger_id, challenger_url), (self.opponent_id, opponent_url)):
+            user = interaction.client.get_user(int(uid))
+            if user:
+                try:
+                    await user.send(
+                        f"Your **{self.mode}** battle vs. "
+                        f"**{self.challenger_name if uid == self.opponent_id else interaction.user.display_name}** "
+                        f"is ready!\n\nOpen the fight lobby: {url}"
+                    )
+                except discord.Forbidden:
+                    pass
+
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
+    async def decline_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if str(interaction.user.id) != self.opponent_id:
+            await interaction.response.send_message(
+                "Only the challenged player can decline.", ephemeral=True
+            )
+            return
+        self.stop()
+        await interaction.response.edit_message(content="Challenge declined.", view=None)
+
+    async def on_timeout(self) -> None:
+        await expire_pending_challenges()
+        if self.message:
+            try:
+                await self.message.edit(content="Fight challenge expired.", view=None)
+            except discord.NotFound:
+                pass
 
 
 ##################
@@ -740,6 +829,189 @@ async def card_progress_command(interaction: discord.Interaction) -> None:
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
+@bot.tree.command(name="card-fight", description="Challenge another player to a card battle")
+@discord.app_commands.describe(
+    opponent="The player to challenge",
+    mode="Battle mode: quick (1v1) or extended (3v3)",
+)
+@discord.app_commands.choices(mode=[
+    discord.app_commands.Choice(name="Quick (1v1)", value="quick"),
+    discord.app_commands.Choice(name="Extended (3v3)", value="extended"),
+])
+async def card_fight_command(
+    interaction: discord.Interaction,
+    opponent: discord.Member,
+    mode: str,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+    challenger_id = str(interaction.user.id)
+    opponent_id = str(opponent.id)
+
+    if interaction.user.id == opponent.id:
+        await interaction.followup.send("You can't fight yourself.", ephemeral=True)
+        return
+    if opponent.bot:
+        await interaction.followup.send("You can't challenge a bot.", ephemeral=True)
+        return
+    if not interaction.channel:
+        await interaction.followup.send(
+            "This command must be used in a server channel.", ephemeral=True
+        )
+        return
+
+    fight = await create_fight(
+        challenger_id=challenger_id,
+        opponent_id=opponent_id,
+        mode=mode,
+        channel_id=str(interaction.channel_id),
+    )
+
+    view = FightChallengeView(
+        fight_id=fight.id,
+        challenger_id=challenger_id,
+        opponent_id=opponent_id,
+        challenger_name=interaction.user.display_name,
+        mode=mode,
+    )
+    channel_msg = await interaction.channel.send(
+        content=(
+            f"{opponent.mention}, **{interaction.user.display_name}** challenges you to a "
+            f"**{mode.upper()} Battle**!\n\n"
+            f"You have {FIGHT_TOKEN_EXPIRY_MINUTES} minutes to respond."
+        ),
+        view=view,
+    )
+    view.message = channel_msg
+    await interaction.followup.send("Challenge sent!", ephemeral=True)
+
+
+@bot.tree.command(name="card-shop", description="Browse or buy items from the Pringle shop")
+@discord.app_commands.describe(action="list: show items, buy: purchase an item")
+@discord.app_commands.choices(action=[
+    discord.app_commands.Choice(name="list", value="list"),
+])
+async def card_shop_command(interaction: discord.Interaction, action: str = "list") -> None:
+    await interaction.response.defer(ephemeral=True)
+    player_id = str(interaction.user.id)
+    balance = await get_balance(player_id)
+    items_owned = await get_player_items(player_id)
+
+    lines = [f"**Pringle Balance:** {balance} 🟣\n", "**Item Shop:**"]
+    for item_type, cost in ITEM_COSTS.items():
+        owned_qty = items_owned.get(item_type, 0)
+        lines.append(
+            f"• **{ITEM_NAMES[item_type]}** — {cost} Pringles — {ITEM_DESCRIPTIONS[item_type]}"
+            f"  *(you have {owned_qty})*"
+        )
+    lines.append("\nUse `/card-shop-buy <item>` to purchase.")
+    await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+
+@bot.tree.command(name="card-shop-buy", description="Buy an item from the Pringle shop")
+@discord.app_commands.describe(item="Item to purchase")
+@discord.app_commands.choices(item=[
+    discord.app_commands.Choice(name="Heal Potion (50 🟣)", value="heal_potion"),
+    discord.app_commands.Choice(name="Super Potion (100 🟣)", value="super_potion"),
+    discord.app_commands.Choice(name="Bringus Boost (75 🟣)", value="bringus_boost"),
+    discord.app_commands.Choice(name="Smoke Screen (60 🟣)", value="smoke_screen"),
+])
+async def card_shop_buy_command(interaction: discord.Interaction, item: str) -> None:
+    await interaction.response.defer(ephemeral=True)
+    player_id = str(interaction.user.id)
+    success, reason = await buy_item(player_id, item)
+    if success:
+        balance = await get_balance(player_id)
+        await interaction.followup.send(
+            f"Purchased **{ITEM_NAMES[item]}**! "
+            f"Remaining balance: {balance} Pringles 🟣",
+            ephemeral=True,
+        )
+    else:
+        msg = {
+            "unknown_item": "Unknown item.",
+            "insufficient_pringles": "Not enough Pringles.",
+        }.get(reason, "Purchase failed.")
+        await interaction.followup.send(msg, ephemeral=True)
+
+
+@bot.tree.command(name="card-pringles", description="Check your Pringle balance or trade in for a card draw")
+@discord.app_commands.describe(action="balance: show balance, trade-in: spend 100 Pringles for a card draw")
+@discord.app_commands.choices(action=[
+    discord.app_commands.Choice(name="balance", value="balance"),
+    discord.app_commands.Choice(name="trade-in (100 Pringles → 1 draw)", value="trade-in"),
+])
+async def card_pringles_command(interaction: discord.Interaction, action: str = "balance") -> None:
+    await interaction.response.defer(ephemeral=True)
+    player_id = str(interaction.user.id)
+
+    if action == "balance":
+        balance = await get_balance(player_id)
+        items = await get_player_items(player_id)
+        item_lines = [f"• {ITEM_NAMES[k]}: {v}" for k, v in items.items()] or ["• No items"]
+        await interaction.followup.send(
+            f"**Pringle Balance:** {balance} 🟣\n\n**Items:**\n" + "\n".join(item_lines),
+            ephemeral=True,
+        )
+    elif action == "trade-in":
+        balance = await get_balance(player_id)
+        if balance < 100:
+            await interaction.followup.send(
+                f"You need 100 Pringles to trade in for a card draw. You have {balance}.",
+                ephemeral=True,
+            )
+            return
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE members SET pringle_balance = pringle_balance - 100 WHERE discord_id = ?",
+                (player_id,),
+            )
+            await db.commit()
+
+        is_super_pal = any(
+            r.name == superpal_static.SUPER_PAL_ROLE_NAME
+            for r in getattr(interaction.user, "roles", [])
+        )
+        max_draws = 10 if is_super_pal else 5
+        card = await draw_card(owner_id=player_id, max_draws=max_draws + 1,
+                               drawn_by_name=interaction.user.display_name)
+        if card is None:
+            # Refund if draw fails (shouldn't happen but be safe)
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE members SET pringle_balance = pringle_balance + 100 WHERE discord_id = ?",
+                    (player_id,),
+                )
+                await db.commit()
+            await interaction.followup.send(
+                "Could not draw a card (something went wrong). Pringles refunded.", ephemeral=True
+            )
+            return
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
+                (card.card_member_id,),
+            ) as cur:
+                row = await cur.fetchone()
+
+        embed = build_card_embed(
+            display_name=row[0] if row else "Unknown",
+            avatar_url=row[1] if row else None,
+            rarity=card.rarity,
+            card_number=card.id,
+            drawn_by=card.drawn_by_name or interaction.user.display_name,
+            bio=row[2] if row else None,
+            stats_pairs=_parse_stats(row[3] if row else None),
+        )
+        new_balance = await get_balance(player_id)
+        await interaction.followup.send(
+            f"Spent 100 Pringles for a card draw! Remaining: {new_balance} 🟣",
+            embed=embed,
+            ephemeral=True,
+        )
+
+
 @bot.tree.command(name="admin-link", description="Get a private admin dashboard link (The Clippy only)")
 async def admin_link_command(interaction: discord.Interaction) -> None:
     member = interaction.user
@@ -849,6 +1121,36 @@ async def super_pal_of_the_week():
         log.error(f"Error in super_pal_of_the_week task: {e}")
 
 
+@tasks.loop(hours=24 * 7)
+async def heal_potion_reset():
+    """Reset Heal Potions to 2 for players with 0 every Sunday at noon UTC."""
+    try:
+        count = await reset_heal_potions_for_empty_players()
+        log.info("Heal potion reset: %d players topped up", count)
+    except Exception as e:
+        log.error("Error in heal_potion_reset: %s", e)
+
+
+@heal_potion_reset.before_loop
+async def before_heal_potion_reset():
+    await bot.wait_until_ready()
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        days_since_sunday = (now.weekday() + 1) % 7
+        last_sunday = now.date() - datetime.timedelta(days=days_since_sunday)
+        next_sunday_noon = datetime.datetime(
+            last_sunday.year, last_sunday.month, last_sunday.day,
+            12, 0, tzinfo=datetime.timezone.utc,
+        )
+        if now >= next_sunday_noon:
+            next_sunday_noon += datetime.timedelta(weeks=1)
+        wait_seconds = (next_sunday_noon - now).total_seconds()
+        log.info("Heal potion reset sleeping %.0f s until Sunday noon UTC", wait_seconds)
+        await asyncio.sleep(wait_seconds)
+    except Exception as e:
+        log.error("Error in before_heal_potion_reset: %s", e)
+
+
 @super_pal_of_the_week.before_loop
 async def before_super_pal_of_the_week():
     """Wait until Sunday at noon before starting the weekly task."""
@@ -923,6 +1225,10 @@ async def on_ready():
     if not super_pal_of_the_week.is_running():
         super_pal_of_the_week.start()
         log.info('Weekly task started')
+
+    if not heal_potion_reset.is_running():
+        heal_potion_reset.start()
+        log.info('Heal potion reset task started')
 
 
 @bot.event

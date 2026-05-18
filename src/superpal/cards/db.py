@@ -12,6 +12,77 @@ CREATE TABLE IF NOT EXISTS members (
     synced_at    TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fights (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode                   TEXT NOT NULL,
+    challenger_id          TEXT NOT NULL REFERENCES members(discord_id),
+    opponent_id            TEXT NOT NULL REFERENCES members(discord_id),
+    status                 TEXT NOT NULL DEFAULT 'pending',
+    winner_id              TEXT REFERENCES members(discord_id),
+    current_turn_player_id TEXT REFERENCES members(discord_id),
+    pending_swap_player_id TEXT REFERENCES members(discord_id),
+    channel_id             TEXT,
+    challenger_ready       INTEGER NOT NULL DEFAULT 0,
+    opponent_ready         INTEGER NOT NULL DEFAULT 0,
+    challenger_atk_boost   INTEGER NOT NULL DEFAULT 0,
+    opponent_atk_boost     INTEGER NOT NULL DEFAULT 0,
+    challenger_smoked      INTEGER NOT NULL DEFAULT 0,
+    opponent_smoked        INTEGER NOT NULL DEFAULT 0,
+    created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at             TIMESTAMP,
+    completed_at           TIMESTAMP,
+    expires_at             TIMESTAMP,
+    last_activity_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fight_cards (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fight_id       INTEGER NOT NULL REFERENCES fights(id),
+    player_id      TEXT NOT NULL REFERENCES members(discord_id),
+    card_member_id TEXT NOT NULL REFERENCES members(discord_id),
+    rarity         TEXT NOT NULL,
+    slot           INTEGER NOT NULL,
+    hp_current     INTEGER NOT NULL,
+    hp_max         INTEGER NOT NULL,
+    is_active      INTEGER NOT NULL DEFAULT 0,
+    is_fainted     INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(fight_id, player_id, slot)
+);
+
+CREATE TABLE IF NOT EXISTS fight_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fight_id       INTEGER NOT NULL REFERENCES fights(id),
+    actor_id       TEXT REFERENCES members(discord_id),
+    action_type    TEXT NOT NULL,
+    action_detail  TEXT,
+    d20_roll       INTEGER,
+    damage_dealt   INTEGER,
+    narrative_text TEXT NOT NULL,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS player_items (
+    player_id  TEXT NOT NULL REFERENCES members(discord_id),
+    item_type  TEXT NOT NULL,
+    quantity   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (player_id, item_type)
+);
+
+CREATE TABLE IF NOT EXISTS fight_tokens (
+    token      TEXT PRIMARY KEY,
+    fight_id   INTEGER NOT NULL REFERENCES fights(id),
+    player_id  TEXT NOT NULL REFERENCES members(discord_id),
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fight_sessions (
+    session_token TEXT PRIMARY KEY,
+    fight_id      INTEGER NOT NULL REFERENCES fights(id),
+    player_id     TEXT NOT NULL REFERENCES members(discord_id),
+    expires_at    TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_cards (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id          TEXT NOT NULL REFERENCES members(discord_id),
@@ -88,6 +159,16 @@ async def init_db() -> None:
             pass  # column already exists
         try:
             await db.execute("ALTER TABLE members ADD COLUMN stats TEXT")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE members ADD COLUMN pringle_balance INTEGER DEFAULT 0")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE members ADD COLUMN bank_debt INTEGER DEFAULT 0")
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists

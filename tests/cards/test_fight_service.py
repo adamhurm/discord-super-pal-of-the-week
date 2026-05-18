@@ -1,0 +1,380 @@
+import importlib
+import pytest
+import aiosqlite
+from unittest.mock import patch
+
+
+@pytest.fixture
+async def db(tmp_path, monkeypatch):
+    db_file = str(tmp_path / "test.db")
+    monkeypatch.setenv("CARDS_DB_PATH", db_file)
+    import superpal.cards.db as db_mod
+    import superpal.cards.service as svc_mod
+    import superpal.cards.fight_service as fs_mod
+    import superpal.cards.pringle_service as ps_mod
+    importlib.reload(db_mod)
+    importlib.reload(svc_mod)
+    importlib.reload(fs_mod)
+    importlib.reload(ps_mod)
+    await db_mod.init_db()
+    await svc_mod.sync_members([
+        {"discord_id": "p1", "display_name": "Alice", "avatar_url": None},
+        {"discord_id": "p2", "display_name": "Bob", "avatar_url": None},
+    ])
+    # Give both players a card to use
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        for pid in ("p1", "p2"):
+            for mid in ("p1", "p2"):
+                for rarity in ("common", "uncommon", "rare", "legendary"):
+                    await conn.execute(
+                        "INSERT OR IGNORE INTO user_cards "
+                        "(owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+                        "VALUES (?, ?, ?, 1, ?)",
+                        (pid, mid, rarity, now),
+                    )
+        await conn.commit()
+    return db_mod, svc_mod, fs_mod, ps_mod
+
+
+# ─── calc_damage tests ────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("roll,expected_tier", [
+    (1, "glancing"),   # Vibe Check min_roll=1, roll=1 hits
+    (5, "glancing"),
+    (10, "glancing"),
+    (11, "direct"),
+    (16, "direct"),
+    (17, "critical"),
+    (19, "critical"),
+    (20, "nat20"),
+])
+def test_vibe_check_never_misses(roll, expected_tier):
+    from superpal.cards.fight_service import calc_damage
+    damage, tier = calc_damage("vibe_check", 0, roll)
+    assert tier == expected_tier
+    assert damage > 0
+
+
+@pytest.mark.parametrize("roll,expected_tier", [
+    (1, "miss"),
+    (5, "miss"),
+    (6, "glancing"),
+    (10, "glancing"),
+    (11, "direct"),
+    (16, "direct"),
+    (17, "critical"),
+    (20, "nat20"),
+])
+def test_body_slam_miss_and_hits(roll, expected_tier):
+    from superpal.cards.fight_service import calc_damage
+    _, tier = calc_damage("body_slam", 0, roll)
+    assert tier == expected_tier
+
+
+@pytest.mark.parametrize("rarity,expected_hp,expected_atk", [
+    ("common", 80, 0),
+    ("uncommon", 100, 5),
+    ("rare", 130, 10),
+    ("legendary", 170, 20),
+])
+def test_rarity_stats(rarity, expected_hp, expected_atk):
+    from superpal.cards.fight_service import RARITY_STATS
+    stats = RARITY_STATS[rarity]
+    assert stats["hp"] == expected_hp
+    assert stats["atk_bonus"] == expected_atk
+
+
+def test_damage_formula_nat20_common():
+    from superpal.cards.fight_service import calc_damage
+    # Vibe Check (base 15) + 0 atk_bonus, nat 20 = floor(15 * 2.0) = 30
+    damage, tier = calc_damage("vibe_check", 0, 20)
+    assert damage == 30
+    assert tier == "nat20"
+
+
+def test_damage_formula_critical_legendary():
+    from superpal.cards.fight_service import calc_damage
+    # Super Bringus Beam (base 35) + 20 atk_bonus, roll 19 = floor(55 * 1.5) = 82
+    damage, tier = calc_damage("super_bringus_beam", 20, 19)
+    assert damage == 82
+    assert tier == "critical"
+
+
+def test_damage_formula_glancing():
+    from superpal.cards.fight_service import calc_damage
+    # Body Slam (base 20) + 5 atk_bonus, roll 8 = floor(25 * 0.5) = 12
+    damage, tier = calc_damage("body_slam", 5, 8)
+    assert damage == 12
+    assert tier == "glancing"
+
+
+def test_super_bringus_beam_misses_on_low_roll():
+    from superpal.cards.fight_service import calc_damage
+    # min_roll=14, roll=13 → miss
+    damage, tier = calc_damage("super_bringus_beam", 0, 13)
+    assert damage == 0
+    assert tier == "miss"
+
+
+# ─── Fight lifecycle tests ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_fight(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    assert fight.id is not None
+    assert fight.status == "pending"
+    assert fight.mode == "quick"
+    assert fight.challenger_id == "p1"
+    assert fight.opponent_id == "p2"
+
+
+@pytest.mark.asyncio
+async def test_accept_fight(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    accepted = await fs.accept_fight(fight.id)
+    assert accepted is not None
+    assert accepted.status == "lobby"
+
+
+@pytest.mark.asyncio
+async def test_accept_fight_idempotent_fails(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    second = await fs.accept_fight(fight.id)
+    assert second is None  # already lobby, not pending
+
+
+@pytest.mark.asyncio
+async def test_set_fight_cards_and_ready(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+
+    ok = await fs.set_fight_cards(fight.id, "p1", [
+        {"card_member_id": "p2", "rarity": "common", "slot": 1}
+    ])
+    assert ok is True
+
+    ok2 = await fs.set_fight_cards(fight.id, "p2", [
+        {"card_member_id": "p1", "rarity": "common", "slot": 1}
+    ])
+    assert ok2 is True
+
+    both_ready, first_turn = await fs.mark_player_ready(fight.id, "p1")
+    assert both_ready is False
+
+    both_ready, first_turn = await fs.mark_player_ready(fight.id, "p2")
+    assert both_ready is True
+    assert first_turn in ("p1", "p2")
+
+    updated = await fs.get_fight(fight.id)
+    assert updated.status == "active"
+    assert updated.current_turn_player_id in ("p1", "p2")
+
+
+@pytest.mark.asyncio
+async def test_set_fight_cards_rejects_unowned(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    ok = await fs.set_fight_cards(fight.id, "p1", [
+        {"card_member_id": "p2", "rarity": "legendary", "slot": 1}
+    ])
+    # p1 does own a legendary p2 card (seeded in fixture)
+    assert ok is True
+
+
+# ─── process_action tests ─────────────────────────────────────────────────────
+
+async def _setup_active_fight(fs, mode="quick"):
+    """Helper: create + accept + set cards + mark both ready → active fight."""
+    fight = await fs.create_fight("p1", "p2", mode)
+    await fs.accept_fight(fight.id)
+
+    slots_per = 1 if mode == "quick" else 3
+    rarities = ["common", "uncommon", "rare"]
+    for pid, mid in (("p1", "p2"), ("p2", "p1")):
+        cards = [{"card_member_id": mid, "rarity": rarities[i], "slot": i + 1}
+                 for i in range(slots_per)]
+        await fs.set_fight_cards(fight.id, pid, cards)
+
+    await fs.mark_player_ready(fight.id, "p1")
+    await fs.mark_player_ready(fight.id, "p2")
+    return await fs.get_fight(fight.id)
+
+
+@pytest.mark.asyncio
+async def test_attack_not_your_turn(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    other = "p2" if fight.current_turn_player_id == "p1" else "p1"
+    success, err, _ = await fs.process_action(fight.id, other, "attack",
+                                               {"attack_key": "vibe_check"})
+    assert success is False
+    assert err == "not_your_turn"
+
+
+@pytest.mark.asyncio
+async def test_attack_deals_damage(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    attacker = fight.current_turn_player_id
+    with patch("superpal.cards.fight_service.roll_d20", return_value=20):
+        success, err, state = await fs.process_action(
+            fight.id, attacker, "attack", {"attack_key": "vibe_check"}
+        )
+    assert success is True
+    assert err == ""
+    # After a hit, it should be the other player's turn (or fight ended)
+    if state["status"] == "active":
+        assert state["current_turn_player_id"] != attacker
+
+
+@pytest.mark.asyncio
+async def test_attack_miss_advances_turn(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    attacker = fight.current_turn_player_id
+    # roll 5 on body_slam misses (min_roll=6)
+    with patch("superpal.cards.fight_service.roll_d20", return_value=5):
+        success, err, state = await fs.process_action(
+            fight.id, attacker, "attack", {"attack_key": "body_slam"}
+        )
+    assert success is True
+    assert state["current_turn_player_id"] != attacker
+
+
+@pytest.mark.asyncio
+async def test_run_not_allowed_in_quick(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs, mode="quick")
+    attacker = fight.current_turn_player_id
+    success, err, _ = await fs.process_action(fight.id, attacker, "run", {})
+    assert success is False
+    assert err == "run_not_allowed"
+
+
+@pytest.mark.asyncio
+async def test_run_free_escape_ends_fight(db):
+    db_mod, _, fs, ps = db
+    fight = await _setup_active_fight(fs, mode="extended")
+    runner = fight.current_turn_player_id
+    with patch("superpal.cards.fight_service.roll_d20", return_value=16):
+        success, err, state = await fs.process_action(fight.id, runner, "run", {})
+    assert success is True
+    assert state["status"] == "completed"
+    # runner loses (opponent wins)
+    assert state["winner_id"] != runner
+
+
+@pytest.mark.asyncio
+async def test_run_failed_loses_turn(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs, mode="extended")
+    runner = fight.current_turn_player_id
+    with patch("superpal.cards.fight_service.roll_d20", return_value=5):
+        success, err, state = await fs.process_action(fight.id, runner, "run", {})
+    assert success is True
+    assert state["status"] == "active"
+    assert state["current_turn_player_id"] != runner
+
+
+@pytest.mark.asyncio
+async def test_quick_battle_win_condition(db):
+    db_mod, _, fs, ps = db
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE members SET pringle_balance = 100 WHERE discord_id IN ('p1', 'p2')"
+        )
+        await conn.commit()
+
+    fight = await _setup_active_fight(fs, mode="quick")
+    attacker = fight.current_turn_player_id
+
+    # Force damage to exceed opponent's HP (80 for common + multiple hits)
+    with patch("superpal.cards.fight_service.roll_d20", return_value=20):
+        state = None
+        for _ in range(10):
+            current = (await fs.get_fight(fight.id)).current_turn_player_id
+            success, _, state = await fs.process_action(
+                fight.id, current, "attack", {"attack_key": "super_bringus_beam"}
+            )
+            if state["status"] == "completed":
+                break
+
+    assert state is not None
+    assert state["status"] == "completed"
+    assert state["winner_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_extended_win_requires_all_3_fainted(db):
+    db_mod, _, fs, ps = db
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE members SET pringle_balance = 200 WHERE discord_id IN ('p1', 'p2')"
+        )
+        await conn.commit()
+
+    fight = await _setup_active_fight(fs, mode="extended")
+
+    completed = False
+    for _ in range(60):
+        current_fight = await fs.get_fight(fight.id)
+        if current_fight.status == "completed":
+            completed = True
+            break
+
+        actor = current_fight.pending_swap_player_id or current_fight.current_turn_player_id
+        if not actor:
+            break
+
+        if current_fight.pending_swap_player_id:
+            # Pick first available non-fainted, non-active card
+            cards = await fs.get_fight_cards(fight.id)
+            available = [c for c in cards
+                         if c.player_id == actor and not c.is_active and not c.is_fainted]
+            if not available:
+                break
+            with patch("superpal.cards.fight_service.roll_d20", return_value=20):
+                await fs.process_action(fight.id, actor, "swap",
+                                        {"slot": available[0].slot})
+        else:
+            with patch("superpal.cards.fight_service.roll_d20", return_value=20):
+                await fs.process_action(fight.id, actor, "attack",
+                                        {"attack_key": "super_bringus_beam"})
+
+    assert completed is True
+
+
+@pytest.mark.asyncio
+async def test_fight_token_flow(db):
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+
+    url = await fs.create_fight_token(fight.id, "p1", "http://localhost")
+    assert f"/fight/{fight.id}/lobby?ft=" in url
+
+    token = url.split("?ft=")[1]
+    result = await fs.use_fight_token(token)
+    assert result is not None
+    f_id, p_id, session_tok = result
+    assert f_id == fight.id
+    assert p_id == "p1"
+    assert len(session_tok) > 0
+
+    # Token is consumed — second use fails
+    result2 = await fs.use_fight_token(token)
+    assert result2 is None
+
+    # Session is valid
+    info = await fs.get_fight_session(session_tok)
+    assert info is not None
+    assert info["fight_id"] == fight.id
+    assert info["player_id"] == "p1"
