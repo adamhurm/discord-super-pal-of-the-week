@@ -2,7 +2,9 @@ import pytest
 import aiosqlite
 import importlib
 from datetime import datetime, timedelta, timezone
+from freezegun import freeze_time
 from superpal.cards.service import _get_week_start
+from superpal.schedule import next_sunday_noon_utc
 
 
 @pytest.fixture
@@ -724,24 +726,19 @@ async def test_get_leaderboard_result_keys(db):
     assert set(result[0].keys()) == {"owner_id", "display_name", "total"}
 
 
-from freezegun import freeze_time as _freeze_time
-from superpal.schedule import next_sunday_noon_utc as _next_sunday_noon_utc
-from datetime import timedelta as _timedelta
+@freeze_time("2026-05-13 15:00:00+00:00")  # Wednesday
+def test_get_week_start_midweek_returns_last_sunday():
+    result = _get_week_start()
+    assert result == "2026-05-10T12:00:00+00:00"
 
 
-@_freeze_time("2026-05-13 15:00:00+00:00")
-def test_get_week_start_is_one_week_before_next_sunday_noon():
-    expected = (_next_sunday_noon_utc() - _timedelta(weeks=1)).isoformat()
-    assert _get_week_start() == expected
-
-
-@_freeze_time("2026-05-17 10:00:00+00:00")  # Sunday before noon
+@freeze_time("2026-05-17 10:00:00+00:00")  # Sunday before noon
 def test_get_week_start_sunday_before_noon_returns_previous_week():
     result = _get_week_start()
     assert result == "2026-05-10T12:00:00+00:00"
 
 
-@_freeze_time("2026-05-17 14:00:00+00:00")  # Sunday after noon
+@freeze_time("2026-05-17 14:00:00+00:00")  # Sunday after noon
 def test_get_week_start_sunday_after_noon_returns_today():
     result = _get_week_start()
     assert result == "2026-05-17T12:00:00+00:00"
