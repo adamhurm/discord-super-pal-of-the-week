@@ -1150,9 +1150,9 @@ async def before_heal_potion_reset():
     await bot.wait_until_ready()
     try:
         target = next_sunday_noon_utc()
-        wait_seconds = (target - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
-        log.info("Heal potion reset sleeping %.0f s until Sunday noon UTC", wait_seconds)
-        await asyncio.sleep(wait_seconds)
+        delta = target - datetime.datetime.now(datetime.timezone.utc)
+        log.info("Heal potion reset: sleeping for %s. Will wake up Sunday at 12PM UTC.", delta)
+        await asyncio.sleep(delta.total_seconds())
     except Exception as e:
         log.error("Error in before_heal_potion_reset: %s", e)
 
@@ -1162,9 +1162,9 @@ async def before_super_pal_of_the_week():
     await bot.wait_until_ready()
     try:
         target = next_sunday_noon_utc()
-        wait_seconds = (target - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
-        log.info("Super pal task sleeping %.0f s until Sunday noon UTC", wait_seconds)
-        await asyncio.sleep(wait_seconds)
+        delta = target - datetime.datetime.now(datetime.timezone.utc)
+        log.info("Super pal task: sleeping for %s. Will wake up Sunday at 12PM UTC.", delta)
+        await asyncio.sleep(delta.total_seconds())
     except Exception as e:
         log.error("Error in before_super_pal_of_the_week: %s", e)
 
