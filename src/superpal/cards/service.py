@@ -9,19 +9,14 @@ from superpal.cards.db import DB_PATH
 from superpal.cards.models import (
     UserCard, MagicLink, PendingTrade, RARITY_ORDER, RARITY_WEIGHTS
 )
+from superpal.schedule import next_sunday_noon_utc
 
 TRADE_EXPIRY_MINUTES = 10
 
 
 def _get_week_start() -> str:
     """ISO datetime string for Sunday noon UTC marking the start of the current draw week."""
-    now = datetime.now(timezone.utc)
-    days_since_sunday = (now.weekday() + 1) % 7
-    last_sunday = now.date() - timedelta(days=days_since_sunday)
-    week_start = datetime(last_sunday.year, last_sunday.month, last_sunday.day, 12, 0, tzinfo=timezone.utc)
-    if now < week_start:
-        week_start -= timedelta(weeks=1)
-    return week_start.isoformat()
+    return (next_sunday_noon_utc() - timedelta(weeks=1)).isoformat()
 
 
 def _roll_rarity() -> str:
