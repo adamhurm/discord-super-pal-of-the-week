@@ -30,7 +30,7 @@ from superpal.env import WEBAPP_BASE_URL
 from superpal.cards.embeds import build_card_embed
 from superpal.cards.fight_service import (
     create_fight, accept_fight, create_fight_token, expire_pending_challenges,
-    FIGHT_TOKEN_EXPIRY_MINUTES,
+    FIGHT_TOKEN_EXPIRY_MINUTES, get_fight_leaderboard,
 )
 from superpal.cards.pringle_service import (
     get_balance, get_player_items, buy_item,
@@ -748,14 +748,14 @@ async def gift_card_command(
     )
 
 
-@bot.tree.command(name="card-leaderboard", description="Show the top 10 card collectors")
+@bot.tree.command(name="card-collection-leaderboard", description="Show the top 10 card collectors")
 @discord.app_commands.describe(sort_by="What to rank players by")
 @discord.app_commands.choices(sort_by=[
     discord.app_commands.Choice(name="Total Cards", value="total"),
     discord.app_commands.Choice(name="Legendary Cards", value="legendary"),
     discord.app_commands.Choice(name="Unique Members", value="unique"),
 ])
-async def card_leaderboard_command(
+async def card_collection_leaderboard_command(
     interaction: discord.Interaction,
     sort_by: str = "total",
 ) -> None:
@@ -884,6 +884,60 @@ async def card_fight_command(
     )
     view.message = channel_msg
     await interaction.followup.send("Challenge sent!", ephemeral=True)
+
+
+@bot.tree.command(name="card-fight-leaderboard", description="Show the top 10 fight stats")
+@discord.app_commands.describe(sort_by="What to rank players by")
+@discord.app_commands.choices(sort_by=[
+    discord.app_commands.Choice(name="Most Wins", value="wins"),
+    discord.app_commands.Choice(name="Best Win Rate", value="win_rate"),
+    discord.app_commands.Choice(name="Most Fights Played", value="fights_played"),
+    discord.app_commands.Choice(name="Pringle Balance", value="pringle_balance"),
+    discord.app_commands.Choice(name="Most Escapes", value="escapes"),
+])
+async def card_fight_leaderboard_command(
+    interaction: discord.Interaction,
+    sort_by: str = "wins",
+) -> None:
+    await interaction.response.defer()
+    rows = await get_fight_leaderboard(sort_by)
+
+    title_map = {
+        "wins": "Most Wins",
+        "win_rate": "Best Win Rate",
+        "fights_played": "Most Fights Played",
+        "pringle_balance": "Pringle Balance",
+        "escapes": "Most Escapes",
+    }
+    unit_map = {
+        "wins": "wins",
+        "fights_played": "fights played",
+        "pringle_balance": "Pringles",
+        "escapes": "escapes",
+    }
+    title = f"Fight Leaderboard — {title_map.get(sort_by, 'Most Wins')}"
+
+    if not rows:
+        embed = discord.Embed(
+            title=title,
+            description="No fights recorded yet!",
+            color=discord.Color(0x5865F2),
+        )
+    elif sort_by == "win_rate":
+        lines = [
+            f"{rank}. {row['display_name']} — {round(row['total'] * 100)}% ({row['total_fights']} fights)"
+            for rank, row in enumerate(rows, start=1)
+        ]
+        embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
+    else:
+        unit = unit_map.get(sort_by, "")
+        lines = [
+            f"{rank}. {row['display_name']} — {row['total']} {unit}"
+            for rank, row in enumerate(rows, start=1)
+        ]
+        embed = discord.Embed(title=title, description="\n".join(lines), color=discord.Color(0x5865F2))
+
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="card-shop", description="Browse or buy items from the Pringle shop")
