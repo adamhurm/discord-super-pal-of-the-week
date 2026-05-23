@@ -85,6 +85,17 @@ def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
         return []
 
 
+def _resolve_avatar_url(avatar_url: str | None) -> str | None:
+    """Return an absolute URL for Discord embeds.
+
+    Synthetic members store avatars as relative paths (/static/avatars/...).
+    Discord's embed API requires HTTP(S) URLs, so prefix with WEBAPP_BASE_URL.
+    """
+    if not avatar_url or avatar_url.startswith("http"):
+        return avatar_url
+    return f"{WEBAPP_BASE_URL.rstrip('/')}{avatar_url}"
+
+
 ##################
 # Helper Functions
 ##################
@@ -231,7 +242,7 @@ class GiftConfirmView(discord.ui.View):
                 row = await cur.fetchone()
 
         display_name = row[0] if row else "Unknown"
-        avatar_url = row[1] if row else None
+        avatar_url = _resolve_avatar_url(row[1] if row else None)
         embed = build_card_embed(
             display_name=display_name,
             avatar_url=avatar_url,
@@ -444,7 +455,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
             row = await cur.fetchone()
 
     display_name = row[0] if row else "Unknown"
-    avatar_url = row[1] if row else None
+    avatar_url = _resolve_avatar_url(row[1] if row else None)
 
     embed = build_card_embed(
         display_name=display_name,
@@ -496,7 +507,7 @@ async def display_card_command(
     card_id, display_name, avatar_url, bio, stats_raw, drawn_by_name = row
     embed = build_card_embed(
         display_name=display_name,
-        avatar_url=avatar_url,
+        avatar_url=_resolve_avatar_url(avatar_url),
         rarity=rarity,
         card_number=card_id,
         drawn_by=drawn_by_name or interaction.user.display_name,
@@ -570,7 +581,7 @@ async def trade_in_command(
             row = await cur.fetchone()
 
     display_name = row[0] if row else "Unknown"
-    avatar_url = row[1] if row else None
+    avatar_url = _resolve_avatar_url(row[1] if row else None)
     embed = build_card_embed(
         display_name=display_name,
         avatar_url=avatar_url,
@@ -625,7 +636,7 @@ async def upgrade_command(
             row = await cur.fetchone()
 
     display_name = row[0] if row else "Unknown"
-    avatar_url = row[1] if row else None
+    avatar_url = _resolve_avatar_url(row[1] if row else None)
     embed = build_card_embed(
         display_name=display_name,
         avatar_url=avatar_url,
@@ -1124,7 +1135,7 @@ async def card_pringles_command(interaction: discord.Interaction, action: str = 
 
         embed = build_card_embed(
             display_name=row[0] if row else "Unknown",
-            avatar_url=row[1] if row else None,
+            avatar_url=_resolve_avatar_url(row[1] if row else None),
             rarity=card.rarity,
             card_number=card.id,
             drawn_by=card.drawn_by_name or interaction.user.display_name,
