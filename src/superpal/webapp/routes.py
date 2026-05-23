@@ -21,6 +21,7 @@ from superpal.cards.fight_service import (
 )
 from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
 from superpal.cards.service import (
+    add_draws,
     add_member,
     award_card,
     get_all_members_for_admin,
@@ -253,6 +254,19 @@ async def admin_award_card(
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await award_card(owner_id, card_member_id, rarity, max(1, quantity))
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/admin/add-draws")
+async def admin_add_draws(
+    request: Request,
+    user_id: str = Form(...),
+    quantity: int = Form(1),
+):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
+    await add_draws(user_id, max(1, quantity))
     return RedirectResponse(url="/admin", status_code=303)
 
 

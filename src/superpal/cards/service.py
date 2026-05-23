@@ -502,6 +502,18 @@ async def reset_draw_log() -> None:
         await db.commit()
 
 
+async def add_draws(user_id: str, quantity: int) -> None:
+    """Restore up to `quantity` draws for a user in the current week."""
+    week_start = _get_week_start()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE draw_log SET draws_used = MAX(0, draws_used - ?) "
+            "WHERE user_id = ? AND week_start = ?",
+            (quantity, user_id, week_start),
+        )
+        await db.commit()
+
+
 async def get_all_members_for_admin() -> list[dict]:
     """Return all members with exclusion and rarity-lock status for admin dashboard."""
     async with aiosqlite.connect(DB_PATH) as db:

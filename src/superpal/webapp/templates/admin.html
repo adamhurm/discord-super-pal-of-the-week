@@ -186,6 +186,25 @@
     </div>
   </details>
 
+  <details>
+    <summary>Add Draws</summary>
+    <div class="form-panel">
+      <form method="post" action="/admin/add-draws">
+        <div class="form-row">
+          <label>User</label>
+          <select name="user_id">
+            {% for m in members %}<option value="{{ m.discord_id }}">{{ m.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Draws to Add</label>
+          <input type="number" name="quantity" value="1" min="1" max="20">
+        </div>
+        <button type="submit" class="award-btn">Add Draws</button>
+      </form>
+    </div>
+  </details>
+
   <div class="member-list">
     {% for m in members %}
     <div class="member-row {% if m.is_excluded %}excluded{% endif %}">
