@@ -514,6 +514,61 @@ async def add_draws(user_id: str, quantity: int) -> None:
         await db.commit()
 
 
+async def get_draw_audit(user_id: str) -> dict:
+    """Return draw count and newly acquired cards this week for a user."""
+    week_start = _get_week_start()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT draws_used FROM draw_log WHERE user_id = ? AND week_start = ?",
+            (user_id, week_start),
+        ) as cur:
+            row = await cur.fetchone()
+        draws_used = row[0] if row else 0
+
+        async with db.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?",
+            (user_id,),
+        ) as cur:
+            mrow = await cur.fetchone()
+        display_name = mrow[0] if mrow else user_id
+
+        async with db.execute(
+            "SELECT COALESCE(SUM(draws_used), 0) FROM draw_log WHERE user_id = ?",
+            (user_id,),
+        ) as cur:
+            trow = await cur.fetchone()
+        total_draws = trow[0] if trow else 0
+
+        async with db.execute(
+            "SELECT COALESCE(SUM(quantity), 0) FROM user_cards WHERE owner_id = ?",
+            (user_id,),
+        ) as cur:
+            crow = await cur.fetchone()
+        total_cards = crow[0] if crow else 0
+
+        async with db.execute(
+            """SELECT m.display_name, uc.rarity, uc.first_acquired_at
+               FROM user_cards uc
+               JOIN members m ON m.discord_id = uc.card_member_id
+               WHERE uc.owner_id = ? AND uc.first_acquired_at >= ?
+               ORDER BY uc.first_acquired_at""",
+            (user_id, week_start),
+        ) as cur:
+            new_cards = [
+                {"card_name": r[0], "rarity": r[1], "acquired_at": r[2]}
+                for r in await cur.fetchall()
+            ]
+
+    return {
+        "display_name": display_name,
+        "draws_used": draws_used,
+        "total_draws": total_draws,
+        "total_cards": total_cards,
+        "week_start": week_start,
+        "new_cards": new_cards,
+    }
+
+
 async def get_all_members_for_admin() -> list[dict]:
     """Return all members with exclusion and rarity-lock status for admin dashboard."""
     async with aiosqlite.connect(DB_PATH) as db:

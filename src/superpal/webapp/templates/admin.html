@@ -205,6 +205,51 @@
     </div>
   </details>
 
+  <details {% if audit_result %}open{% endif %}>
+    <summary>Audit Draw History</summary>
+    <div class="form-panel">
+      <form method="get" action="/admin/audit">
+        <div class="form-row">
+          <label>User</label>
+          <select name="user_id">
+            <option value="">— select a user —</option>
+            {% for m in members %}
+            <option value="{{ m.discord_id }}" {% if m.discord_id == audit_user_id %}selected{% endif %}>{{ m.display_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="award-btn">Audit</button>
+      </form>
+      {% if audit_result %}
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #1e1f22;">
+        <div style="font-size:13px;margin-bottom:10px;">
+          <strong>{{ audit_result.display_name }}</strong>
+        </div>
+        <div class="stats" style="margin-bottom:10px;">
+          Draws this week: <strong>{{ audit_result.draws_used }}</strong> ·
+          All-time draws: <strong>{{ audit_result.total_draws }}</strong> ·
+          Cards in collection: <strong>{{ audit_result.total_cards }}</strong>
+        </div>
+        {% if audit_result.new_cards %}
+        <div style="font-size:11px;color:#72767d;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">New cards since {{ audit_result.week_start[:10] }}</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          {% for c in audit_result.new_cards %}
+          <div style="background:#1e1f22;border-radius:4px;padding:6px 10px;font-size:12px;display:flex;gap:10px;align-items:center;">
+            <span class="rarity-lock-label rarity-lock-{{ c.rarity }}">{{ c.rarity | upper }}</span>
+            <span>{{ c.card_name }}</span>
+            <span style="color:#72767d;margin-left:auto;font-size:11px;">{{ c.acquired_at[:19] }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div style="font-size:13px;color:#72767d;">No new cards first-acquired this week.</div>
+        {% endif %}
+        <div style="font-size:11px;color:#4f5560;margin-top:10px;">Duplicate draws (cards already owned) increment quantity and are not listed above.</div>
+      </div>
+      {% endif %}
+    </div>
+  </details>
+
   <div class="member-list">
     {% for m in members %}
     <div class="member-row {% if m.is_excluded %}excluded{% endif %}">

@@ -26,6 +26,7 @@ from superpal.cards.service import (
     award_card,
     get_all_members_for_admin,
     get_collection,
+    get_draw_audit,
     get_pool_stats,
     reset_draw_log,
     set_excluded,
@@ -255,6 +256,20 @@ async def admin_award_card(
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await award_card(owner_id, card_member_id, rarity, max(1, quantity))
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.get("/admin/audit", response_class=HTMLResponse)
+async def admin_audit(request: Request, user_id: str = ""):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
+    ctx = await _admin_context()
+    audit_result = await get_draw_audit(user_id) if user_id else None
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {**ctx, "audit_result": audit_result, "audit_user_id": user_id},
+    )
 
 
 @router.post("/admin/add-draws")
