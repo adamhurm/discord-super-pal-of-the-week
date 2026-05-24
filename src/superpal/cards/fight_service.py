@@ -434,6 +434,7 @@ async def get_fight_state(fight_id: int) -> dict:
                 "id": e.id,
                 "actor_id": e.actor_id,
                 "action_type": e.action_type,
+                "action_detail": e.action_detail,
                 "d20_roll": e.d20_roll,
                 "damage_dealt": e.damage_dealt,
                 "narrative_text": e.narrative_text,

@@ -266,6 +266,10 @@
       nat20:    { color: '#f39c12', scale: 1.6 },
     };
 
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
     function connect() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/ws/fight/${FIGHT_ID}?fs=${FS}`);
@@ -302,7 +306,7 @@
         const labels = c.is_active ? "<span class='status-badge' style='background:#5865f2;color:#fff'>Active</span>" : "";
         return `
           <div class="card-row ${rarityC}${activeClass}${faintedClass}" data-slot="${c.slot}" data-fainted="${c.is_fainted}">
-            <div class="card-row-name">${c.display_name}${c.is_fainted ? " 💀" : ""}</div>
+            <div class="card-row-name">${escapeHtml(c.display_name)}${c.is_fainted ? " 💀" : ""}</div>
             <div class="card-row-rarity">${c.rarity.toUpperCase()} · Slot ${c.slot}</div>
             ${!c.is_fainted ? `
             <div class="hp-bar-wrap">
@@ -679,7 +683,7 @@
         : cards.filter(c => !c.is_active && !c.is_fainted);
       container.innerHTML = candidates.map(c =>
         `<button class="btn btn-swap" onclick="sendSwap(${c.slot})">
-          Slot ${c.slot}: ${c.display_name} (${c.hp_current} HP)
+          Slot ${c.slot}: ${escapeHtml(c.display_name)} (${c.hp_current} HP)
         </button>`
       ).join("");
     }
