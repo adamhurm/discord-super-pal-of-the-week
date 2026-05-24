@@ -378,7 +378,6 @@
       el.textContent = style.text || `-${damage}`;
       el.style.color     = style.color;
       el.style.fontSize  = (16 * style.scale) + 'px';
-      el.style.opacity   = '0';
       el.style.transform = 'translateX(-50%) translateY(0)';
       anime({
         targets: el,
@@ -404,8 +403,8 @@
     }
 
     function drainHpBar(side, newCard) {
-      if (!newCard || newCard.is_fainted) return;
-      const pct = newCard.hp_current / newCard.hp_max * 100;
+      if (!newCard) return;
+      const pct = newCard.is_fainted ? 0 : newCard.hp_current / newCard.hp_max * 100;
       const bar = hpBarEl(side);
       anime({ targets: bar, width: pct + '%', duration: 400, easing: 'easeOutQuad' });
     }
@@ -425,7 +424,7 @@
     // Wraps onComplete: if the target card just fainted in newState, plays faint first.
     function withFaintCheck(target, newState, me, opp, onComplete) {
       const targetData  = (target === 'you' ? me : opp);
-      const activeCard  = targetData.cards.find(c => c.is_active || c.is_fainted);
+      const activeCard  = targetData.cards.find(c => c.is_active);
       const justFainted = activeCard && activeCard.is_fainted;
       if (justFainted) {
         return () => playFaintAnimation(target, onComplete);
