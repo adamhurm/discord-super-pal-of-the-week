@@ -365,9 +365,169 @@
       }
     }
 
+    function spriteEl(side)   { return document.getElementById(`avatar-${side}`); }
+    function dmgEl(side)      { return document.getElementById(`dmg-${side}`); }
+    function hpBarEl(side)    { return document.getElementById(`hp-bar-${side}`); }
+
+    function actorSide(actorId) { return actorId === MY_PLAYER_ID ? 'you' : 'opp'; }
+    function targetSide(actorId) { return actorId === MY_PLAYER_ID ? 'opp' : 'you'; }
+
+    function floatDamage(side, damage, tier) {
+      const el    = dmgEl(side);
+      const style = DMG_STYLE[tier] || DMG_STYLE.direct;
+      el.textContent = style.text || `-${damage}`;
+      el.style.color     = style.color;
+      el.style.fontSize  = (16 * style.scale) + 'px';
+      el.style.opacity   = '0';
+      el.style.transform = 'translateX(-50%) translateY(0)';
+      anime({
+        targets: el,
+        opacity:    [1, 0],
+        translateY: [0, -48],
+        duration:   700,
+        easing:     'easeOutCubic',
+      });
+    }
+
+    function buildShakeKeyframes(tier) {
+      const d = { miss: 0, glancing: 4, direct: 8, critical: 12, nat20: 16 }[tier] || 8;
+      if (d === 0) return { translateX: 0 };
+      return {
+        translateX: [
+          { value: -d,        duration: 60 },
+          { value:  d,        duration: 60 },
+          { value: -d * 0.5,  duration: 50 },
+          { value:  d * 0.5,  duration: 50 },
+          { value:  0,        duration: 60 },
+        ],
+      };
+    }
+
+    function drainHpBar(side, newCard) {
+      if (!newCard || newCard.is_fainted) return;
+      const pct = newCard.hp_current / newCard.hp_max * 100;
+      const bar = hpBarEl(side);
+      anime({ targets: bar, width: pct + '%', duration: 400, easing: 'easeOutQuad' });
+    }
+
+    function playFaintAnimation(side, onComplete) {
+      const el = spriteEl(side);
+      anime({
+        targets:  el,
+        filter:   ['saturate(1)', 'saturate(0)'],
+        opacity:  [1, 0.3],
+        duration: 500,
+        easing:   'easeOutQuad',
+        complete: onComplete || (() => {}),
+      });
+    }
+
+    // Wraps onComplete: if the target card just fainted in newState, plays faint first.
+    function withFaintCheck(target, newState, me, opp, onComplete) {
+      const targetData  = (target === 'you' ? me : opp);
+      const activeCard  = targetData.cards.find(c => c.is_active || c.is_fainted);
+      const justFainted = activeCard && activeCard.is_fainted;
+      if (justFainted) {
+        return () => playFaintAnimation(target, onComplete);
+      }
+      return onComplete;
+    }
+
+    function playMeleeAnimation(entry, state, me, opp, onComplete) {
+      const actor  = actorSide(entry.actor_id);
+      const target = targetSide(entry.actor_id);
+      const atkEl  = spriteEl(actor);
+      const tgtEl  = spriteEl(target);
+
+      const aRect = atkEl.getBoundingClientRect();
+      const tRect = tgtEl.getBoundingClientRect();
+      const slide = (tRect.left - aRect.left) * 0.6;
+
+      const detail  = entry.action_detail ? JSON.parse(entry.action_detail) : {};
+      const tier    = detail.tier || 'direct';
+      const damage  = entry.damage_dealt ?? 0;
+      const after   = withFaintCheck(target, state, me, opp, onComplete);
+
+      const tl = anime.timeline({ complete: after });
+      tl.add({ targets: atkEl, translateX: slide, duration: 250, easing: 'easeInQuad' });
+      tl.add({
+        targets: tgtEl,
+        ...buildShakeKeyframes(tier),
+        duration: 300,
+        begin: () => floatDamage(target, damage, tier),
+      });
+      tl.add({ targets: atkEl, translateX: 0, duration: 250, easing: 'easeOutQuad' }, '-=150');
+      tl.add({
+        duration: 1,
+        begin: () => drainHpBar(target, (target === 'you' ? me : opp).cards.find(c => c.is_active)),
+      }, '+=100');
+    }
+
+    function playProjectileAnimation(entry, state, me, opp, onComplete) {
+      const actor    = actorSide(entry.actor_id);
+      const target   = targetSide(entry.actor_id);
+      const atkEl    = spriteEl(actor);
+      const tgtEl    = spriteEl(target);
+      const projEl   = document.getElementById('sprite-projectile');
+      const detail   = entry.action_detail ? JSON.parse(entry.action_detail) : {};
+      const tier     = detail.tier || 'direct';
+      const damage   = entry.damage_dealt ?? 0;
+      const emoji    = PROJECTILES[detail.attack_key] || '✨';
+
+      // Position projectile at attacker
+      const arenaRect = document.getElementById('sprite-arena').getBoundingClientRect();
+      const atkRect   = atkEl.getBoundingClientRect();
+      const tgtRect   = tgtEl.getBoundingClientRect();
+      const startX    = atkRect.left + atkRect.width / 2 - arenaRect.left - 12;
+      const endX      = tgtRect.left + tgtRect.width / 2 - arenaRect.left - 12;
+
+      projEl.textContent  = emoji;
+      projEl.style.left   = startX + 'px';
+      projEl.style.opacity = '1';
+      projEl.style.display = 'block';
+
+      const after = withFaintCheck(target, state, me, opp, onComplete);
+      const tl    = anime.timeline({ complete: after });
+
+      // Attacker pulse
+      tl.add({ targets: atkEl, scale: [1, 1.15, 1], duration: 200, easing: 'easeInOutQuad' });
+
+      // Projectile flies
+      tl.add({
+        targets:  projEl,
+        left:     endX + 'px',
+        duration: 250,
+        easing:   'easeInQuad',
+        complete: () => { projEl.style.display = 'none'; },
+      });
+
+      // Target shakes + damage number
+      tl.add({
+        targets: tgtEl,
+        ...buildShakeKeyframes(tier),
+        duration: 300,
+        begin: () => floatDamage(target, damage, tier),
+      });
+
+      tl.add({
+        duration: 1,
+        begin: () => drainHpBar(target, (target === 'you' ? me : opp).cards.find(c => c.is_active)),
+      }, '+=100');
+    }
+
     function playAnimation(entry, state, me, opp, onComplete) {
-      // Stub — filled in Tasks 6 and 7
-      onComplete();
+      if (entry.action_type !== 'attack') { onComplete(); return; }
+
+      const detail = entry.action_detail ? JSON.parse(entry.action_detail) : {};
+      const key    = detail.attack_key || '';
+
+      if (MELEE_ATTACKS.has(key)) {
+        playMeleeAnimation(entry, state, me, opp, onComplete);
+      } else if (key in PROJECTILES) {
+        playProjectileAnimation(entry, state, me, opp, onComplete);
+      } else {
+        onComplete();
+      }
     }
 
     function renderState(state) {
