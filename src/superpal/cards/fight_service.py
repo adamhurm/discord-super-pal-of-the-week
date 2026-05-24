@@ -564,7 +564,7 @@ async def _handle_attack(
             player_id,
             "attack",
             f"<@{player_id}>'s {ATTACKS[attack_key]['name']} was blocked by Smoke Screen!",
-            detail=detail,
+            detail={**detail, "tier": "miss"},
         )
         await _advance_turn(db, fight.id, opponent_id)
         return False, "smoked"

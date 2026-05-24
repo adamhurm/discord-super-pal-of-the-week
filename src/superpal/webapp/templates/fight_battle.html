@@ -562,7 +562,6 @@
       const detail   = entry.action_detail ? JSON.parse(entry.action_detail) : {};
       const actorMe  = entry.actor_id === MY_PLAYER_ID;
       const myData   = actorMe ? me : opp;
-      const oppData  = actorMe ? opp : me;
       const actorS   = actorMe ? 'you' : 'opp';
       const targetS  = actorMe ? 'opp' : 'you';
 
