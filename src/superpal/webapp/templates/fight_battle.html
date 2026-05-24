@@ -514,18 +514,123 @@
       }, '+=100');
     }
 
+    function floatHeal(side, amount) {
+      const el = dmgEl(side);
+      el.textContent = `+${amount}`;
+      el.style.color    = '#2ecc71';
+      el.style.fontSize = '16px';
+      el.style.transform = 'translateX(-50%) translateY(0)';
+      anime({
+        targets:    el,
+        opacity:    [1, 0],
+        translateY: [0, -48],
+        duration:   700,
+        easing:     'easeOutCubic',
+      });
+    }
+
+    function flashSprite(side) {
+      const el = spriteEl(side);
+      anime({
+        targets:  el,
+        filter:   ['brightness(1)', 'brightness(3)', 'brightness(1)'],
+        duration: 350,
+        easing:   'easeInOutQuad',
+      });
+    }
+
+    function playSwapAnimation(side, newCard, onComplete) {
+      const el = spriteEl(side);
+      el.style.filter  = '';
+      el.style.opacity = '1';
+      anime.timeline({ complete: onComplete })
+        .add({ targets: el, translateY: 20, opacity: 0, duration: 200, easing: 'easeInQuad' })
+        .add({
+          duration: 1,
+          begin: () => {
+            if (newCard && newCard.avatar_url) {
+              el.src = newCard.avatar_url;
+              el.setAttribute('data-src', newCard.avatar_url);
+            }
+            el.style.filter = '';
+            anime({ targets: el, translateY: [20, 0], opacity: [0, 1], duration: 250, easing: 'easeOutQuad' });
+          },
+        });
+    }
+
     function playAnimation(entry, state, me, opp, onComplete) {
-      if (entry.action_type !== 'attack') { onComplete(); return; }
+      const detail   = entry.action_detail ? JSON.parse(entry.action_detail) : {};
+      const actorMe  = entry.actor_id === MY_PLAYER_ID;
+      const myData   = actorMe ? me : opp;
+      const oppData  = actorMe ? opp : me;
+      const actorS   = actorMe ? 'you' : 'opp';
+      const targetS  = actorMe ? 'opp' : 'you';
 
-      const detail = entry.action_detail ? JSON.parse(entry.action_detail) : {};
-      const key    = detail.attack_key || '';
+      switch (entry.action_type) {
 
-      if (MELEE_ATTACKS.has(key)) {
-        playMeleeAnimation(entry, state, me, opp, onComplete);
-      } else if (key in PROJECTILES) {
-        playProjectileAnimation(entry, state, me, opp, onComplete);
-      } else {
-        onComplete();
+        case 'attack': {
+          const key = detail.attack_key || '';
+          if (MELEE_ATTACKS.has(key))   { playMeleeAnimation(entry, state, me, opp, onComplete); }
+          else if (key in PROJECTILES)  { playProjectileAnimation(entry, state, me, opp, onComplete); }
+          else                          { onComplete(); }
+          break;
+        }
+
+        case 'item': {
+          const item = detail.item_type || '';
+          if (item === 'heal_potion') {
+            floatHeal(actorS, 40);
+            drainHpBar(actorS, myData.cards.find(c => c.is_active));
+            setTimeout(onComplete, 700);
+          } else if (item === 'super_potion') {
+            floatHeal(actorS, 80);
+            drainHpBar(actorS, myData.cards.find(c => c.is_active));
+            setTimeout(onComplete, 700);
+          } else if (item === 'bringus_boost') {
+            flashSprite(actorS);
+            setTimeout(onComplete, 400);
+          } else if (item === 'smoke_screen') {
+            flashSprite(targetS);
+            setTimeout(onComplete, 400);
+          } else {
+            onComplete();
+          }
+          break;
+        }
+
+        case 'swap': {
+          const newActive = myData.cards.find(c => c.slot === detail.slot);
+          playSwapAnimation(actorS, newActive, onComplete);
+          break;
+        }
+
+        case 'run': {
+          const escaped = detail.escaped === true;
+          const el      = spriteEl(actorS);
+          if (escaped) {
+            const dir = actorS === 'you' ? -300 : 300;
+            anime({
+              targets:    el,
+              translateX: dir,
+              opacity:    0,
+              duration:   400,
+              easing:     'easeInQuad',
+              complete:   onComplete,
+            });
+          } else {
+            anime({
+              targets:    el,
+              translateX: [-8, 8, -6, 6, 0],
+              duration:   250,
+              easing:     'linear',
+              complete:   onComplete,
+            });
+          }
+          break;
+        }
+
+        default:
+          onComplete();
       }
     }
 

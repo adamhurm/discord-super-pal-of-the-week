@@ -599,7 +599,8 @@ async def _handle_attack(
     if damage == 0:
         narrative = f"<@{player_id}> used **{attack_name}** — rolled {roll}, missed!"
         await _log_action(
-            db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=0, detail=detail
+            db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=0,
+            detail={**detail, "tier": tier},
         )
         await _advance_turn(db, fight.id, opponent_id)
         return False, narrative
@@ -620,7 +621,8 @@ async def _handle_attack(
         narrative += f"\n<@{opponent_id}>'s card has fainted!"
 
     await _log_action(
-        db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=damage, detail=detail
+        db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=damage,
+        detail={**detail, "tier": tier},
     )
 
     if fainted:
@@ -697,7 +699,7 @@ async def _handle_item(
             f"<@{player_id}> deployed **Smoke Screen**! <@{opponent_id}>'s next attack will miss."
         )
 
-    await _log_action(db, fight.id, player_id, "item", narrative)
+    await _log_action(db, fight.id, player_id, "item", narrative, detail={"item_type": item_type})
     await _advance_turn(db, fight.id, opponent_id)
     return narrative
 
@@ -735,7 +737,7 @@ async def _handle_swap(
     card_name = name_row[0] if name_row else card_member_id
 
     narrative = f"<@{player_id}> sent out **{card_name}** ({hp_cur} HP)!"
-    await _log_action(db, fight.id, player_id, "swap", narrative)
+    await _log_action(db, fight.id, player_id, "swap", narrative, detail={"slot": slot})
 
     if forced:
         # Post-faint swap: clear pending_swap, give turn to the swapping player (defender)
@@ -772,7 +774,9 @@ async def _handle_run(
             f"<@{player_id}> attempted to flee — rolled {roll}! "
             "Free escape! The battle ends with no Pringle cost."
         )
-        await _log_action(db, fight.id, player_id, "run", narrative, d20_roll=roll)
+        await _log_action(
+            db, fight.id, player_id, "run", narrative, d20_roll=roll, detail={"escaped": True}
+        )
         await _finish_fight(db, fight.id, opponent_id)
         return True, True, roll, narrative
     elif roll >= 11:
@@ -780,14 +784,18 @@ async def _handle_run(
             f"<@{player_id}> attempted to flee — rolled {roll}! "
             "Escape successful, but forfeits 25 Pringles."
         )
-        await _log_action(db, fight.id, player_id, "run", narrative, d20_roll=roll)
+        await _log_action(
+            db, fight.id, player_id, "run", narrative, d20_roll=roll, detail={"escaped": True}
+        )
         await _finish_fight(db, fight.id, opponent_id)
         return True, True, roll, narrative
     else:
         narrative = (
             f"<@{player_id}> attempted to flee — rolled {roll}! Failed to escape! Loses their turn."
         )
-        await _log_action(db, fight.id, player_id, "run", narrative, d20_roll=roll)
+        await _log_action(
+            db, fight.id, player_id, "run", narrative, d20_roll=roll, detail={"escaped": False}
+        )
         await _advance_turn(db, fight.id, opponent_id)
         return False, False, roll, narrative
 
