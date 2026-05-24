@@ -65,6 +65,12 @@ async def _collection_context(user_id: str) -> dict:
             (user_id,),
         ) as cur:
             row = await cur.fetchone()
+        async with db.execute(
+            "SELECT COALESCE(SUM(draws_used), 0) FROM draw_log WHERE user_id = ?",
+            (user_id,),
+        ) as cur:
+            drow = await cur.fetchone()
+    total_draws = drow[0] if drow else 0
     unique_members = len({c["member_id"] for c in data["owned"]})
     total_eligible = unique_members + len(data["undiscovered"])
     completion_pct = round(unique_members / total_eligible * 100) if total_eligible > 0 else 0
@@ -75,6 +81,7 @@ async def _collection_context(user_id: str) -> dict:
         "undiscovered": data["undiscovered"],
         "counts": data["counts"],
         "total_cards": sum(c["quantity"] for c in data["owned"]),
+        "total_draws": total_draws,
         "unique_members": unique_members,
         "completion_pct": completion_pct,
     }
