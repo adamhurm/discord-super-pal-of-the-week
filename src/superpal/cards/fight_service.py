@@ -364,18 +364,21 @@ async def get_fight_state(fight_id: int) -> dict:
                 r[0]: {"display_name": r[1], "avatar_url": r[2]} for r in await cur.fetchall()
             }
 
-        # Get card member names
+        # Get card member names and avatars
         card_member_ids = list({c.card_member_id for c in cards})
         if card_member_ids:
             placeholders = ",".join("?" * len(card_member_ids))
             async with db.execute(
-                "SELECT discord_id, display_name FROM members "
+                "SELECT discord_id, display_name, avatar_url FROM members "
                 f"WHERE discord_id IN ({placeholders})",
                 card_member_ids,
             ) as cur:
-                card_names = {r[0]: r[1] for r in await cur.fetchall()}
+                card_info = {
+                    r[0]: {"display_name": r[1], "avatar_url": r[2]}
+                    for r in await cur.fetchall()
+                }
         else:
-            card_names = {}
+            card_info = {}
 
         player_ids = [fight.challenger_id, fight.opponent_id]
         id_placeholders = ",".join("?" * len(player_ids))
@@ -403,7 +406,8 @@ async def get_fight_state(fight_id: int) -> dict:
                     "id": c.id,
                     "slot": c.slot,
                     "card_member_id": c.card_member_id,
-                    "display_name": card_names.get(c.card_member_id, c.card_member_id),
+                    "display_name": card_info.get(c.card_member_id, {}).get("display_name", c.card_member_id),
+                    "avatar_url": card_info.get(c.card_member_id, {}).get("avatar_url"),
                     "rarity": c.rarity,
                     "hp_current": c.hp_current,
                     "hp_max": c.hp_max,

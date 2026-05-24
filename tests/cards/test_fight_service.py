@@ -550,3 +550,44 @@ async def test_fight_leaderboard_excludes_excluded_members(db):
     assert all(r["discord_id"] != "p1" for r in balance), (
         "excluded member appeared in pringle_balance"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_fight_state_cards_include_avatar_url(db):
+    import aiosqlite
+    db_mod, svc_mod, fs_mod, _ = db
+
+    # Give p1 a card member with a known avatar_url
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE members SET avatar_url = ? WHERE discord_id = ?",
+            ("/static/avatars/p2.png", "p2"),
+        )
+        await conn.commit()
+
+    fight = await fs_mod.create_fight("p1", "p2", "quick")
+    await fs_mod.accept_fight(fight.id)
+    await fs_mod.set_fight_cards(
+        fight.id, "p1", [{"card_member_id": "p2", "rarity": "common", "slot": 1}]
+    )
+    await fs_mod.set_fight_cards(
+        fight.id, "p2", [{"card_member_id": "p1", "rarity": "common", "slot": 1}]
+    )
+    await fs_mod.mark_player_ready(fight.id, "p1")
+    await fs_mod.mark_player_ready(fight.id, "p2")
+
+    state = await fs_mod.get_fight_state(fight.id)
+
+    challenger_cards = state["challenger"]["cards"]
+    opponent_cards = state["opponent"]["cards"]
+    all_cards = challenger_cards + opponent_cards
+
+    assert all("avatar_url" in c for c in all_cards), "Every card must have avatar_url key"
+
+    # The card whose card_member_id is p2 should carry p2's avatar_url
+    p2_card = next(c for c in all_cards if c["card_member_id"] == "p2")
+    assert p2_card["avatar_url"] == "/static/avatars/p2.png"
+
+    # p1 has no avatar set — should be None
+    p1_card = next(c for c in all_cards if c["card_member_id"] == "p1")
+    assert p1_card["avatar_url"] is None
