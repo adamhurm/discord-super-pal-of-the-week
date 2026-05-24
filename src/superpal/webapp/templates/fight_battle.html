@@ -309,12 +309,7 @@
       renderCards(me.cards, "my-cards", true);
       renderCards(opp.cards, "opp-cards", false);
       renderItems(me.items);
-
-      // Status badges
-      const myBadges = [];
-      if (me.atk_boost > 0) myBadges.push(`<span class="status-badge status-boost">BOOST +10 ATK (${me.atk_boost}t)</span>`);
-      if (me.smoked) myBadges.push(`<span class="status-badge status-smoked">SMOKED</span>`);
-      if (myBadges.length) document.getElementById("my-panel").insertAdjacentHTML("beforeend", myBadges.join(" "));
+      updateSprites(me, opp);
 
       // Result
       const resultArea = document.getElementById("result-area");
@@ -424,6 +419,69 @@
     function sendRun() {
       if (!confirm("Attempt to flee? (D20 roll determines outcome)")) return;
       ws.send(JSON.stringify({ action: "run", detail: {} }));
+    }
+
+    function updateSprites(me, opp) {
+      const myActive  = me.cards.find(c => c.is_active);
+      const oppActive = opp.cards.find(c => c.is_active);
+
+      setSprite('you', myActive);
+      setSprite('opp', oppActive);
+
+      updateBadge('badge-you', me.atk_boost > 0, me.smoked);
+      updateBadge('badge-opp', opp.atk_boost > 0, opp.smoked);
+    }
+
+    function setSprite(side, card) {
+      const name = document.getElementById(`name-${side}`);
+      const img  = document.getElementById(`avatar-${side}`);
+      const fb   = document.getElementById(`avatar-${side}-fb`);
+      const bar  = document.getElementById(`hp-bar-${side}`);
+      const txt  = document.getElementById(`hp-text-${side}`);
+
+      if (!card) {
+        name.textContent = '—';
+        return;
+      }
+
+      name.textContent = card.display_name;
+
+      // Avatar — only update src when it changes to avoid flicker
+      const url = card.avatar_url || '';
+      if (url && img.getAttribute('data-src') !== url) {
+        img.setAttribute('data-src', url);
+        img.src = url;
+        img.style.display = 'block';
+        fb.style.display = 'none';
+      } else if (!url) {
+        img.style.display = 'none';
+        fb.style.display = 'flex';
+      }
+
+      // HP bar
+      if (!card.is_fainted) {
+        const pct = card.hp_current / card.hp_max * 100;
+        bar.style.width = pct + '%';
+        bar.style.background = pct > 50 ? '#27ae60' : pct > 25 ? '#f39c12' : '#e74c3c';
+        txt.textContent = `${card.hp_current} / ${card.hp_max} HP`;
+      }
+    }
+
+    function updateBadge(id, hasBoost, isSmoked) {
+      const el = document.getElementById(id);
+      el.innerHTML = '';
+      if (hasBoost) {
+        const b = document.createElement('span');
+        b.className = 'sprite-badge sprite-badge-boost';
+        b.textContent = '⚡ BOOST +10';
+        el.appendChild(b);
+      }
+      if (isSmoked) {
+        const b = document.createElement('span');
+        b.className = 'sprite-badge sprite-badge-smoked';
+        b.textContent = '💨 SMOKED';
+        el.appendChild(b);
+      }
     }
 
     document.addEventListener("visibilitychange", () => {
