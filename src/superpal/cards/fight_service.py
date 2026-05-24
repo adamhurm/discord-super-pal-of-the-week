@@ -406,7 +406,9 @@ async def get_fight_state(fight_id: int) -> dict:
                     "id": c.id,
                     "slot": c.slot,
                     "card_member_id": c.card_member_id,
-                    "display_name": card_info.get(c.card_member_id, {}).get("display_name", c.card_member_id),
+                    "display_name": card_info.get(c.card_member_id, {}).get(
+                        "display_name", c.card_member_id
+                    ),
                     "avatar_url": card_info.get(c.card_member_id, {}).get("avatar_url"),
                     "rarity": c.rarity,
                     "hp_current": c.hp_current,

@@ -555,7 +555,7 @@ async def test_fight_leaderboard_excludes_excluded_members(db):
 @pytest.mark.asyncio
 async def test_get_fight_state_cards_include_avatar_url(db):
     import aiosqlite
-    db_mod, svc_mod, fs_mod, _ = db
+    db_mod, _, fs_mod, _ = db
 
     # Give p1 a card member with a known avatar_url
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
