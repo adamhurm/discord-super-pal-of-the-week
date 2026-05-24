@@ -108,10 +108,9 @@
       </div>
     </div>
 
-    {% if items %}
-    <div class="action-group">
+    <div class="action-group" id="items-group" style="{{ 'display:none' if not items else '' }}">
       <div class="action-label">Items</div>
-      <div class="btn-row">
+      <div class="btn-row" id="items-btn-row">
         {% for item_type, qty in items.items() %}
         <button class="btn btn-item" onclick="useItem('{{ item_type }}')">
           {{ item_names[item_type] }} ×{{ qty }}
@@ -119,7 +118,6 @@
         {% endfor %}
       </div>
     </div>
-    {% endif %}
 
     {% if fight_mode == "extended" %}
     <div class="action-group" id="swap-group" style="display:none">
@@ -205,6 +203,7 @@
 
       renderCards(me.cards, "my-cards", true);
       renderCards(opp.cards, "opp-cards", false);
+      renderItems(me.items);
 
       // Status badges
       const myBadges = [];
@@ -256,6 +255,19 @@
       }
 
       renderLog(state.log);
+    }
+
+    function renderItems(items) {
+      const group = document.getElementById("items-group");
+      const row = document.getElementById("items-btn-row");
+      if (!items || Object.keys(items).length === 0) {
+        group.style.display = "none";
+        return;
+      }
+      group.style.display = "";
+      row.innerHTML = Object.entries(items).map(([itemType, qty]) =>
+        `<button class="btn btn-item" onclick="useItem('${itemType}')">${ITEM_NAMES[itemType] || itemType} ×${qty}</button>`
+      ).join("");
     }
 
     function buildSwapButtons(cards, forcedOnly) {

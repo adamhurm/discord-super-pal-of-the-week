@@ -377,6 +377,18 @@ async def get_fight_state(fight_id: int) -> dict:
         else:
             card_names = {}
 
+        player_ids = [fight.challenger_id, fight.opponent_id]
+        id_placeholders = ",".join("?" * len(player_ids))
+        async with db.execute(
+            f"SELECT player_id, item_type, quantity FROM player_items"
+            f" WHERE player_id IN ({id_placeholders}) AND quantity > 0",
+            player_ids,
+        ) as cur:
+            item_rows = await cur.fetchall()
+    items_by_player: dict[str, dict[str, int]] = {pid: {} for pid in player_ids}
+    for row in item_rows:
+        items_by_player[row[0]][row[1]] = row[2]
+
     def player_state(pid: str) -> dict:
         player_cards = [c for c in cards if c.player_id == pid]
         is_challenger = pid == fight.challenger_id
@@ -385,6 +397,7 @@ async def get_fight_state(fight_id: int) -> dict:
             "display_name": member_rows.get(pid, {}).get("display_name", pid),
             "atk_boost": fight.challenger_atk_boost if is_challenger else fight.opponent_atk_boost,
             "smoked": fight.challenger_smoked if is_challenger else fight.opponent_smoked,
+            "items": items_by_player.get(pid, {}),
             "cards": [
                 {
                     "id": c.id,
