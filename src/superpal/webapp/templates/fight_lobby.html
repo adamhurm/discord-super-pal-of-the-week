@@ -68,6 +68,10 @@
 
   {% if already_ready %}
     <div class="waiting">You&apos;re ready! Waiting for {{ opponent_name }} to pick their cards…</div>
+    <script>
+      // Poll until the fight goes active, then the lobby route auto-redirects to battle.
+      setInterval(() => { location.reload(); }, 3000);
+    </script>
   {% else %}
     <div class="section-title">
       Your Cards

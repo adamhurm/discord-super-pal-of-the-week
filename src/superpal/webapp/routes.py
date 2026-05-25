@@ -4,7 +4,7 @@ from pathlib import Path
 
 import aiosqlite
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from superpal.cards.db import DB_PATH
@@ -531,3 +531,16 @@ async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
         pass
     finally:
         _fight_connections.get(fight_id, {}).pop(player_id, None)
+
+
+@router.get("/api/fight/{fight_id}/state")
+async def fight_state_api(fight_id: int, request: Request, fs: str = ""):
+    """Lightweight fallback poll endpoint for the battle page."""
+    player_id, _ = await _resolve_fight_session(request, fight_id)
+    if not player_id:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    fight = await get_fight(fight_id)
+    if not fight or fight.status not in ("active", "completed"):
+        return JSONResponse({"error": "fight_not_found"}, status_code=404)
+    state = await get_fight_state(fight_id)
+    return JSONResponse(state)

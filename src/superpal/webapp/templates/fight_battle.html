@@ -251,10 +251,11 @@
     const ITEM_NAMES = {{ item_names | tojson }};
 
     let ws;
-    let prevState    = null;
-    let prevLogIds   = new Set();
-    let animating    = false;
-    let pendingState = null;
+    let prevState         = null;
+    let prevLogIds        = new Set();
+    let animating         = false;
+    let animatingStartedAt = 0;
+    let pendingState      = null;
 
     const MELEE_ATTACKS = new Set(['body_slam', 'hype_strike']);
     const PROJECTILES   = { vibe_check: '🌊', super_bringus_beam: '✨' };
@@ -652,8 +653,10 @@
       }
 
       animating = true;
+      animatingStartedAt = Date.now();
       playAnimation(newEntry, state, me, opp, () => {
         animating = false;
+        animatingStartedAt = 0;
         applyState(state, me, opp);
         if (pendingState) {
           const next = pendingState;
@@ -793,6 +796,34 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) connect();
     });
+
+    // Watchdog: if an animation callback is never fired (anime.js edge case), unblock after 3s.
+    setInterval(() => {
+      if (animating && animatingStartedAt > 0 && Date.now() - animatingStartedAt > 3000) {
+        animating = false;
+        animatingStartedAt = 0;
+        if (pendingState) {
+          const next = pendingState;
+          pendingState = null;
+          renderState(next);
+        }
+      }
+    }, 1000);
+
+    // Fallback HTTP poll: re-syncs state every 8s in case a WS message was silently dropped.
+    // renderState deduplicates via prevLogIds so already-animated entries never replay.
+    const _pollInterval = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/fight/${FIGHT_ID}/state?fs=${encodeURIComponent(FS)}`);
+        if (resp.ok) {
+          const state = await resp.json();
+          if (!state.error) {
+            renderState(state);
+            if (state.status === 'completed') clearInterval(_pollInterval);
+          }
+        }
+      } catch (_) {}
+    }, 8000);
 
     connect();
   </script>
