@@ -147,7 +147,11 @@
             <div class="listing-offers">{{ listing.offer_count }} pending offer{{ 's' if listing.offer_count != 1 else '' }}</div>
             {% endif %}
             <button class="btn btn-primary"
-              onclick="openOfferModal({{ listing.id }}, {{ listing.items | tojson }}, '{{ listing.ask_note or '' | e }}', '{{ listing.owner_display_name | e }}')">
+              data-listing-id="{{ listing.id }}"
+              data-listing-items="{{ listing.items | tojson | e }}"
+              data-ask-note="{{ listing.ask_note or '' | e }}"
+              data-owner="{{ listing.owner_display_name | e }}"
+              onclick="openOfferModal(this)">
               Make Offer
             </button>
           </div>
@@ -262,7 +266,11 @@
   let _currentListingId = null;
   let _selectedCards = [];
 
-  function openOfferModal(listingId, listingItems, askNote, ownerName) {
+  function openOfferModal(btn) {
+    const listingId = parseInt(btn.dataset.listingId);
+    const listingItems = JSON.parse(btn.dataset.listingItems);
+    const askNote = btn.dataset.askNote;
+    const ownerName = btn.dataset.owner;
     _currentListingId = listingId;
     _selectedCards = [];
     document.getElementById('modal-owner').textContent = ownerName;
