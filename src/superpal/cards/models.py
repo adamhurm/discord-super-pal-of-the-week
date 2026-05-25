@@ -133,3 +133,34 @@ class PendingTrade:
     status: str
     created_at: str
     expires_at: str
+
+
+@dataclass
+class CardRef:
+    member_id: str
+    rarity: str
+
+
+@dataclass
+class TradeListingFull:
+    id: int
+    owner_id: str
+    owner_display_name: str
+    status: str
+    ask_note: str | None
+    created_at: str
+    items: list[CardRef]
+    offer_count: int
+
+
+@dataclass
+class TradeOfferFull:
+    id: int
+    listing_id: int
+    proposer_id: str
+    proposer_display_name: str
+    status: str
+    created_at: str
+    expires_at: str
+    items: list[CardRef]
+    listing: TradeListingFull
