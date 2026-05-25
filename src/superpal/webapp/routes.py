@@ -20,13 +20,24 @@ from superpal.cards.fight_service import (
     use_fight_token,
 )
 from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
+from superpal.cards.models import CardRef
 from superpal.cards.service import (
+    accept_offer,
     add_draws,
     add_member,
     award_card,
+    cancel_listing,
+    cancel_offer,
+    create_listing,
+    create_offer,
+    decline_offer,
+    get_active_listings,
     get_all_members_for_admin,
     get_collection,
     get_draw_audit,
+    get_my_offers,
+    get_offers_for_listing,
+    get_player_listings,
     get_pool_stats,
     reset_draw_log,
     set_excluded,
@@ -74,6 +85,18 @@ async def _collection_context(user_id: str) -> dict:
     unique_members = len({c["member_id"] for c in data["owned"]})
     total_eligible = unique_members + len(data["undiscovered"])
     completion_pct = round(unique_members / total_eligible * 100) if total_eligible > 0 else 0
+
+    # Build a lookup: (member_id, rarity) -> listing_id for the user's active listings
+    my_listings = await get_player_listings(user_id)
+    listed_card_keys: dict[str, int] = {}
+    for listing in my_listings:
+        for item in listing.items:
+            listed_card_keys[f"{item.member_id}:{item.rarity}"] = listing.id
+
+    for card in data["owned"]:
+        key = f"{card['member_id']}:{card['rarity']}"
+        card["listing_id"] = listed_card_keys.get(key)
+
     return {
         "display_name": row[0] if row else "Unknown",
         "avatar_url": row[1] if row else None,
@@ -85,6 +108,140 @@ async def _collection_context(user_id: str) -> dict:
         "unique_members": unique_members,
         "completion_pct": completion_pct,
     }
+
+
+async def _marketplace_context(user_id: str) -> dict:
+    listings = await get_active_listings(exclude_owner_id=user_id)
+    my_listings = await get_player_listings(user_id)
+    my_offers = await get_my_offers(user_id)
+    collection = await get_collection(user_id)
+
+    # Aggregate active traders for sidebar
+    trader_counts: dict[str, dict] = {}
+    for listing in listings:
+        oid = listing.owner_id
+        if oid not in trader_counts:
+            trader_counts[oid] = {"display_name": listing.owner_display_name, "count": 0}
+        trader_counts[oid]["count"] += 1
+    active_traders = sorted(trader_counts.values(), key=lambda x: -x["count"])
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?", (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+
+    return {
+        "display_name": row[0] if row else "Unknown",
+        "avatar_url": row[1] if row else None,
+        "listings": listings,
+        "my_listings": my_listings,
+        "my_offers": my_offers,
+        "my_collection": collection["owned"],
+        "active_traders": active_traders,
+        "pending_offer_count": len(my_offers),
+    }
+
+
+@router.get("/marketplace", response_class=HTMLResponse)
+async def marketplace_view(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    ctx = await _marketplace_context(session.user_id)
+    return templates.TemplateResponse(request, "marketplace.html", ctx)
+
+
+@router.post("/marketplace/listing")
+async def create_listing_route(
+    request: Request,
+    card_member_ids: list[str] = Form(...),
+    card_rarities: list[str] = Form(...),
+    ask_note: str = Form(""),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    items = [
+        CardRef(member_id=mid, rarity=rar)
+        for mid, rar in zip(card_member_ids, card_rarities)
+    ]
+    await create_listing(session.user_id, items, ask_note.strip() or None)
+    return RedirectResponse(url="/collection", status_code=303)
+
+
+@router.post("/marketplace/listing/{listing_id}/cancel")
+async def cancel_listing_route(listing_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    await cancel_listing(listing_id, session.user_id)
+    return RedirectResponse(url="/collection", status_code=303)
+
+
+@router.post("/marketplace/listing/{listing_id}/offer")
+async def create_offer_route(
+    listing_id: int,
+    request: Request,
+    card_member_ids: list[str] = Form(...),
+    card_rarities: list[str] = Form(...),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    items = [
+        CardRef(member_id=mid, rarity=rar)
+        for mid, rar in zip(card_member_ids, card_rarities)
+    ]
+    offer = await create_offer(listing_id, session.user_id, items)
+    if not isinstance(offer, str):
+        try:
+            from bot import notify_trade_offer as _notify
+            import asyncio
+            asyncio.create_task(_notify(offer.id))
+        except ImportError:
+            pass
+    return RedirectResponse(url="/marketplace", status_code=303)
+
+
+@router.post("/marketplace/offer/{offer_id}/accept")
+async def accept_offer_route(offer_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    ok, err = await accept_offer(offer_id, session.user_id)
+    if ok:
+        try:
+            from bot import edit_offer_dm as _edit
+            import asyncio
+            asyncio.create_task(_edit(offer_id, "Trade accepted! Cards have been exchanged."))
+        except ImportError:
+            pass
+    return RedirectResponse(url="/marketplace", status_code=303)
+
+
+@router.post("/marketplace/offer/{offer_id}/decline")
+async def decline_offer_route(offer_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    await decline_offer(offer_id, session.user_id)
+    try:
+        from bot import edit_offer_dm as _edit
+        import asyncio
+        asyncio.create_task(_edit(offer_id, "Offer declined."))
+    except ImportError:
+        pass
+    return RedirectResponse(url="/marketplace", status_code=303)
+
+
+@router.post("/marketplace/offer/{offer_id}/cancel")
+async def cancel_offer_route(offer_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    await cancel_offer(offer_id, session.user_id)
+    return RedirectResponse(url="/marketplace", status_code=303)
 
 
 async def _admin_context() -> dict:
