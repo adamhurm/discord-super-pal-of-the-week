@@ -836,8 +836,10 @@ async def create_offer(
         ) as cur:
             row = await cur.fetchone()
         if not row:
+            await db.rollback()
             return "not_found"
         if row[0] == proposer_id:
+            await db.rollback()
             return "self_offer"
         async with db.execute(
             "SELECT id FROM trade_offers "
@@ -845,6 +847,7 @@ async def create_offer(
             (listing_id, proposer_id),
         ) as cur:
             if await cur.fetchone():
+                await db.rollback()
                 return "duplicate_offer"
         for item in items:
             async with db.execute(
@@ -854,6 +857,7 @@ async def create_offer(
             ) as cur:
                 card_row = await cur.fetchone()
             if not card_row or card_row[0] < 1:
+                await db.rollback()
                 return "no_card"
         await db.execute(
             "INSERT INTO trade_offers (listing_id, proposer_id, status, created_at, expires_at) "
@@ -886,9 +890,11 @@ async def accept_offer(offer_id: int, recipient_id: str) -> tuple[bool, str | No
         ) as cur:
             row = await cur.fetchone()
         if not row:
+            await db.rollback()
             return False, "not_found"
         listing_id, proposer_id, listing_owner_id = row
         if listing_owner_id != recipient_id:
+            await db.rollback()
             return False, "not_owner"
         now_iso = datetime.now(timezone.utc).isoformat()
         async with db.execute(
@@ -908,6 +914,7 @@ async def accept_offer(offer_id: int, recipient_id: str) -> tuple[bool, str | No
                 (recipient_id, card_member_id, rarity),
             ) as cur:
                 if not (row2 := await cur.fetchone()) or row2[0] < 1:
+                    await db.rollback()
                     return False, "listing_no_card"
         for card_member_id, rarity in offer_items:
             async with db.execute(
@@ -916,6 +923,7 @@ async def accept_offer(offer_id: int, recipient_id: str) -> tuple[bool, str | No
                 (proposer_id, card_member_id, rarity),
             ) as cur:
                 if not (row2 := await cur.fetchone()) or row2[0] < 1:
+                    await db.rollback()
                     return False, "offer_no_card"
         # listing items: recipient → proposer
         for card_member_id, rarity in listing_items:
