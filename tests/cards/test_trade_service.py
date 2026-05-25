@@ -1,4 +1,5 @@
 import pytest
+import aiosqlite
 
 from superpal.cards.models import CardRef
 
@@ -20,7 +21,6 @@ async def _seed_two_players(svc):
 
 async def _give_card(db_mod, owner_id: str, member_id: str, rarity: str, qty: int = 1):
     """Directly insert a user_card row."""
-    import aiosqlite
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(db_mod.DB_PATH) as db:
@@ -118,7 +118,8 @@ async def test_create_offer_rejects_duplicate(db):
     listing = await svc.create_listing("111", [CardRef("222", "common")], None)
     assert not isinstance(listing, str)
     await _give_card(db_mod, "222", "111", "uncommon", qty=2)
-    await svc.create_offer(listing.id, "222", [CardRef("111", "uncommon")])
+    first_offer = await svc.create_offer(listing.id, "222", [CardRef("111", "uncommon")])
+    assert not isinstance(first_offer, str)
     result = await svc.create_offer(listing.id, "222", [CardRef("111", "uncommon")])
     assert result == "duplicate_offer"
 
@@ -144,7 +145,6 @@ async def test_accept_offer_swaps_cards_and_declines_siblings(db):
     ok, err = await svc.accept_offer(offer.id, "111")
     assert ok is True and err is None
     # Bob now has COMMON of Bob; Alice now has UNCOMMON of Alice
-    import aiosqlite
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         async with conn.execute(
             "SELECT quantity FROM user_cards WHERE owner_id='222' AND card_member_id='222' AND rarity='common'"
@@ -174,7 +174,6 @@ async def test_accept_offer_fails_if_card_no_longer_held(db):
     offer = await svc.create_offer(listing.id, "222", [CardRef("111", "uncommon")])
     assert not isinstance(offer, str)
     # Remove Alice's listing card before she accepts
-    import aiosqlite
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
             "UPDATE user_cards SET quantity = 0 WHERE owner_id='111' AND card_member_id='222' AND rarity='common'"
@@ -183,3 +182,28 @@ async def test_accept_offer_fails_if_card_no_longer_held(db):
     ok, err = await svc.accept_offer(offer.id, "111")
     assert ok is False
     assert err == "listing_no_card"
+
+
+@pytest.mark.asyncio
+async def test_accept_offer_rejects_non_owner(db):
+    db_mod, svc = db
+    await _seed_two_players(svc)
+    await _give_card(db_mod, "111", "222", "common")
+    listing = await svc.create_listing("111", [CardRef("222", "common")], None)
+    assert not isinstance(listing, str)
+    await _give_card(db_mod, "222", "111", "uncommon")
+    offer = await svc.create_offer(listing.id, "222", [CardRef("111", "uncommon")])
+    assert not isinstance(offer, str)
+    # Bob tries to accept his own offer (he's not the listing owner)
+    ok, err = await svc.accept_offer(offer.id, "222")
+    assert ok is False
+    assert err == "not_owner"
+
+
+@pytest.mark.asyncio
+async def test_create_offer_rejects_nonexistent_listing(db):
+    db_mod, svc = db
+    await _seed_two_players(svc)
+    await _give_card(db_mod, "222", "111", "uncommon")
+    result = await svc.create_offer(9999, "222", [CardRef("111", "uncommon")])
+    assert result == "not_found"
