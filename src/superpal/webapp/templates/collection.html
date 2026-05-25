@@ -27,7 +27,7 @@
     .pill-legendary { background: #f39c12; color: #7d4f00; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
     .card { background: #2b2d31; border-radius: 8px; padding: 14px;
-            border-left: 4px solid #95a5a6; }
+            border-left: 4px solid #95a5a6; position: relative; }
     .card-common { border-left-color: #95a5a6; }
     .card-uncommon { border-left-color: #27ae60; }
     .card-rare { border-left-color: #2980b9; }
@@ -108,6 +108,9 @@
       font-size: 20px; cursor: pointer; line-height: 1;
     }
     .modal-close:hover { color: #fff; }
+    .listing-badge { position: absolute; top: 6px; right: 6px; font-size: 13px;
+                     background: rgba(0,0,0,0.5); border-radius: 3px; padding: 1px 3px; }
+    .menu-item:hover { background: #313338; }
   </style>
 </head>
 <body>
@@ -123,7 +126,10 @@
       <div class="subtitle">{{ completion_pct }}% of members collected</div>
       <div class="subtitle">{{ total_cards }} card{{ 's' if total_cards != 1 else '' }} in circulation · {{ total_draws }} total draw{{ 's' if total_draws != 1 else '' }}</div>
     </div>
-    <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help" style="margin-left:auto">?</button>
+    <a href="/marketplace" style="margin-left:auto;padding:5px 12px;background:#3f4147;
+   color:#b9bbbe;border-radius:4px;font-size:12px;font-weight:600;text-decoration:none;
+   margin-right:8px;">🏪 Marketplace</a>
+    <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help">?</button>
   </div>
 
   <div class="pills">
@@ -137,12 +143,15 @@
     {% for card in owned %}
     <div class="card card-{{ card.rarity }}"
          onclick="openCardDetail(this)"
+         oncontextmenu="openCardMenu(event, this)"
          data-name="{{ card.display_name | e }}"
          data-rarity="{{ card.rarity }}"
          data-avatar="{{ card.avatar_url if card.avatar_url else '' }}"
          data-quantity="{{ card.quantity }}"
          data-bio="{{ card.bio | e if card.bio else '' }}"
-         data-stats='{{ card.stats_pairs | tojson }}'>
+         data-stats='{{ card.stats_pairs | tojson }}'
+         data-member-id="{{ card.member_id }}"
+         data-listing-id="{{ card.listing_id or '' }}">
       {% if card.avatar_url %}
         <img class="card-avatar" src="{{ card.avatar_url }}" alt="">
       {% else %}
@@ -169,6 +178,9 @@
           <input type="hidden" name="rarity" value="{{ card.rarity }}">
           <button class="trade-btn" type="submit">TRADE IN (3×)</button>
         </form>
+      {% endif %}
+      {% if card.listing_id %}
+        <div class="listing-badge" title="Listed for trade">🏪</div>
       {% endif %}
     </div>
     {% endfor %}
@@ -229,6 +241,46 @@
       </ul>
     </div>
   </div>
+  <!-- Right-click context menu -->
+  <div id="card-menu" style="display:none;position:fixed;background:#2b2d31;
+       border:1px solid #3f4147;border-radius:6px;padding:4px 0;z-index:200;min-width:150px;">
+    <div id="menu-list-btn" class="menu-item" onclick="listSelectedCard()" style="display:none;
+         padding:8px 14px;cursor:pointer;font-size:13px;">🏪 List for Trade</div>
+    <div id="menu-unlist-btn" class="menu-item" onclick="unlistSelectedCard()" style="display:none;
+         padding:8px 14px;cursor:pointer;font-size:13px;color:#ed4245;">Remove Listing</div>
+  </div>
+
+  <!-- Listing form (hidden) -->
+  <div id="list-form-backdrop" style="display:none;position:fixed;inset:0;
+       background:rgba(0,0,0,0.75);z-index:150;align-items:center;justify-content:center;">
+    <div style="background:#2b2d31;border-radius:8px;padding:24px;max-width:360px;width:90%;">
+      <h2 style="font-size:1rem;margin-bottom:12px;color:#fff;">List Card for Trade</h2>
+      <div id="list-form-card-info" style="font-size:13px;color:#b9bbbe;margin-bottom:12px;"></div>
+      <form id="list-form" method="post" action="/marketplace/listing">
+        <input type="hidden" id="list-form-member-id" name="card_member_ids" value="">
+        <input type="hidden" id="list-form-rarity" name="card_rarities" value="">
+        <label style="font-size:12px;color:#72767d;display:block;margin-bottom:4px;">
+          What do you want in return? (optional)
+        </label>
+        <input type="text" name="ask_note" maxlength="100" placeholder="e.g. want a Rare"
+               style="width:100%;background:#313338;border:1px solid #3f4147;border-radius:4px;
+                      color:#dcddde;padding:6px 10px;font-size:13px;margin-bottom:12px;">
+        <div style="display:flex;gap:8px;">
+          <button type="submit"
+                  style="background:#5865f2;color:#fff;border:none;border-radius:4px;
+                         padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;flex:1;">
+            List It
+          </button>
+          <button type="button" onclick="closeListForm()"
+                  style="background:#3f4147;color:#b9bbbe;border:none;border-radius:4px;
+                         padding:7px 16px;font-size:13px;cursor:pointer;">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const RARITY_COLORS = {
       common: '#95a5a6', uncommon: '#27ae60', rare: '#2980b9', legendary: '#f39c12'
@@ -264,6 +316,54 @@
       ).join('');
 
       document.getElementById('card-modal').style.display = 'flex';
+    }
+
+    let _menuCard = null;
+
+    function openCardMenu(e, el) {
+      e.preventDefault();
+      _menuCard = el;
+      const menu = document.getElementById('card-menu');
+      const listBtn = document.getElementById('menu-list-btn');
+      const unlistBtn = document.getElementById('menu-unlist-btn');
+      const listingId = el.dataset.listingId;
+
+      listBtn.style.display = listingId ? 'none' : 'block';
+      unlistBtn.style.display = listingId ? 'block' : 'none';
+
+      menu.style.left = Math.min(e.clientX, window.innerWidth - 160) + 'px';
+      menu.style.top = Math.min(e.clientY, window.innerHeight - 80) + 'px';
+      menu.style.display = 'block';
+
+      setTimeout(() => document.addEventListener('click', closeCardMenu, { once: true }), 0);
+    }
+
+    function closeCardMenu() {
+      document.getElementById('card-menu').style.display = 'none';
+    }
+
+    function listSelectedCard() {
+      closeCardMenu();
+      if (!_menuCard) return;
+      document.getElementById('list-form-member-id').value = _menuCard.dataset.memberId;
+      document.getElementById('list-form-rarity').value = _menuCard.dataset.rarity;
+      document.getElementById('list-form-card-info').textContent =
+        _menuCard.dataset.name + ' — ' + _menuCard.dataset.rarity.toUpperCase();
+      document.getElementById('list-form-backdrop').style.display = 'flex';
+    }
+
+    function closeListForm() {
+      document.getElementById('list-form-backdrop').style.display = 'none';
+    }
+
+    function unlistSelectedCard() {
+      closeCardMenu();
+      if (!_menuCard || !_menuCard.dataset.listingId) return;
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = `/marketplace/listing/${_menuCard.dataset.listingId}/cancel`;
+      document.body.appendChild(form);
+      form.submit();
     }
   </script>
 </body>
