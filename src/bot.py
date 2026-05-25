@@ -41,15 +41,20 @@ from superpal.cards.pringle_service import (
 )
 from superpal.cards.service import (
     TRADE_EXPIRY_MINUTES,
-    create_trade_offer,
+    accept_offer,
+    cancel_offer,
+    decline_offer,
     decline_trade,
     draw_card,
     execute_trade,
+    expire_offer,
     generate_magic_link,
     get_card_quantity,
     get_collection,
     get_leaderboard,
+    get_offer_by_id,
     gift_card,
+    set_offer_discord_message_id,
     sync_members,
     trade_in,
     upgrade,
@@ -58,6 +63,7 @@ from superpal.env import WEBAPP_BASE_URL
 from superpal.schedule import next_sunday_noon_utc
 
 FIGHT_CHALLENGE_TIMEOUT = FIGHT_TOKEN_EXPIRY_MINUTES * 60
+TRADE_OFFER_EXPIRY_HOURS = 24
 
 # Get logger
 log = superpal_env.log
@@ -179,6 +185,61 @@ class TradeView(discord.ui.View):
         if self.message:
             try:
                 await self.message.edit(content="Trade offer expired.", view=None)
+            except discord.NotFound:
+                pass
+
+
+class TradeOfferView(discord.ui.View):
+    """Discord DM view sent when a marketplace offer arrives."""
+
+    def __init__(self, offer_id: int, listing_owner_id: str):
+        super().__init__(timeout=TRADE_OFFER_EXPIRY_HOURS * 3600)
+        self.offer_id = offer_id
+        self.listing_owner_id = listing_owner_id
+        self.message: discord.Message | None = None
+
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
+    async def accept_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if str(interaction.user.id) != self.listing_owner_id:
+            await interaction.response.send_message(
+                "Only the listing owner can accept.", ephemeral=True
+            )
+            return
+        success, reason = await accept_offer(self.offer_id, self.listing_owner_id)
+        self.stop()
+        if success:
+            await interaction.response.edit_message(
+                content="Trade accepted! Cards have been exchanged.", view=None
+            )
+        else:
+            msg = {
+                "not_found": "This offer no longer exists.",
+                "not_owner": "You are not the listing owner.",
+                "listing_no_card": "Trade failed — you no longer have those listing cards.",
+                "offer_no_card": "Trade failed — the proposer no longer has their offered cards.",
+            }.get(reason or "", "Trade failed.")
+            await interaction.response.edit_message(content=msg, view=None)
+
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
+    async def decline_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if str(interaction.user.id) != self.listing_owner_id:
+            await interaction.response.send_message(
+                "Only the listing owner can decline.", ephemeral=True
+            )
+            return
+        await decline_offer(self.offer_id, self.listing_owner_id)
+        self.stop()
+        await interaction.response.edit_message(content="Offer declined.", view=None)
+
+    async def on_timeout(self) -> None:
+        await expire_offer(self.offer_id)
+        if self.message:
+            try:
+                await self.message.edit(content="Offer expired.", view=None)
             except discord.NotFound:
                 pass
 
@@ -359,6 +420,78 @@ class FightChallengeView(discord.ui.View):
                 await self.message.edit(content="Fight challenge expired.", view=None)
             except discord.NotFound:
                 pass
+
+
+async def notify_trade_offer(offer_id: int) -> None:
+    """DM the listing owner about a new marketplace offer."""
+    offer = await get_offer_by_id(offer_id)
+    if offer is None:
+        return
+    guild = bot.get_guild(int(superpal_env.GUILD_ID))
+    if guild is None:
+        return
+    member = guild.get_member(int(offer.listing.owner_id))
+    if member is None:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        offer_names = []
+        for item in offer.items:
+            async with db.execute(
+                "SELECT display_name FROM members WHERE discord_id = ?", (item.member_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            offer_names.append(
+                f"{RARITY_LABELS[item.rarity]} {row[0] if row else item.member_id}"
+            )
+        listing_names = []
+        for item in offer.listing.items:
+            async with db.execute(
+                "SELECT display_name FROM members WHERE discord_id = ?", (item.member_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            listing_names.append(
+                f"{RARITY_LABELS[item.rarity]} {row[0] if row else item.member_id}"
+            )
+    view = TradeOfferView(offer_id=offer_id, listing_owner_id=offer.listing.owner_id)
+    content = (
+        f"**{offer.proposer_display_name}** made an offer on your listing!\n\n"
+        f"Your listing: {', '.join(listing_names)}\n"
+        f"Their offer: {', '.join(offer_names)}\n\n"
+        f"View in marketplace: {WEBAPP_BASE_URL}/marketplace"
+    )
+    try:
+        dm = await member.send(content=content, view=view)
+        view.message = dm
+        await set_offer_discord_message_id(offer_id, str(dm.id))
+    except discord.Forbidden:
+        pass
+
+
+async def edit_offer_dm(offer_id: int, message: str) -> None:
+    """Edit the DM notification for an offer after web-UI accept/decline."""
+    offer = await get_offer_by_id(offer_id)
+    if offer is None:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT discord_message_id FROM trade_offers WHERE id = ?", (offer_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    if not row or not row[0]:
+        return
+    discord_message_id = row[0]
+    guild = bot.get_guild(int(superpal_env.GUILD_ID))
+    if guild is None:
+        return
+    owner_member = guild.get_member(int(offer.listing.owner_id))
+    if owner_member is None:
+        return
+    try:
+        dm_channel = await owner_member.create_dm()
+        msg = await dm_channel.fetch_message(int(discord_message_id))
+        await msg.edit(content=message, view=None)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        pass
 
 
 ##################
@@ -655,88 +788,27 @@ async def upgrade_command(
 
 @bot.tree.command(
     name="card-trade",
-    description="Offer one of your cards in exchange for another player's card",
+    description="Open the trade marketplace to list cards and make offers",
 )
-@discord.app_commands.describe(
-    recipient="The server member you want to trade with",
-    offer_member="The member card you're offering",
-    offer_rarity="The rarity of the card you're offering",
-    request_member="The member card you want in return",
-    request_rarity="The rarity of the card you want",
-)
-@discord.app_commands.choices(
-    offer_rarity=[
-        discord.app_commands.Choice(name="Common", value="common"),
-        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-        discord.app_commands.Choice(name="Rare", value="rare"),
-        discord.app_commands.Choice(name="Legendary", value="legendary"),
-    ],
-    request_rarity=[
-        discord.app_commands.Choice(name="Common", value="common"),
-        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-        discord.app_commands.Choice(name="Rare", value="rare"),
-        discord.app_commands.Choice(name="Legendary", value="legendary"),
-    ],
-)
-async def propose_trade_command(
-    interaction: discord.Interaction,
-    recipient: discord.Member,
-    offer_member: discord.Member,
-    offer_rarity: str,
-    request_member: discord.Member,
-    request_rarity: str,
-) -> None:
+async def propose_trade_command(interaction: discord.Interaction) -> None:
     await interaction.response.defer(ephemeral=True)
-
-    if interaction.user.id == recipient.id:
-        await interaction.followup.send("You can't trade with yourself.", ephemeral=True)
-        return
-    if not interaction.channel:
-        await interaction.followup.send(
-            "This command must be used in a server channel.", ephemeral=True
-        )
-        return
-
-    trade, err = await create_trade_offer(
-        str(interaction.user.id),
-        str(recipient.id),
-        str(offer_member.id),
-        offer_rarity,
-        str(request_member.id),
-        request_rarity,
+    url = await generate_magic_link(
+        user_id=str(interaction.user.id),
+        link_type="collection",
+        base_url=WEBAPP_BASE_URL,
     )
-    if trade is None:
-        msg = {
-            "invalid_rarity": "Invalid rarity specified.",
-            "self_trade": "You can't trade with yourself.",
-            "no_offer_card": (
-                f"You don't have a {offer_rarity.upper()} "
-                f"{offer_member.display_name} card to offer."
-            ),
-            "pending_exists": (
-                "You already have a pending trade offer. Wait for it to resolve first."
-            ),
-        }.get(err or "", "Could not create trade offer.")
-        await interaction.followup.send(msg, ephemeral=True)
-        return
-
-    view = TradeView(trade.id, str(interaction.user.id), str(recipient.id))
-    if not isinstance(interaction.channel, discord.abc.Messageable):
-        await interaction.followup.send(
-            "This command must be used in a server channel.", ephemeral=True
+    try:
+        await interaction.user.send(
+            f"Open this link to access the trade marketplace (valid 24 hours after first click):\n{url}\n\n"
+            "Once open, click **Marketplace** in the top nav to browse listings and make offers. "
+            "Right-click any card in your collection to list it for trade."
         )
-        return
-    channel_msg = await interaction.channel.send(
-        content=(
-            f"{recipient.mention}, **{interaction.user.display_name}** wants to trade:\n\n"
-            f"Their offer: **{RARITY_LABELS[offer_rarity]} {offer_member.display_name}**\n"
-            f"They want:   **{RARITY_LABELS[request_rarity]} {request_member.display_name}**\n\n"
-            f"You have {TRADE_EXPIRY_MINUTES} minutes to respond."
-        ),
-        view=view,
-    )
-    view.message = channel_msg
-    await interaction.followup.send("Trade offer sent!", ephemeral=True)
+        await interaction.followup.send("Check your DMs for your marketplace link!", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            f"Here's your marketplace link (enable DMs to receive these privately):\n{url}",
+            ephemeral=True,
+        )
 
 
 @bot.tree.command(name="card-gift", description="Give one of your cards to another player")
