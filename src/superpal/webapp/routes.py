@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 import uuid
 from pathlib import Path
@@ -59,6 +60,17 @@ IMAGES_DIR = Path(DB_PATH).parent / "images"
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _tojson_dc(value: object) -> str:
+    def _default(o: object) -> object:
+        if dataclasses.is_dataclass(o) and not isinstance(o, type):
+            return dataclasses.asdict(o)
+        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+    return json.dumps(value, default=_default)
+
+
+templates.env.filters["tojson"] = _tojson_dc
 
 router = APIRouter()
 
@@ -164,7 +176,7 @@ async def create_listing_route(
         return templates.TemplateResponse(request, "expired.html")
     items = [
         CardRef(member_id=mid, rarity=rar)
-        for mid, rar in zip(card_member_ids, card_rarities)
+        for mid, rar in zip(card_member_ids, card_rarities, strict=False)
     ]
     await create_listing(session.user_id, items, ask_note.strip() or None)
     return RedirectResponse(url="/collection", status_code=303)
@@ -191,13 +203,13 @@ async def create_offer_route(
         return templates.TemplateResponse(request, "expired.html")
     items = [
         CardRef(member_id=mid, rarity=rar)
-        for mid, rar in zip(card_member_ids, card_rarities)
+        for mid, rar in zip(card_member_ids, card_rarities, strict=False)
     ]
     offer = await create_offer(listing_id, session.user_id, items)
     if not isinstance(offer, str):
         try:
             from bot import notify_trade_offer as _notify
-            asyncio.create_task(_notify(offer.id))
+            asyncio.create_task(_notify(offer.id))  # noqa: RUF006
         except ImportError:
             pass
     return RedirectResponse(url="/marketplace", status_code=303)
@@ -208,11 +220,11 @@ async def accept_offer_route(offer_id: int, request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    ok, err = await accept_offer(offer_id, session.user_id)
+    ok, _err = await accept_offer(offer_id, session.user_id)
     if ok:
         try:
             from bot import edit_offer_dm as _edit
-            asyncio.create_task(_edit(offer_id, "Trade accepted! Cards have been exchanged."))
+            asyncio.create_task(_edit(offer_id, "Trade accepted! Cards have been exchanged."))  # noqa: RUF006
         except ImportError:
             pass
     return RedirectResponse(url="/marketplace", status_code=303)
@@ -226,7 +238,7 @@ async def decline_offer_route(offer_id: int, request: Request):
     await decline_offer(offer_id, session.user_id)
     try:
         from bot import edit_offer_dm as _edit
-        asyncio.create_task(_edit(offer_id, "Offer declined."))
+        asyncio.create_task(_edit(offer_id, "Offer declined."))  # noqa: RUF006
     except ImportError:
         pass
     return RedirectResponse(url="/marketplace", status_code=303)

@@ -42,7 +42,6 @@ from superpal.cards.pringle_service import (
 from superpal.cards.service import (
     TRADE_EXPIRY_MINUTES,
     accept_offer,
-    cancel_offer,
     decline_offer,
     decline_trade,
     draw_card,
