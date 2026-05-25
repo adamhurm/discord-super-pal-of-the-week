@@ -782,6 +782,266 @@ async def get_player_listings(player_id: str) -> list[TradeListingFull]:
     return results
 
 
+async def _load_offer_full(db: aiosqlite.Connection, offer_id: int) -> TradeOfferFull | None:
+    """Load a TradeOfferFull from an open aiosqlite connection."""
+    async with db.execute(
+        "SELECT to_.id, to_.listing_id, to_.proposer_id, pm.display_name, "
+        "to_.status, to_.created_at, to_.expires_at "
+        "FROM trade_offers to_ "
+        "JOIN members pm ON to_.proposer_id = pm.discord_id "
+        "WHERE to_.id = ?",
+        (offer_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    offer_id_, listing_id, proposer_id, proposer_name, status, created_at, expires_at = row
+    async with db.execute(
+        "SELECT card_member_id, rarity FROM trade_offer_items WHERE offer_id = ?",
+        (offer_id,),
+    ) as cur:
+        items = [CardRef(member_id=r[0], rarity=r[1]) for r in await cur.fetchall()]
+    listing = await _load_listing_full(db, listing_id)
+    if listing is None:
+        return None
+    return TradeOfferFull(
+        id=offer_id_,
+        listing_id=listing_id,
+        proposer_id=proposer_id,
+        proposer_display_name=proposer_name,
+        status=status,
+        created_at=created_at,
+        expires_at=expires_at,
+        items=items,
+        listing=listing,
+    )
+
+
+async def create_offer(
+    listing_id: int,
+    proposer_id: str,
+    items: list[CardRef],
+) -> TradeOfferFull | str:
+    """Create a trade offer against a listing. Returns TradeOfferFull or error key."""
+    if not items:
+        return "empty_items"
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_iso = (now + timedelta(hours=TRADE_OFFER_EXPIRY_HOURS)).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+        async with db.execute(
+            "SELECT owner_id FROM trade_listings WHERE id = ? AND status = 'active'",
+            (listing_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return "not_found"
+        if row[0] == proposer_id:
+            return "self_offer"
+        async with db.execute(
+            "SELECT id FROM trade_offers "
+            "WHERE listing_id = ? AND proposer_id = ? AND status = 'pending'",
+            (listing_id, proposer_id),
+        ) as cur:
+            if await cur.fetchone():
+                return "duplicate_offer"
+        for item in items:
+            async with db.execute(
+                "SELECT quantity FROM user_cards "
+                "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+                (proposer_id, item.member_id, item.rarity),
+            ) as cur:
+                card_row = await cur.fetchone()
+            if not card_row or card_row[0] < 1:
+                return "no_card"
+        await db.execute(
+            "INSERT INTO trade_offers (listing_id, proposer_id, status, created_at, expires_at) "
+            "VALUES (?, ?, 'pending', ?, ?)",
+            (listing_id, proposer_id, now_iso, expires_iso),
+        )
+        async with db.execute("SELECT last_insert_rowid()") as cur:
+            offer_id = (await cur.fetchone())[0]
+        for item in items:
+            await db.execute(
+                "INSERT INTO trade_offer_items (offer_id, card_member_id, rarity) "
+                "VALUES (?, ?, ?)",
+                (offer_id, item.member_id, item.rarity),
+            )
+        await db.commit()
+        offer = await _load_offer_full(db, offer_id)
+    return offer or "not_found"
+
+
+async def accept_offer(offer_id: int, recipient_id: str) -> tuple[bool, str | None]:
+    """Accept an offer: atomically swap cards, mark listing completed, decline siblings."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+        async with db.execute(
+            "SELECT to_.listing_id, to_.proposer_id, tl.owner_id "
+            "FROM trade_offers to_ "
+            "JOIN trade_listings tl ON to_.listing_id = tl.id "
+            "WHERE to_.id = ? AND to_.status = 'pending'",
+            (offer_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return False, "not_found"
+        listing_id, proposer_id, listing_owner_id = row
+        if listing_owner_id != recipient_id:
+            return False, "not_owner"
+        now_iso = datetime.now(timezone.utc).isoformat()
+        async with db.execute(
+            "SELECT card_member_id, rarity FROM trade_listing_items WHERE listing_id = ?",
+            (listing_id,),
+        ) as cur:
+            listing_items = await cur.fetchall()
+        async with db.execute(
+            "SELECT card_member_id, rarity FROM trade_offer_items WHERE offer_id = ?",
+            (offer_id,),
+        ) as cur:
+            offer_items = await cur.fetchall()
+        for card_member_id, rarity in listing_items:
+            async with db.execute(
+                "SELECT quantity FROM user_cards "
+                "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+                (recipient_id, card_member_id, rarity),
+            ) as cur:
+                if not (row2 := await cur.fetchone()) or row2[0] < 1:
+                    return False, "listing_no_card"
+        for card_member_id, rarity in offer_items:
+            async with db.execute(
+                "SELECT quantity FROM user_cards "
+                "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+                (proposer_id, card_member_id, rarity),
+            ) as cur:
+                if not (row2 := await cur.fetchone()) or row2[0] < 1:
+                    return False, "offer_no_card"
+        # listing items: recipient → proposer
+        for card_member_id, rarity in listing_items:
+            await db.execute(
+                "UPDATE user_cards SET quantity = quantity - 1 "
+                "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+                (recipient_id, card_member_id, rarity),
+            )
+            await db.execute(
+                "INSERT INTO user_cards "
+                "(owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+                "VALUES (?, ?, ?, 1, ?) "
+                "ON CONFLICT(owner_id, card_member_id, rarity) "
+                "DO UPDATE SET quantity = quantity + 1",
+                (proposer_id, card_member_id, rarity, now_iso),
+            )
+        # offer items: proposer → recipient
+        for card_member_id, rarity in offer_items:
+            await db.execute(
+                "UPDATE user_cards SET quantity = quantity - 1 "
+                "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+                (proposer_id, card_member_id, rarity),
+            )
+            await db.execute(
+                "INSERT INTO user_cards "
+                "(owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+                "VALUES (?, ?, ?, 1, ?) "
+                "ON CONFLICT(owner_id, card_member_id, rarity) "
+                "DO UPDATE SET quantity = quantity + 1",
+                (recipient_id, card_member_id, rarity, now_iso),
+            )
+        await db.execute(
+            "UPDATE trade_offers SET status = 'accepted' WHERE id = ?", (offer_id,)
+        )
+        await db.execute(
+            "UPDATE trade_listings SET status = 'completed' WHERE id = ?", (listing_id,)
+        )
+        await db.execute(
+            "UPDATE trade_offers SET status = 'declined' "
+            "WHERE listing_id = ? AND id != ? AND status = 'pending'",
+            (listing_id, offer_id),
+        )
+        await db.commit()
+    return True, None
+
+
+async def decline_offer(offer_id: int, recipient_id: str) -> bool:
+    """Decline an offer (called by listing owner)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT tl.owner_id FROM trade_offers to_ "
+            "JOIN trade_listings tl ON to_.listing_id = tl.id "
+            "WHERE to_.id = ? AND to_.status = 'pending'",
+            (offer_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row[0] != recipient_id:
+            return False
+        result = await db.execute(
+            "UPDATE trade_offers SET status = 'declined' WHERE id = ?", (offer_id,)
+        )
+        await db.commit()
+    return result.rowcount > 0
+
+
+async def cancel_offer(offer_id: int, proposer_id: str) -> bool:
+    """Cancel an offer (called by the proposer)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        result = await db.execute(
+            "UPDATE trade_offers SET status = 'cancelled' "
+            "WHERE id = ? AND proposer_id = ? AND status = 'pending'",
+            (offer_id, proposer_id),
+        )
+        await db.commit()
+    return result.rowcount > 0
+
+
+async def expire_offer(offer_id: int) -> None:
+    """Mark an offer as expired (called on Discord view timeout)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE trade_offers SET status = 'expired' WHERE id = ? AND status = 'pending'",
+            (offer_id,),
+        )
+        await db.commit()
+
+
+async def get_offers_for_listing(listing_id: int) -> list[TradeOfferFull]:
+    """Return all pending offers against a listing."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM trade_offers WHERE listing_id = ? AND status = 'pending'",
+            (listing_id,),
+        ) as cur:
+            ids = [r[0] for r in await cur.fetchall()]
+        return [o for oid in ids if (o := await _load_offer_full(db, oid))]
+
+
+async def get_my_offers(user_id: str) -> list[TradeOfferFull]:
+    """Return all pending offers sent by a user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM trade_offers WHERE proposer_id = ? AND status = 'pending' "
+            "ORDER BY created_at DESC",
+            (user_id,),
+        ) as cur:
+            ids = [r[0] for r in await cur.fetchall()]
+        return [o for oid in ids if (o := await _load_offer_full(db, oid))]
+
+
+async def get_offer_by_id(offer_id: int) -> TradeOfferFull | None:
+    """Load any offer by ID regardless of status."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        return await _load_offer_full(db, offer_id)
+
+
+async def set_offer_discord_message_id(offer_id: int, message_id: str) -> None:
+    """Store the Discord DM message ID on an offer so the web UI can edit it."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE trade_offers SET discord_message_id = ? WHERE id = ?",
+            (message_id, offer_id),
+        )
+        await db.commit()
+
+
 async def create_trade_offer(
     proposer_id: str,
     recipient_id: str,
