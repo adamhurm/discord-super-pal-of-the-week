@@ -127,6 +127,40 @@ CREATE TABLE IF NOT EXISTS pending_trades (
     created_at        TIMESTAMP NOT NULL,
     expires_at        TIMESTAMP NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS trade_listings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id    TEXT NOT NULL REFERENCES members(discord_id),
+    status      TEXT NOT NULL DEFAULT 'active'
+                CHECK(status IN ('active', 'cancelled', 'completed')),
+    ask_note    TEXT,
+    created_at  TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS trade_listing_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id     INTEGER NOT NULL REFERENCES trade_listings(id),
+    card_member_id TEXT NOT NULL REFERENCES members(discord_id),
+    rarity         TEXT NOT NULL CHECK(rarity IN ('common','uncommon','rare','legendary'))
+);
+
+CREATE TABLE IF NOT EXISTS trade_offers (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id          INTEGER NOT NULL REFERENCES trade_listings(id),
+    proposer_id         TEXT NOT NULL REFERENCES members(discord_id),
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending','accepted','declined','expired','cancelled')),
+    created_at          TIMESTAMP NOT NULL,
+    expires_at          TIMESTAMP NOT NULL,
+    discord_message_id  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS trade_offer_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    offer_id       INTEGER NOT NULL REFERENCES trade_offers(id),
+    card_member_id TEXT NOT NULL REFERENCES members(discord_id),
+    rarity         TEXT NOT NULL CHECK(rarity IN ('common','uncommon','rare','legendary'))
+);
 """
 
 
