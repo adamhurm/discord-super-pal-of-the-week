@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace — Bringus Card Game</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; }
+    .page { display: flex; flex-direction: column; min-height: 100vh; }
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+              border-bottom: 1px solid #3f4147; flex-wrap: wrap; }
+    .topbar-avatar { width: 36px; height: 36px; border-radius: 50%; background: #5865f2;
+                     object-fit: cover; }
+    .topbar-avatar-placeholder { width: 36px; height: 36px; border-radius: 50%;
+                                 background: linear-gradient(135deg,#667eea,#764ba2);
+                                 display: flex; align-items: center; justify-content: center;
+                                 color: #fff; font-weight: 700; font-size: 14px; }
+    .topbar-name { font-weight: 600; font-size: 14px; }
+    .nav { display: flex; gap: 4px; margin-left: auto; }
+    .nav-btn { padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600;
+               cursor: pointer; border: none; background: transparent; color: #72767d;
+               text-decoration: none; display: inline-block; }
+    .nav-btn:hover { color: #dcddde; background: #313338; }
+    .nav-btn.active { background: #5865f2; color: #fff; }
+    .badge { background: #ed4245; color: #fff; border-radius: 10px;
+             font-size: 10px; padding: 1px 5px; margin-left: 4px; }
+    .layout { display: flex; flex: 1; padding: 20px 24px; gap: 20px; }
+    .main { flex: 1; min-width: 0; }
+    .sidebar { width: 220px; flex-shrink: 0; }
+    .section-title { font-size: 11px; font-weight: 700; color: #72767d;
+                     letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+    .listing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                    gap: 12px; }
+    .listing-card { background: #2b2d31; border-radius: 8px; padding: 14px;
+                    border: 1px solid #3f4147; }
+    .listing-card:hover { border-color: #5865f2; }
+    .listing-owner { font-size: 11px; color: #72767d; margin-bottom: 8px; }
+    .listing-items { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .listing-item { display: flex; align-items: center; gap: 5px; background: #313338;
+                    border-radius: 4px; padding: 4px 8px; }
+    .listing-item-name { font-size: 11px; color: #dcddde; }
+    .rarity-common { color: #95a5a6; }
+    .rarity-uncommon { color: #27ae60; }
+    .rarity-rare { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .listing-ask { font-size: 11px; color: #72767d; font-style: italic; margin-bottom: 8px; }
+    .listing-offers { font-size: 10px; color: #72767d; margin-bottom: 8px; }
+    .btn { display: inline-block; padding: 5px 12px; border-radius: 4px;
+           font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+    .btn-primary { background: #5865f2; color: #fff; width: 100%; text-align: center; }
+    .btn-primary:hover { background: #4752c4; }
+    .btn-danger { background: #3f4147; color: #ed4245; }
+    .btn-danger:hover { background: #ed4245; color: #fff; }
+    .sidebar-section { background: #2b2d31; border-radius: 8px; padding: 14px;
+                       margin-bottom: 16px; }
+    .my-listing { padding: 8px 0; border-bottom: 1px solid #3f4147; }
+    .my-listing:last-child { border-bottom: none; }
+    .my-listing-items { font-size: 11px; color: #dcddde; margin-bottom: 4px; }
+    .trader-row { display: flex; justify-content: space-between; align-items: center;
+                  padding: 4px 0; font-size: 12px; }
+    .trader-count { color: #72767d; font-size: 11px; }
+    .empty-state { color: #72767d; font-size: 13px; font-style: italic; padding: 20px 0; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .offer-row { background: #2b2d31; border-radius: 6px; padding: 12px;
+                 margin-bottom: 8px; border: 1px solid #3f4147; }
+    .offer-meta { font-size: 11px; color: #72767d; margin-top: 4px; }
+    .offer-status { font-size: 11px; font-weight: 700; }
+    .status-pending { color: #faa61a; }
+    .status-accepted { color: #3ba55c; }
+    .status-declined { color: #ed4245; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+                      z-index: 100; align-items: flex-start; justify-content: center;
+                      padding: 40px 16px; overflow-y: auto; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: #2b2d31; border-radius: 8px; padding: 24px;
+             max-width: 560px; width: 100%; }
+    .modal h2 { font-size: 1rem; margin-bottom: 4px; }
+    .modal-close { float: right; background: none; border: none; color: #72767d;
+                   font-size: 20px; cursor: pointer; margin-top: -4px; }
+    .modal-close:hover { color: #fff; }
+    .modal-listing { background: #313338; border-radius: 6px; padding: 10px;
+                     margin-bottom: 16px; }
+    .modal-section-title { font-size: 11px; color: #72767d; text-transform: uppercase;
+                           letter-spacing: 1px; margin-bottom: 8px; }
+    .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px,1fr));
+                 gap: 8px; max-height: 280px; overflow-y: auto; }
+    .pick-card { background: #313338; border-radius: 6px; padding: 8px; text-align: center;
+                 cursor: pointer; border: 2px solid transparent; }
+    .pick-card:hover { border-color: #5865f2; }
+    .pick-card.selected { border-color: #5865f2; background: #2a2d4a; }
+    .pick-card-avatar { width: 32px; height: 32px; border-radius: 50%;
+                        background: #555; object-fit: cover; margin: 0 auto 4px; }
+    .pick-card-avatar-placeholder { width: 32px; height: 32px; border-radius: 50%;
+                                    background: #555; margin: 0 auto 4px; }
+    .pick-card-name { font-size: 10px; color: #dcddde; white-space: nowrap;
+                      overflow: hidden; text-overflow: ellipsis; }
+    .pick-card-rarity { font-size: 9px; font-weight: 700; }
+    .offer-summary { margin: 12px 0; font-size: 12px; color: #72767d;
+                     min-height: 18px; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    {% if avatar_url %}
+      <img class="topbar-avatar" src="{{ avatar_url }}" alt="">
+    {% else %}
+      <div class="topbar-avatar-placeholder">{{ display_name[0] | upper }}</div>
+    {% endif %}
+    <span class="topbar-name">{{ display_name }}</span>
+    <div class="nav">
+      <a class="nav-btn" href="/collection">My Collection</a>
+      <button class="nav-btn active" onclick="showTab('listings', event)">Marketplace</button>
+      <button class="nav-btn" onclick="showTab('offers', event)">
+        My Offers{% if pending_offer_count %}<span class="badge">{{ pending_offer_count }}</span>{% endif %}
+      </button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="main">
+
+      <!-- Marketplace tab -->
+      <div id="tab-listings" class="tab-panel active">
+        <div class="section-title">Active Listings</div>
+        {% if listings %}
+        <div class="listing-grid">
+          {% for listing in listings %}
+          <div class="listing-card">
+            <div class="listing-owner">Listed by <strong>{{ listing.owner_display_name }}</strong></div>
+            <div class="listing-items">
+              {% for item in listing.items %}
+              <div class="listing-item">
+                <span class="listing-item-name rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% if listing.ask_note %}
+            <div class="listing-ask">Wants: {{ listing.ask_note }}</div>
+            {% else %}
+            <div class="listing-ask">Open to any offer</div>
+            {% endif %}
+            {% if listing.offer_count %}
+            <div class="listing-offers">{{ listing.offer_count }} pending offer{{ 's' if listing.offer_count != 1 else '' }}</div>
+            {% endif %}
+            <button class="btn btn-primary"
+              onclick="openOfferModal({{ listing.id }}, {{ listing.items | tojson }}, '{{ listing.ask_note or '' | e }}', '{{ listing.owner_display_name | e }}')">
+              Make Offer
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">No active listings right now. Right-click a card on your collection page to list it.</div>
+        {% endif %}
+      </div>
+
+      <!-- Offers tab -->
+      <div id="tab-offers" class="tab-panel">
+        <div class="section-title">Offers I've Sent</div>
+        {% if my_offers %}
+          {% for offer in my_offers %}
+          <div class="offer-row">
+            <div>
+              Offering
+              {% for item in offer.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              for
+              {% for item in offer.listing.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              (listed by <strong>{{ offer.listing.owner_display_name }}</strong>)
+            </div>
+            <div class="offer-meta">
+              <span class="offer-status status-{{ offer.status }}">{{ offer.status | upper }}</span>
+              · expires {{ offer.expires_at[:10] }}
+            </div>
+            <form method="post" action="/marketplace/offer/{{ offer.id }}/cancel" style="margin-top:6px">
+              <button class="btn btn-danger" type="submit">Cancel Offer</button>
+            </form>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">You haven't sent any offers yet.</div>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="section-title">My Listings</div>
+        {% if my_listings %}
+          {% for listing in my_listings %}
+          <div class="my-listing">
+            <div class="my-listing-items">
+              {% for item in listing.items %}{{ item.rarity | upper }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </div>
+            {% if listing.ask_note %}
+            <div style="font-size:11px;color:#72767d;margin-bottom:4px;">{{ listing.ask_note }}</div>
+            {% endif %}
+            <form method="post" action="/marketplace/listing/{{ listing.id }}/cancel">
+              <button class="btn btn-danger" type="submit" style="font-size:11px;padding:3px 8px;">Cancel</button>
+            </form>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="font-size:12px;color:#72767d;">No active listings.<br>Right-click a card in your collection to list it.</div>
+        {% endif %}
+      </div>
+
+      {% if active_traders %}
+      <div class="sidebar-section">
+        <div class="section-title">Active Traders</div>
+        {% for trader in active_traders %}
+        <div class="trader-row">
+          <span>{{ trader.display_name }}</span>
+          <span class="trader-count">{{ trader.count }} listing{{ 's' if trader.count != 1 else '' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Offer modal -->
+<div class="modal-backdrop" id="offer-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeOfferModal()">×</button>
+    <h2>Make an Offer</h2>
+    <div style="font-size:12px;color:#72767d;margin-bottom:12px;">Listed by <strong id="modal-owner"></strong></div>
+    <div class="modal-listing">
+      <div class="modal-section-title">They're offering</div>
+      <div id="modal-listing-items" class="listing-items"></div>
+      <div id="modal-ask-note" class="listing-ask" style="display:none;margin-top:4px;"></div>
+    </div>
+    <div class="modal-section-title">Select cards from your collection to offer</div>
+    <div class="pick-grid" id="pick-grid"></div>
+    <div class="offer-summary" id="offer-summary">No cards selected.</div>
+    <form id="offer-form" method="post">
+      <div id="offer-hidden-inputs"></div>
+      <button class="btn btn-primary" type="submit" id="offer-submit" disabled>Send Offer</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  const MY_COLLECTION = {{ my_collection | tojson }};
+  const RARITY_COLORS = {
+    common: '#95a5a6', uncommon: '#27ae60', rare: '#2980b9', legendary: '#f39c12'
+  };
+
+  function showTab(name, event) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    if (event && event.target) event.target.classList.add('active');
+  }
+
+  let _currentListingId = null;
+  let _selectedCards = [];
+
+  function openOfferModal(listingId, listingItems, askNote, ownerName) {
+    _currentListingId = listingId;
+    _selectedCards = [];
+    document.getElementById('modal-owner').textContent = ownerName;
+
+    const itemsEl = document.getElementById('modal-listing-items');
+    itemsEl.innerHTML = listingItems.map(item =>
+      `<div class="listing-item">
+        <span class="listing-item-name" style="color:${RARITY_COLORS[item.rarity]}">${item.rarity.toUpperCase()}</span>
+      </div>`
+    ).join('');
+
+    const askEl = document.getElementById('modal-ask-note');
+    if (askNote) {
+      askEl.textContent = 'Wants: ' + askNote;
+      askEl.style.display = '';
+    } else {
+      askEl.style.display = 'none';
+    }
+
+    const grid = document.getElementById('pick-grid');
+    grid.innerHTML = MY_COLLECTION.map((card, i) =>
+      `<div class="pick-card" data-index="${i}" onclick="togglePickCard(this, ${i})"
+            data-member-id="${card.member_id}" data-rarity="${card.rarity}">
+        ${card.avatar_url
+          ? `<img class="pick-card-avatar" src="${card.avatar_url}" alt="">`
+          : `<div class="pick-card-avatar-placeholder"></div>`}
+        <div class="pick-card-name">${card.display_name}</div>
+        <div class="pick-card-rarity" style="color:${RARITY_COLORS[card.rarity]}">${card.rarity.toUpperCase()}</div>
+        ${card.quantity > 1 ? `<div style="font-size:9px;color:#72767d;">×${card.quantity}</div>` : ''}
+      </div>`
+    ).join('');
+
+    document.getElementById('offer-form').action = `/marketplace/listing/${listingId}/offer`;
+    updateOfferSummary();
+    document.getElementById('offer-modal').classList.add('open');
+  }
+
+  function closeOfferModal() {
+    document.getElementById('offer-modal').classList.remove('open');
+  }
+
+  function togglePickCard(el, index) {
+    const card = MY_COLLECTION[index];
+    const idx = _selectedCards.findIndex(c => c.member_id === card.member_id && c.rarity === card.rarity);
+    if (idx >= 0) {
+      _selectedCards.splice(idx, 1);
+      el.classList.remove('selected');
+    } else {
+      _selectedCards.push(card);
+      el.classList.add('selected');
+    }
+    updateOfferSummary();
+  }
+
+  function updateOfferSummary() {
+    const summaryEl = document.getElementById('offer-summary');
+    const submitEl = document.getElementById('offer-submit');
+    const hiddenEl = document.getElementById('offer-hidden-inputs');
+    if (_selectedCards.length === 0) {
+      summaryEl.textContent = 'No cards selected.';
+      submitEl.disabled = true;
+      hiddenEl.innerHTML = '';
+      return;
+    }
+    summaryEl.textContent = 'Offering: ' + _selectedCards.map(c =>
+      c.rarity.toUpperCase() + ' ' + c.display_name
+    ).join(', ');
+    submitEl.disabled = false;
+    hiddenEl.innerHTML = _selectedCards.map(c =>
+      `<input type="hidden" name="card_member_ids" value="${c.member_id}">` +
+      `<input type="hidden" name="card_rarities" value="${c.rarity}">`
+    ).join('');
+  }
+
+  document.getElementById('offer-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeOfferModal();
+  });
+</script>
+</body>
+</html>
