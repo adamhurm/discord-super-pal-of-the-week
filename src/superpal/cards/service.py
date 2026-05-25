@@ -7,10 +7,20 @@ from typing import cast
 import aiosqlite
 
 from superpal.cards.db import DB_PATH
-from superpal.cards.models import RARITY_ORDER, RARITY_WEIGHTS, MagicLink, PendingTrade, UserCard
+from superpal.cards.models import (
+    RARITY_ORDER,
+    RARITY_WEIGHTS,
+    CardRef,
+    MagicLink,
+    PendingTrade,
+    TradeListingFull,
+    TradeOfferFull,
+    UserCard,
+)
 from superpal.schedule import next_sunday_noon_utc
 
 TRADE_EXPIRY_MINUTES = 10
+TRADE_OFFER_EXPIRY_HOURS = 24
 
 
 def _get_week_start() -> str:
@@ -646,6 +656,130 @@ async def set_member_bio_stats(member_id: str, bio: str, stats: str) -> None:
             (bio or None, stats or None, member_id),
         )
         await db.commit()
+
+
+async def _load_listing_full(db: aiosqlite.Connection, listing_id: int) -> TradeListingFull | None:
+    """Load a TradeListingFull from an open aiosqlite connection."""
+    async with db.execute(
+        "SELECT tl.id, tl.owner_id, m.display_name, tl.status, tl.ask_note, tl.created_at, "
+        "COUNT(DISTINCT to_.id) "
+        "FROM trade_listings tl "
+        "JOIN members m ON tl.owner_id = m.discord_id "
+        "LEFT JOIN trade_offers to_ ON to_.listing_id = tl.id AND to_.status = 'pending' "
+        "WHERE tl.id = ? GROUP BY tl.id",
+        (listing_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    listing_id_, owner_id, owner_name, status, ask_note, created_at, offer_count = row
+    async with db.execute(
+        "SELECT card_member_id, rarity FROM trade_listing_items WHERE listing_id = ?",
+        (listing_id,),
+    ) as cur:
+        items = [CardRef(member_id=r[0], rarity=r[1]) for r in await cur.fetchall()]
+    return TradeListingFull(
+        id=listing_id_,
+        owner_id=owner_id,
+        owner_display_name=owner_name,
+        status=status,
+        ask_note=ask_note,
+        created_at=created_at,
+        items=items,
+        offer_count=offer_count,
+    )
+
+
+async def create_listing(
+    owner_id: str,
+    items: list[CardRef],
+    ask_note: str | None,
+) -> TradeListingFull | str:
+    """Create a trade listing. Returns TradeListingFull or error key."""
+    if not items:
+        return "empty_items"
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+        for item in items:
+            async with db.execute(
+                "SELECT quantity FROM user_cards "
+                "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
+                (owner_id, item.member_id, item.rarity),
+            ) as cur:
+                row = await cur.fetchone()
+            if not row or row[0] < 1:
+                return "no_card"
+        await db.execute(
+            "INSERT INTO trade_listings (owner_id, status, ask_note, created_at) "
+            "VALUES (?, 'active', ?, ?)",
+            (owner_id, ask_note or None, now),
+        )
+        async with db.execute("SELECT last_insert_rowid()") as cur:
+            listing_id = (await cur.fetchone())[0]
+        for item in items:
+            await db.execute(
+                "INSERT INTO trade_listing_items (listing_id, card_member_id, rarity) "
+                "VALUES (?, ?, ?)",
+                (listing_id, item.member_id, item.rarity),
+            )
+        await db.commit()
+        listing = await _load_listing_full(db, listing_id)
+    return listing or "no_card"
+
+
+async def cancel_listing(listing_id: int, owner_id: str) -> bool:
+    """Cancel an active listing. Returns True if found and cancelled."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        result = await db.execute(
+            "UPDATE trade_listings SET status = 'cancelled' "
+            "WHERE id = ? AND owner_id = ? AND status = 'active'",
+            (listing_id, owner_id),
+        )
+        await db.commit()
+    return result.rowcount > 0
+
+
+async def get_active_listings(
+    exclude_owner_id: str | None = None,
+) -> list[TradeListingFull]:
+    """Return all active listings, newest first. Optionally exclude one owner."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        if exclude_owner_id:
+            async with db.execute(
+                "SELECT id FROM trade_listings WHERE status = 'active' AND owner_id != ? "
+                "ORDER BY created_at DESC",
+                (exclude_owner_id,),
+            ) as cur:
+                ids = [r[0] for r in await cur.fetchall()]
+        else:
+            async with db.execute(
+                "SELECT id FROM trade_listings WHERE status = 'active' ORDER BY created_at DESC"
+            ) as cur:
+                ids = [r[0] for r in await cur.fetchall()]
+        results = []
+        for lid in ids:
+            listing = await _load_listing_full(db, lid)
+            if listing:
+                results.append(listing)
+    return results
+
+
+async def get_player_listings(player_id: str) -> list[TradeListingFull]:
+    """Return all active listings for a specific player."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM trade_listings WHERE status = 'active' AND owner_id = ? "
+            "ORDER BY created_at DESC",
+            (player_id,),
+        ) as cur:
+            ids = [r[0] for r in await cur.fetchall()]
+        results = []
+        for lid in ids:
+            listing = await _load_listing_full(db, lid)
+            if listing:
+                results.append(listing)
+    return results
 
 
 async def create_trade_offer(
