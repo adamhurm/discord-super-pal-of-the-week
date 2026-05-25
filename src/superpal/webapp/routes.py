@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -36,7 +37,6 @@ from superpal.cards.service import (
     get_collection,
     get_draw_audit,
     get_my_offers,
-    get_offers_for_listing,
     get_player_listings,
     get_pool_stats,
     reset_draw_log,
@@ -197,7 +197,6 @@ async def create_offer_route(
     if not isinstance(offer, str):
         try:
             from bot import notify_trade_offer as _notify
-            import asyncio
             asyncio.create_task(_notify(offer.id))
         except ImportError:
             pass
@@ -213,7 +212,6 @@ async def accept_offer_route(offer_id: int, request: Request):
     if ok:
         try:
             from bot import edit_offer_dm as _edit
-            import asyncio
             asyncio.create_task(_edit(offer_id, "Trade accepted! Cards have been exchanged."))
         except ImportError:
             pass
@@ -228,7 +226,6 @@ async def decline_offer_route(offer_id: int, request: Request):
     await decline_offer(offer_id, session.user_id)
     try:
         from bot import edit_offer_dm as _edit
-        import asyncio
         asyncio.create_task(_edit(offer_id, "Offer declined."))
     except ImportError:
         pass
