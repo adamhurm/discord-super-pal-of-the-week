@@ -214,3 +214,37 @@ async def init_db() -> None:
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE members ADD COLUMN palycoin_balance INTEGER DEFAULT 0")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS markets (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    created_by    TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending_approval'
+                  CHECK(status IN ('pending_approval','open','closed','resolved','rejected')),
+    outcome       TEXT CHECK(outcome IN ('yes','no')),
+    yes_pool      INTEGER NOT NULL DEFAULT 0,
+    no_pool       INTEGER NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at   DATETIME,
+    resolved_by   TEXT
+)"""
+        )
+        await db.commit()
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS market_bets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_id   INTEGER NOT NULL REFERENCES markets(id),
+    player_id   TEXT NOT NULL,
+    side        TEXT NOT NULL CHECK(side IN ('yes','no')),
+    amount      INTEGER NOT NULL,
+    placed_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(market_id, player_id)
+)"""
+        )
+        await db.commit()
