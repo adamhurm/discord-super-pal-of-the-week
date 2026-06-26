@@ -52,12 +52,23 @@ async def get_palycoin_balance(player_id: str) -> int:
         balance = row["palycoin_balance"] if row["palycoin_balance"] is not None else 0
         if balance != 0:
             return balance
+        await db.execute("BEGIN EXCLUSIVE")
+        async with db.execute(
+            "SELECT palycoin_balance FROM members WHERE discord_id = ?",
+            (player_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        balance = row["palycoin_balance"] if row["palycoin_balance"] is not None else 0
+        if balance != 0:
+            await db.commit()
+            return balance
         async with db.execute(
             "SELECT COUNT(*) AS cnt FROM market_bets WHERE player_id = ?",
             (player_id,),
         ) as cur:
             cnt_row = await cur.fetchone()
         if cnt_row["cnt"] > 0:
+            await db.commit()
             return 0
         await db.execute(
             "UPDATE members SET palycoin_balance = palycoin_balance + 100 "
@@ -136,7 +147,7 @@ async def approve_market(market_id: int, admin_id: str) -> tuple[bool, str]:
     return True, ""
 
 
-async def reject_market(market_id: int, admin_id: str, reason: str) -> tuple[bool, str]:
+async def reject_market(market_id: int, admin_id: str) -> tuple[bool, str]:
     """Set status='rejected'. Return (True, '') or (False, reason)."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
