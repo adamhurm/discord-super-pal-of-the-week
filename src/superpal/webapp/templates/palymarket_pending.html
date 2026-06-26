@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pending Markets — Palymarket</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
+    .back-link { color: #72767d; text-decoration: none; font-size: 13px;
+                 display: inline-block; margin-bottom: 16px; }
+    .back-link:hover { color: #dcddde; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; }
+    .market-card { background: #2b2d31; border-radius: 8px; padding: 16px;
+                   border: 1px solid #3f4147; margin-bottom: 12px; }
+    .market-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .market-desc { font-size: 12px; color: #72767d; margin-bottom: 4px; line-height: 1.5; }
+    .market-meta { font-size: 11px; color: #72767d; margin-bottom: 12px; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn { display: inline-block; padding: 6px 14px; border-radius: 4px;
+           font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+    .btn-success { background: #3ba55c; color: #fff; }
+    .btn-success:hover { background: #2d8049; }
+    .btn-danger { background: #ed4245; color: #fff; }
+    .btn-danger:hover { background: #c03537; }
+    .empty-state { color: #72767d; font-size: 13px; font-style: italic; }
+  </style>
+</head>
+<body>
+  <a class="back-link" href="/palymarket">← Back to Palymarket</a>
+  <h1>Pending Approvals</h1>
+
+  {% if markets %}
+  {% for market in markets %}
+  <div class="market-card">
+    <div class="market-title">{{ market.title }}</div>
+    {% if market.description %}
+    <div class="market-desc">{{ market.description }}</div>
+    {% endif %}
+    <div class="market-meta">Proposed by: {{ market.created_by }}</div>
+    <div class="btn-row">
+      <form method="post" action="/palymarket/{{ market.id }}/approve">
+        <button class="btn btn-success" type="submit">Approve</button>
+      </form>
+      <form method="post" action="/palymarket/{{ market.id }}/reject">
+        <button class="btn btn-danger" type="submit">Reject</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="empty-state">No pending markets to review.</div>
+  {% endif %}
+</body>
+</html>

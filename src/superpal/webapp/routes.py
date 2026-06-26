@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+import superpal.palymarket.service as palymarket_svc
 from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
@@ -21,8 +22,8 @@ from superpal.cards.fight_service import (
     set_fight_cards,
     use_fight_token,
 )
-from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
 from superpal.cards.models import CardRef
+from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
 from superpal.cards.service import (
     accept_offer,
     add_draws,
@@ -710,3 +711,107 @@ async def fight_state_api(fight_id: int, request: Request, fs: str = ""):
         return JSONResponse({"error": "fight_not_found"}, status_code=404)
     state = await get_fight_state(fight_id)
     return JSONResponse(state)
+
+
+# ─── Palymarket routes ───────────────────────────────────────────────────────
+
+
+@router.get("/palymarket", response_class=HTMLResponse)
+async def palymarket_list(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    balance = await palymarket_svc.get_palycoin_balance(session.user_id)
+    markets = await palymarket_svc.list_markets()
+    player_bets = await palymarket_svc.get_player_active_bets(session.user_id)
+    bet_map = {bet.market_id: bet for _, bet in player_bets}
+    return templates.TemplateResponse(request, "palymarket_list.html", {
+        "balance": balance, "markets": markets, "bet_map": bet_map,
+        "is_admin": session.link_type == "admin",
+    })
+
+
+@router.get("/palymarket/pending", response_class=HTMLResponse)
+async def palymarket_pending(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    if session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html")
+    markets = await palymarket_svc.list_pending_markets()
+    return templates.TemplateResponse(request, "palymarket_pending.html", {"markets": markets})
+
+
+@router.post("/palymarket/exchange")
+async def palymarket_exchange(request: Request, pringle_amount: int = Form(...)):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    await palymarket_svc.exchange_pringles(session.user_id, pringle_amount)
+    return RedirectResponse(url="/palymarket", status_code=303)
+
+
+@router.get("/palymarket/{market_id}", response_class=HTMLResponse)
+async def palymarket_detail(request: Request, market_id: int):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    market = await palymarket_svc.get_market(market_id)
+    if market is None:
+        return templates.TemplateResponse(request, "expired.html")
+    bets = await palymarket_svc.get_bets_for_market(market_id)
+    player_bet = await palymarket_svc.get_player_bet(market_id, session.user_id)
+    balance = await palymarket_svc.get_palycoin_balance(session.user_id)
+    return templates.TemplateResponse(request, "palymarket_detail.html", {
+        "market": market, "bets": bets, "player_bet": player_bet,
+        "balance": balance, "is_admin": session.link_type == "admin",
+    })
+
+
+@router.post("/palymarket/{market_id}/bet")
+async def palymarket_bet(
+    request: Request, market_id: int, side: str = Form(...), amount: int = Form(...)
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    await palymarket_svc.place_or_update_bet(market_id, session.user_id, side, amount)
+    return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)
+
+
+@router.post("/palymarket/{market_id}/approve")
+async def palymarket_approve(request: Request, market_id: int):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html")
+    await palymarket_svc.approve_market(market_id, session.user_id)
+    return RedirectResponse(url="/palymarket/pending", status_code=303)
+
+
+@router.post("/palymarket/{market_id}/reject")
+async def palymarket_reject(request: Request, market_id: int):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html")
+    await palymarket_svc.reject_market(market_id, session.user_id)
+    return RedirectResponse(url="/palymarket/pending", status_code=303)
+
+
+@router.post("/palymarket/{market_id}/close")
+async def palymarket_close(request: Request, market_id: int):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html")
+    await palymarket_svc.close_market(market_id, session.user_id)
+    return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)
+
+
+@router.post("/palymarket/{market_id}/resolve")
+async def palymarket_resolve(
+    request: Request, market_id: int, outcome: str = Form(...)
+):
+    session = await get_session_from_request(request)
+    if session is None or session.link_type != "admin":
+        return templates.TemplateResponse(request, "expired.html")
+    await palymarket_svc.resolve_market(market_id, outcome, session.user_id)
+    return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)
