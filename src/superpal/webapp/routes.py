@@ -747,7 +747,9 @@ async def palymarket_exchange(request: Request, pringle_amount: int = Form(...))
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    await palymarket_svc.exchange_pringles(session.user_id, pringle_amount)
+    ok, reason = await palymarket_svc.exchange_pringles(session.user_id, pringle_amount)
+    if not ok:
+        return RedirectResponse(url=f"/palymarket?error={reason}", status_code=303)
     return RedirectResponse(url="/palymarket", status_code=303)
 
 
@@ -775,7 +777,9 @@ async def palymarket_bet(
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    await palymarket_svc.place_or_update_bet(market_id, session.user_id, side, amount)
+    ok, reason = await palymarket_svc.place_or_update_bet(market_id, session.user_id, side, amount)
+    if not ok:
+        return RedirectResponse(url=f"/palymarket/{market_id}?error={reason}", status_code=303)
     return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)
 
 
@@ -784,7 +788,9 @@ async def palymarket_approve(request: Request, market_id: int):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html")
-    await palymarket_svc.approve_market(market_id, session.user_id)
+    ok, reason = await palymarket_svc.approve_market(market_id, session.user_id)
+    if not ok:
+        return RedirectResponse(url=f"/palymarket/pending?error={reason}", status_code=303)
     return RedirectResponse(url="/palymarket/pending", status_code=303)
 
 
@@ -793,7 +799,9 @@ async def palymarket_reject(request: Request, market_id: int):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html")
-    await palymarket_svc.reject_market(market_id, session.user_id)
+    ok, reason = await palymarket_svc.reject_market(market_id, session.user_id)
+    if not ok:
+        return RedirectResponse(url=f"/palymarket/pending?error={reason}", status_code=303)
     return RedirectResponse(url="/palymarket/pending", status_code=303)
 
 
@@ -802,7 +810,9 @@ async def palymarket_close(request: Request, market_id: int):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html")
-    await palymarket_svc.close_market(market_id, session.user_id)
+    ok, reason = await palymarket_svc.close_market(market_id, session.user_id)
+    if not ok:
+        return RedirectResponse(url=f"/palymarket/{market_id}?error={reason}", status_code=303)
     return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)
 
 
@@ -813,5 +823,7 @@ async def palymarket_resolve(
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html")
-    await palymarket_svc.resolve_market(market_id, outcome, session.user_id)
+    result = await palymarket_svc.resolve_market(market_id, outcome, session.user_id)
+    if "error" in result:
+        return RedirectResponse(url=f"/palymarket/{market_id}?error={result['error']}", status_code=303)
     return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)

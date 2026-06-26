@@ -71,6 +71,12 @@
 <body>
   <a class="back-link" href="/palymarket">← Back to Palymarket</a>
 
+  {% if request.query_params.get('error') %}
+  <div style="background:#ed4245;color:white;padding:10px 16px;border-radius:6px;margin-bottom:16px;">
+    Error: {{ request.query_params.get('error') | replace('_', ' ') }}
+  </div>
+  {% endif %}
+
   <h1>{{ market.title }}</h1>
   {% if market.description %}
   <div class="market-desc">{{ market.description }}</div>
