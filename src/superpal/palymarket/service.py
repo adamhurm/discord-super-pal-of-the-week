@@ -234,6 +234,8 @@ async def place_or_update_bet(
     market_id: int, player_id: str, side: str, amount: int
 ) -> tuple[bool, str]:
     """Place or update a bet. One bet per player per market."""
+    if amount <= 0:
+        return (False, "invalid_amount")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await db.execute("BEGIN EXCLUSIVE")

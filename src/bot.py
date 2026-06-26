@@ -799,7 +799,8 @@ async def propose_trade_command(interaction: discord.Interaction) -> None:
     )
     try:
         await interaction.user.send(
-            f"Open this link to access the trade marketplace (valid 24 hours after first click):\n{url}\n\n"
+            f"Open this link to access the trade marketplace "
+            f"(valid 24 hours after first click):\n{url}\n\n"
             "Once open, click **Marketplace** in the top nav to browse listings and make offers. "
             "Right-click any card in your collection to list it for trade."
         )
@@ -1728,7 +1729,7 @@ async def palymarket_bet(
     interaction: discord.Interaction,
     market_id: int,
     side: app_commands.Choice[str],
-    amount: int,
+    amount: app_commands.Range[int, 1],
 ) -> None:
     await interaction.response.defer(ephemeral=True)
     await palymarket_svc.get_palycoin_balance(str(interaction.user.id))
@@ -1898,6 +1899,9 @@ async def on_app_command_error(
             await interaction.response.send_message(
                 "You don't have permission to use this command.", ephemeral=True
             )
+    else:
+        log.exception("Unhandled app command error", exc_info=error)
+        raise error
 
 
 ################

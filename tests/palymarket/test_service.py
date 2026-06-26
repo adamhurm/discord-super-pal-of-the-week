@@ -229,6 +229,30 @@ async def test_bet_insufficient_palycoins_fails(db):
     assert reason == "insufficient_palycoins"
 
 
+@pytest.mark.asyncio
+async def test_bet_nonpositive_amount_fails(db):
+    """Non-positive bet amounts are rejected before touching DB."""
+    db_mod, svc = db
+    await _insert_member(db_mod.DB_PATH, "u1", pringle_balance=200)
+    # Trigger starting grant (100 Palycoins)
+    bal = await svc.get_palycoin_balance("u1")
+    assert bal == 100
+    market = await svc.propose_market("Test", "Desc", "u1")
+    await svc.approve_market(market.id, "admin1")
+
+    ok, reason = await svc.place_or_update_bet(market.id, "u1", "yes", 0)
+    assert not ok
+    assert reason == "invalid_amount"
+
+    ok, reason = await svc.place_or_update_bet(market.id, "u1", "yes", -50)
+    assert not ok
+    assert reason == "invalid_amount"
+
+    # Balance unchanged
+    bal_after = await svc.get_palycoin_balance("u1")
+    assert bal_after == 100
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
