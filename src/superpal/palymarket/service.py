@@ -9,6 +9,45 @@ from superpal.cards.db import DB_PATH
 from superpal.palymarket.models import Bet, Market
 
 
+async def record_probability_snapshot(market_id: int) -> None:
+    """Snapshot current YES% into market_probability_history."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT yes_pool, no_pool FROM markets WHERE id = ?",
+            (market_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            return
+        total = row["yes_pool"] + row["no_pool"]
+        yes_pct = row["yes_pool"] / total if total > 0 else 0.5
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            "INSERT INTO market_probability_history "
+            "(market_id, yes_pct, yes_pool, no_pool, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (market_id, yes_pct, row["yes_pool"], row["no_pool"], now),
+        )
+        await db.commit()
+
+
+async def get_probability_history(market_id: int) -> list[tuple[float, datetime]]:
+    """Return (yes_pct, recorded_at) pairs ordered by time."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT yes_pct, recorded_at FROM market_probability_history "
+            "WHERE market_id = ? ORDER BY recorded_at",
+            (market_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        (row["yes_pct"], datetime.fromisoformat(row["recorded_at"]))
+        for row in rows
+    ]
+
+
 def _parse_market(row: aiosqlite.Row) -> Market:
     return Market(
         id=row["id"],
@@ -305,6 +344,7 @@ async def place_or_update_bet(
             (market_id, player_id, side, amount, now),
         )
         await db.commit()
+    await record_probability_snapshot(market_id)
     return True, ""
 
 
