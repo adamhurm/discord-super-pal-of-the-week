@@ -452,3 +452,144 @@ async def get_player_active_bets(player_id: str) -> list[tuple[Market, Bet]]:
 async def list_pending_markets() -> list[Market]:
     """Return all markets with status='pending_approval'."""
     return await list_markets(status="pending_approval")
+
+
+async def get_player_portfolio(player_id: str) -> dict:
+    """Return active positions and resolved history for portfolio page."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT
+                m.id AS m_id, m.title, m.description, m.created_by, m.status,
+                m.outcome, m.yes_pool, m.no_pool, m.created_at,
+                m.resolved_at, m.resolved_by,
+                b.side, b.amount, b.placed_at
+            FROM market_bets b
+            JOIN markets m ON m.id = b.market_id
+            WHERE b.player_id = ?
+              AND m.status NOT IN ('rejected', 'pending_approval')
+            ORDER BY b.placed_at DESC
+            """,
+            (player_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+
+    active: list[dict] = []
+    resolved: list[dict] = []
+    for row in rows:
+        market = Market(
+            id=row["m_id"],
+            title=row["title"],
+            description=row["description"],
+            created_by=row["created_by"],
+            status=row["status"],
+            outcome=row["outcome"],
+            yes_pool=row["yes_pool"],
+            no_pool=row["no_pool"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            resolved_at=(
+                datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
+            ),
+            resolved_by=row["resolved_by"],
+        )
+        side = row["side"]
+        amount = row["amount"]
+        total = market.yes_pool + market.no_pool
+        yes_pct = round(market.yes_pool / total * 100) if total > 0 else 50
+
+        if market.status in ("open", "closed"):
+            winning_pool = market.yes_pool if side == "yes" else market.no_pool
+            estimated_payout = (
+                math.floor(amount / winning_pool * total) if winning_pool > 0 else 0
+            )
+            active.append(
+                {
+                    "market": market,
+                    "side": side,
+                    "amount": amount,
+                    "yes_pct": yes_pct,
+                    "estimated_payout": estimated_payout,
+                }
+            )
+        elif market.status == "resolved":
+            won = market.outcome == side
+            if won:
+                winning_pool = market.yes_pool if side == "yes" else market.no_pool
+                amount_returned = (
+                    math.floor(amount / winning_pool * total) if winning_pool > 0 else 0
+                )
+            else:
+                amount_returned = 0
+            resolved.append(
+                {
+                    "market": market,
+                    "side": side,
+                    "amount": amount,
+                    "outcome": market.outcome,
+                    "amount_returned": amount_returned,
+                    "won": won,
+                }
+            )
+
+    return {"active": active, "resolved": resolved}
+
+
+async def get_recent_activity(limit: int = 50) -> list[dict]:
+    """Return recent bets across all markets, newest first, with display names."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT mb.player_id, mb.side, mb.amount, mb.placed_at,
+                   m.id AS market_id, m.title AS market_title,
+                   mem.display_name
+            FROM market_bets mb
+            JOIN markets m ON m.id = mb.market_id
+            JOIN members mem ON mem.discord_id = mb.player_id
+            ORDER BY mb.placed_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "display_name": row["display_name"],
+            "player_id": row["player_id"],
+            "side": row["side"],
+            "amount": row["amount"],
+            "market_id": row["market_id"],
+            "market_title": row["market_title"],
+            "placed_at": datetime.fromisoformat(row["placed_at"]),
+        }
+        for row in rows
+    ]
+
+
+async def get_bets_for_market_with_names(market_id: int) -> list[dict]:
+    """Return bets for a market with player display names, ordered by placed_at."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT mb.player_id, mb.side, mb.amount, mb.placed_at,
+                   mem.display_name
+            FROM market_bets mb
+            LEFT JOIN members mem ON mem.discord_id = mb.player_id
+            WHERE mb.market_id = ?
+            ORDER BY mb.placed_at
+            """,
+            (market_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "player_id": row["player_id"],
+            "display_name": row["display_name"] or row["player_id"],
+            "side": row["side"],
+            "amount": row["amount"],
+            "placed_at": datetime.fromisoformat(row["placed_at"]),
+        }
+        for row in rows
+    ]
