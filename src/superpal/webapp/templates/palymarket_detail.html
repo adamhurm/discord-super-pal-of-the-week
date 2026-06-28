@@ -104,12 +104,12 @@
     <div><h1>Palymarket</h1></div>
   </div>
   <nav class="subnav">
-    <a class="subnav-link" href="/palymarket">Markets</a>
-    <a class="subnav-link" href="/palymarket/portfolio">Portfolio</a>
-    <a class="subnav-link" href="/palymarket/activity">Activity</a>
-    <a class="subnav-link" href="/palymarket/propose">Propose</a>
+    <a class="subnav-link {% if active_tab == 'markets' %}active{% endif %}" href="/palymarket">Markets</a>
+    <a class="subnav-link {% if active_tab == 'portfolio' %}active{% endif %}" href="/palymarket/portfolio">Portfolio</a>
+    <a class="subnav-link {% if active_tab == 'activity' %}active{% endif %}" href="/palymarket/activity">Activity</a>
+    <a class="subnav-link {% if active_tab == 'propose' %}active{% endif %}" href="/palymarket/propose">Propose</a>
     {% if is_admin %}
-    <a class="subnav-link" href="/palymarket/pending">
+    <a class="subnav-link {% if active_tab == 'pending' %}active{% endif %}" href="/palymarket/pending">
       Pending{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
     </a>
     {% endif %}
