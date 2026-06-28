@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exchange — Pal Economy</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
+    .back-link { color: #72767d; text-decoration: none; font-size: 13px;
+                 display: inline-block; margin-bottom: 16px; }
+    .back-link:hover { color: #dcddde; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
+    .balances { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .balance-card { flex: 1; min-width: 120px; background: #2b2d31; border-radius: 8px;
+                    padding: 16px; text-align: center; border: 1px solid #3f4147; }
+    .balance-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                     text-transform: uppercase; margin-bottom: 6px; color: #72767d; }
+    .balance-amount { font-size: 1.8rem; font-weight: 700; color: #fff; }
+    .balance-icon { font-size: 1.2rem; margin-bottom: 4px; }
+    .boin-card { border-color: #faa61a40; }
+    .boin-label { color: #faa61a; }
+    .pringle-card { border-color: #3ba55c40; }
+    .pringle-label { color: #3ba55c; }
+    .palycoin-card { border-color: #5865f240; }
+    .palycoin-label { color: #5865f2; }
+    .section { background: #2b2d31; border-radius: 8px; padding: 20px;
+               margin-bottom: 16px; border: 1px solid #3f4147; }
+    .section-title { font-size: 11px; font-weight: 700; color: #72767d;
+                     letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+    .exchange-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 11px; color: #72767d; font-weight: 600; }
+    select, input[type="number"] { background: #313338; border: 1px solid #3f4147;
+                                   border-radius: 4px; color: #dcddde; padding: 8px 10px;
+                                   font-size: 13px; }
+    select { min-width: 130px; }
+    input[type="number"] { width: 110px; }
+    .arrow { font-size: 1.2rem; color: #72767d; padding-bottom: 8px; }
+    .btn { display: inline-block; padding: 8px 18px; border-radius: 4px;
+           font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+    .btn-primary { background: #5865f2; color: #fff; }
+    .btn-primary:hover { background: #4752c4; }
+    .preview { font-size: 13px; color: #72767d; padding-bottom: 8px; min-width: 160px; }
+    .preview span { color: #fff; font-weight: 700; }
+    .rates { margin-top: 16px; padding-top: 16px; border-top: 1px solid #3f4147; }
+    .rates-title { font-size: 11px; font-weight: 700; color: #72767d;
+                   letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+    .rate-row { font-size: 12px; color: #b9bbbe; margin-bottom: 4px; }
+    .banner { border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; font-size: 13px; }
+    .banner-success { background: #3ba55c20; border: 1px solid #3ba55c40; color: #3ba55c; }
+    .banner-error { background: #ed424520; border: 1px solid #ed424540; color: #ed4245; }
+  </style>
+</head>
+<body>
+  <a class="back-link" href="/">← Back</a>
+
+  {% if request.query_params.get('success') %}
+  <div class="banner banner-success">{{ request.query_params.get('success') | replace('+', ' ') }}</div>
+  {% endif %}
+  {% if request.query_params.get('error') %}
+  <div class="banner banner-error">Error: {{ request.query_params.get('error') | replace('_', ' ') }}</div>
+  {% endif %}
+
+  <h1>Pal Economy</h1>
+
+  <div class="balances">
+    <div class="balance-card boin-card">
+      <div class="balance-icon">🪙</div>
+      <div class="balance-label boin-label">Boins</div>
+      <div class="balance-amount">{{ boins }}</div>
+    </div>
+    <div class="balance-card pringle-card">
+      <div class="balance-icon">🥫</div>
+      <div class="balance-label pringle-label">Pringles</div>
+      <div class="balance-amount">{{ pringles }}</div>
+    </div>
+    <div class="balance-card palycoin-card">
+      <div class="balance-icon">📈</div>
+      <div class="balance-label palycoin-label">Palycoins</div>
+      <div class="balance-amount">{{ palycoins }}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Exchange</div>
+    <form method="post" action="/economy/exchange" class="exchange-form">
+      <div class="form-group">
+        <label for="from_currency">From</label>
+        <select id="from_currency" name="from_currency" onchange="updatePreview()">
+          <option value="boins">🪙 Boins</option>
+          <option value="pringles">🥫 Pringles</option>
+          <option value="palycoins">📈 Palycoins</option>
+        </select>
+      </div>
+      <div class="arrow">→</div>
+      <div class="form-group">
+        <label for="to_currency">To</label>
+        <select id="to_currency" name="to_currency" onchange="updatePreview()">
+          <option value="pringles">🥫 Pringles</option>
+          <option value="boins">🪙 Boins</option>
+          <option value="palycoins">📈 Palycoins</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="amount">Amount</label>
+        <input type="number" id="amount" name="amount" min="1" value="1" oninput="updatePreview()">
+      </div>
+      <div class="preview" id="preview">You receive: <span id="preview-amount">—</span></div>
+      <button class="btn btn-primary" type="submit">Exchange</button>
+    </form>
+
+    <div class="rates">
+      <div class="rates-title">Exchange Rates</div>
+      <div class="rate-row">1 Boin = 4 Pringles = 2 Palycoins</div>
+      <div class="rate-row">1 Palycoin = 2 Pringles = 0.5 Boins (need ≥2)</div>
+      <div class="rate-row">4 Pringles = 1 Boin · 2 Pringles = 1 Palycoin</div>
+    </div>
+  </div>
+
+  <script>
+    const RATES = {
+      "boins:pringles": [4, 1],
+      "boins:palycoins": [2, 1],
+      "pringles:boins": [1, 4],
+      "pringles:palycoins": [1, 2],
+      "palycoins:boins": [1, 2],
+      "palycoins:pringles": [2, 1],
+    };
+    function updatePreview() {
+      const from = document.getElementById("from_currency").value;
+      const to = document.getElementById("to_currency").value;
+      const amount = parseInt(document.getElementById("amount").value) || 0;
+      const el = document.getElementById("preview-amount");
+      if (from === to) { el.textContent = "—"; return; }
+      const rate = RATES[from + ":" + to];
+      if (!rate) { el.textContent = "—"; return; }
+      const received = Math.floor(amount * rate[0] / rate[1]);
+      el.textContent = received > 0 ? received : "0 (amount too small)";
+    }
+    updatePreview();
+  </script>
+</body>
+</html>

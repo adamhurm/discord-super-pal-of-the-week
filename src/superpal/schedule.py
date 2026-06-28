@@ -1,6 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
 
+def next_noon_utc() -> datetime:
+    """Return the next noon UTC that is strictly in the future (today or tomorrow)."""
+    now = datetime.now(timezone.utc)
+    candidate = datetime(now.year, now.month, now.day, 12, 0, tzinfo=timezone.utc)
+    if now >= candidate:
+        candidate += timedelta(days=1)
+    return candidate
+
+
 def next_sunday_noon_utc() -> datetime:
     """Return the next Sunday noon UTC that is strictly in the future."""
     now = datetime.now(timezone.utc)

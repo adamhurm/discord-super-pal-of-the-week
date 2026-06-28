@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import superpal.palymarket.service as palymarket_svc
+from superpal.economy import boin_service, exchange_service
 from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
@@ -747,10 +748,47 @@ async def palymarket_exchange(request: Request, pringle_amount: int = Form(...))
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    ok, reason = await palymarket_svc.exchange_pringles(session.user_id, pringle_amount)
+    ok, reason, _ = await exchange_service.exchange(
+        session.user_id, exchange_service.PRINGLES, exchange_service.PALYCOINS, pringle_amount
+    )
     if not ok:
         return RedirectResponse(url=f"/palymarket?error={reason}", status_code=303)
     return RedirectResponse(url="/palymarket", status_code=303)
+
+
+@router.get("/economy", response_class=HTMLResponse)
+async def economy(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    boins = await boin_service.get_balance(session.user_id)
+    from superpal.cards.pringle_service import get_balance as get_pringle_balance
+    pringles = await get_pringle_balance(session.user_id)
+    palycoins = await palymarket_svc.get_palycoin_balance(session.user_id)
+    return templates.TemplateResponse(request, "economy.html", {
+        "boins": boins, "pringles": pringles, "palycoins": palycoins,
+    })
+
+
+@router.post("/economy/exchange")
+async def economy_exchange(
+    request: Request,
+    from_currency: str = Form(...),
+    to_currency: str = Form(...),
+    amount: int = Form(...),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    ok, reason, received = await exchange_service.exchange(
+        session.user_id, from_currency, to_currency, amount
+    )
+    if not ok:
+        return RedirectResponse(url=f"/economy?error={reason}", status_code=303)
+    return RedirectResponse(
+        url=f"/economy?success=Exchanged+{amount}+{from_currency}+for+{received}+{to_currency}",
+        status_code=303,
+    )
 
 
 @router.get("/palymarket/{market_id}", response_class=HTMLResponse)
