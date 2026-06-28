@@ -3,60 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pending Markets — Palymarket</title>
+  <title>Pending Approvals — Palymarket</title>
   <link rel="icon" href="/static/favicon.ico">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
-    .back-link { color: #72767d; text-decoration: none; font-size: 13px;
-                 display: inline-block; margin-bottom: 16px; }
-    .back-link:hover { color: #dcddde; }
-    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; }
-    .market-card { background: #2b2d31; border-radius: 8px; padding: 16px;
-                   border: 1px solid #3f4147; margin-bottom: 12px; }
-    .market-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 4px; }
-    .market-desc { font-size: 12px; color: #72767d; margin-bottom: 4px; line-height: 1.5; }
-    .market-meta { font-size: 11px; color: #72767d; margin-bottom: 12px; }
-    .btn-row { display: flex; gap: 8px; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; min-height: 100vh; }
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 16px 24px;
+              border-bottom: 1px solid #3f4147; }
+    .topbar h1 { font-size: 1.3rem; font-weight: 700; }
+    .subnav { display: flex; gap: 0; border-bottom: 1px solid #3f4147;
+              padding: 0 24px; background: #1e1f22; }
+    .subnav-link { display: inline-block; padding: 12px 16px; font-size: 13px;
+                   font-weight: 600; color: #72767d; text-decoration: none;
+                   border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .subnav-link:hover { color: #dcddde; }
+    .subnav-link.active { color: #fff; border-bottom-color: #5865f2; }
+    .badge { display: inline-block; background: #ed4245; color: #fff; border-radius: 10px;
+             font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px;
+             vertical-align: middle; }
+    .page { padding: 24px; max-width: 700px; }
+    .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                     text-transform: uppercase; color: #72767d; margin-bottom: 12px; }
+    .pending-card { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                    padding: 16px; margin-bottom: 10px; }
+    .pc-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .pc-desc { font-size: 12px; color: #72767d; margin-bottom: 12px; line-height: 1.4; }
+    .pc-meta { font-size: 11px; color: #72767d; margin-bottom: 10px; }
+    .pc-actions { display: flex; gap: 8px; }
     .btn { display: inline-block; padding: 6px 14px; border-radius: 4px;
            font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
-    .btn-success { background: #3ba55c; color: #fff; }
-    .btn-success:hover { background: #2d8049; }
+    .btn-primary { background: #5865f2; color: #fff; }
+    .btn-primary:hover { background: #4752c4; }
     .btn-danger { background: #ed4245; color: #fff; }
     .btn-danger:hover { background: #c03537; }
-    .empty-state { color: #72767d; font-size: 13px; font-style: italic; }
+    .empty { color: #72767d; font-size: 13px; font-style: italic; }
+    .flash-error { background: #ed424520; border: 1px solid #ed424540; color: #ed4245;
+                   padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <a class="back-link" href="/palymarket">← Back to Palymarket</a>
-  <h1>Pending Approvals</h1>
+  <div class="topbar"><div><h1>Palymarket</h1></div></div>
+  <nav class="subnav">
+    <a class="subnav-link" href="/palymarket">Markets</a>
+    <a class="subnav-link" href="/palymarket/portfolio">Portfolio</a>
+    <a class="subnav-link" href="/palymarket/activity">Activity</a>
+    <a class="subnav-link" href="/palymarket/propose">Propose</a>
+    <a class="subnav-link active" href="/palymarket/pending">
+      Pending{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
+    </a>
+  </nav>
 
-  {% if request.query_params.get('error') %}
-  <div style="background:#ed4245;color:white;padding:10px 16px;border-radius:6px;margin-bottom:16px;">
-    Error: {{ request.query_params.get('error') | replace('_', ' ') }}
-  </div>
-  {% endif %}
-
-  {% if markets %}
-  {% for market in markets %}
-  <div class="market-card">
-    <div class="market-title">{{ market.title }}</div>
-    {% if market.description %}
-    <div class="market-desc">{{ market.description }}</div>
+  <div class="page">
+    {% if request.query_params.get('error') %}
+    <div class="flash-error">Error: {{ request.query_params.get('error') | replace('_', ' ') }}</div>
     {% endif %}
-    <div class="market-meta">Proposed by: {{ market.created_by }}</div>
-    <div class="btn-row">
-      <form method="post" action="/palymarket/{{ market.id }}/approve">
-        <button class="btn btn-success" type="submit">Approve</button>
-      </form>
-      <form method="post" action="/palymarket/{{ market.id }}/reject">
-        <button class="btn btn-danger" type="submit">Reject</button>
-      </form>
+
+    <div class="section-label">Pending Approval ({{ markets | length }})</div>
+
+    {% if markets %}
+    {% for market in markets %}
+    <div class="pending-card">
+      <div class="pc-title">{{ market.title }}</div>
+      {% if market.description %}<div class="pc-desc">{{ market.description }}</div>{% endif %}
+      <div class="pc-meta">Proposed by {{ market.created_by }} · {{ market.created_at.strftime('%b %d %Y') }}</div>
+      <div class="pc-actions">
+        <form method="post" action="/palymarket/{{ market.id }}/approve">
+          <button class="btn btn-primary" type="submit">Approve</button>
+        </form>
+        <form method="post" action="/palymarket/{{ market.id }}/reject">
+          <button class="btn btn-danger" type="submit">Reject</button>
+        </form>
+      </div>
     </div>
+    {% endfor %}
+    {% else %}
+    <p class="empty">No markets awaiting approval.</p>
+    {% endif %}
   </div>
-  {% endfor %}
-  {% else %}
-  <div class="empty-state">No pending markets to review.</div>
-  {% endif %}
 </body>
 </html>

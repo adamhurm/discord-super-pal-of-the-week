@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio — Palymarket</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; min-height: 100vh; }
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 16px 24px;
+              border-bottom: 1px solid #3f4147; }
+    .topbar h1 { font-size: 1.3rem; font-weight: 700; }
+    .subnav { display: flex; gap: 0; border-bottom: 1px solid #3f4147;
+              padding: 0 24px; background: #1e1f22; }
+    .subnav-link { display: inline-block; padding: 12px 16px; font-size: 13px;
+                   font-weight: 600; color: #72767d; text-decoration: none;
+                   border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .subnav-link:hover { color: #dcddde; }
+    .subnav-link.active { color: #fff; border-bottom-color: #5865f2; }
+    .badge { display: inline-block; background: #ed4245; color: #fff; border-radius: 10px;
+             font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px;
+             vertical-align: middle; }
+    .page { padding: 24px; max-width: 800px; }
+    .summary { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .summary-card { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                    padding: 14px 20px; min-width: 140px; }
+    .summary-val { font-size: 1.6rem; font-weight: 700; color: #fff; }
+    .summary-label { font-size: 11px; color: #72767d; margin-top: 2px;
+                     text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+    .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                     text-transform: uppercase; color: #72767d; margin: 20px 0 12px; }
+    .pos-card { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                padding: 14px 16px; margin-bottom: 8px; display: flex;
+                align-items: center; gap: 14px; flex-wrap: wrap; }
+    .pos-title { font-size: 13px; font-weight: 700; color: #fff; flex: 1; min-width: 140px; }
+    .pos-title a { color: inherit; text-decoration: none; }
+    .pos-title a:hover { color: #5865f2; }
+    .pos-side-yes { color: #3ba55c; font-size: 12px; font-weight: 700; }
+    .pos-side-no { color: #ed4245; font-size: 12px; font-weight: 700; }
+    .pos-pct { font-size: 12px; color: #72767d; }
+    .pos-payout { font-size: 12px; color: #96a0ff; }
+    .pos-amount { font-size: 12px; color: #b9bbbe; }
+    .res-card { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                padding: 12px 16px; margin-bottom: 8px; display: flex;
+                align-items: center; gap: 14px; flex-wrap: wrap; opacity: 0.8; }
+    .res-title { font-size: 13px; color: #b9bbbe; flex: 1; min-width: 140px; }
+    .res-title a { color: inherit; text-decoration: none; }
+    .res-title a:hover { color: #5865f2; }
+    .win-badge { padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+    .win-yes { background: #3ba55c20; color: #3ba55c; }
+    .win-no { background: #ed424520; color: #ed4245; }
+    .empty { color: #72767d; font-size: 13px; font-style: italic; padding: 12px 0; }
+  </style>
+</head>
+<body>
+  <div class="topbar"><div><h1>Palymarket</h1></div></div>
+  <nav class="subnav">
+    <a class="subnav-link {% if active_tab == 'markets' %}active{% endif %}" href="/palymarket">Markets</a>
+    <a class="subnav-link {% if active_tab == 'portfolio' %}active{% endif %}" href="/palymarket/portfolio">Portfolio</a>
+    <a class="subnav-link {% if active_tab == 'activity' %}active{% endif %}" href="/palymarket/activity">Activity</a>
+    <a class="subnav-link {% if active_tab == 'propose' %}active{% endif %}" href="/palymarket/propose">Propose</a>
+    {% if is_admin %}
+    <a class="subnav-link {% if active_tab == 'pending' %}active{% endif %}" href="/palymarket/pending">
+      Pending{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
+    </a>
+    {% endif %}
+  </nav>
+
+  <div class="page">
+    <div class="summary">
+      <div class="summary-card">
+        <div class="summary-val">{{ active | length }}</div>
+        <div class="summary-label">Open Positions</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-val">{{ total_staked }}</div>
+        <div class="summary-label">Palycoins Staked</div>
+      </div>
+    </div>
+
+    <div class="section-label">Active Positions</div>
+    {% if active %}
+    {% for pos in active %}
+    <div class="pos-card">
+      <div class="pos-title"><a href="/palymarket/{{ pos.market.id }}">{{ pos.market.title }}</a></div>
+      <span class="pos-side-{{ pos.side }}">{{ pos.side | upper }} {{ pos.amount }}</span>
+      <span class="pos-pct">{{ pos.yes_pct }}% YES</span>
+      <span class="pos-payout">~{{ pos.estimated_payout }} if {{ pos.side | upper }} wins</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="empty">No active positions. <a href="/palymarket" style="color:#5865f2">Browse markets</a> to place a bet.</p>
+    {% endif %}
+
+    {% if resolved %}
+    <div class="section-label">Resolved History</div>
+    {% for r in resolved %}
+    <div class="res-card">
+      <div class="res-title"><a href="/palymarket/{{ r.market.id }}">{{ r.market.title }}</a></div>
+      <span class="pos-side-{{ r.side }}">{{ r.side | upper }} {{ r.amount }}</span>
+      <span class="win-badge {% if r.won %}win-yes{% else %}win-no{% endif %}">
+        {% if r.won %}WON +{{ r.amount_returned }}{% else %}LOST{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+</body>
+</html>
