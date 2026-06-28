@@ -80,6 +80,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 CLIPPY_ROLE_ID = 1085646770006151259
 
+
+def _is_clippy(interaction: discord.Interaction) -> bool:
+    role_ids = [r.id for r in getattr(interaction.user, "roles", [])]
+    return CLIPPY_ROLE_ID in role_ids
+
+
 # Shared guild member cache — set in on_ready, read by the webapp admin sync route
 _guild_members_cache: list[dict] | None = None
 
@@ -1833,7 +1839,7 @@ async def palymarket_exchange(interaction: discord.Interaction, amount: int) -> 
 
 @bot.tree.command(name="palymarket-approve", description="[Admin] Approve a pending market")
 @app_commands.describe(market_id="Market ID to approve")
-@app_commands.checks.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+@app_commands.check(_is_clippy)
 async def palymarket_approve(interaction: discord.Interaction, market_id: int) -> None:
     await interaction.response.defer(ephemeral=True)
     success, reason = await palymarket_svc.approve_market(market_id, str(interaction.user.id))
@@ -1851,7 +1857,7 @@ async def palymarket_approve(interaction: discord.Interaction, market_id: int) -
 
 @bot.tree.command(name="palymarket-reject", description="[Admin] Reject a pending market")
 @app_commands.describe(market_id="Market ID to reject", reason="Reason for rejection")
-@app_commands.checks.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+@app_commands.check(_is_clippy)
 async def palymarket_reject(
     interaction: discord.Interaction, market_id: int, reason: str
 ) -> None:
@@ -1867,7 +1873,7 @@ async def palymarket_reject(
 
 @bot.tree.command(name="palymarket-close", description="[Admin] Close a market to new bets")
 @app_commands.describe(market_id="Market ID to close")
-@app_commands.checks.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+@app_commands.check(_is_clippy)
 async def palymarket_close(interaction: discord.Interaction, market_id: int) -> None:
     await interaction.response.defer(ephemeral=True)
     success, reason = await palymarket_svc.close_market(market_id, str(interaction.user.id))
@@ -1891,7 +1897,7 @@ async def palymarket_close(interaction: discord.Interaction, market_id: int) -> 
         app_commands.Choice(name="No", value="no"),
     ]
 )
-@app_commands.checks.has_role(superpal_static.SUPER_PAL_ROLE_NAME)
+@app_commands.check(_is_clippy)
 async def palymarket_resolve(
     interaction: discord.Interaction,
     market_id: int,
