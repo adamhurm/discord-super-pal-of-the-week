@@ -253,3 +253,14 @@ async def init_db() -> None:
 )"""
         )
         await db.commit()
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS market_probability_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_id   INTEGER NOT NULL REFERENCES markets(id),
+    yes_pct     REAL NOT NULL,
+    yes_pool    INTEGER NOT NULL,
+    no_pool     INTEGER NOT NULL,
+    recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)"""
+        )
+        await db.commit()
