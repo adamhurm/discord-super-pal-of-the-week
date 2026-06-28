@@ -1818,24 +1818,6 @@ async def palymarket_balance(interaction: discord.Interaction) -> None:
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="palymarket-exchange", description="Exchange Pringles for Palycoins")
-@app_commands.describe(amount="Pringles to spend (2 Pringles → 1 Palycoin)")
-async def palymarket_exchange(interaction: discord.Interaction, amount: int) -> None:
-    await interaction.response.defer(ephemeral=True)
-    success, reason, received = await exchange_service.exchange(
-        str(interaction.user.id), exchange_service.PRINGLES, exchange_service.PALYCOINS, amount
-    )
-    if success:
-        await interaction.followup.send(
-            f"Exchanged {amount} Pringles for {received} Palycoins!", ephemeral=True
-        )
-    elif reason == "amount_too_small":
-        await interaction.followup.send(
-            "You need at least 2 Pringles to exchange for 1 Palycoin.", ephemeral=True
-        )
-    else:
-        await interaction.followup.send("Not enough Pringles.", ephemeral=True)
-
 
 @bot.tree.command(name="palymarket-approve", description="[Admin] Approve a pending market")
 @app_commands.describe(market_id="Market ID to approve")
