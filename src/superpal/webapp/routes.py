@@ -819,6 +819,7 @@ async def palymarket_propose_form(request: Request):
         "is_admin": is_admin,
         "pending_count": pending_count,
         "active_tab": "propose",
+        "error": request.query_params.get("error"),
     })
 
 
