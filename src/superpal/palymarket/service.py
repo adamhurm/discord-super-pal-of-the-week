@@ -543,10 +543,10 @@ async def get_recent_activity(limit: int = 50) -> list[dict]:
             """
             SELECT mb.player_id, mb.side, mb.amount, mb.placed_at,
                    m.id AS market_id, m.title AS market_title,
-                   mem.display_name
+                   COALESCE(mem.display_name, mb.player_id) AS display_name
             FROM market_bets mb
             JOIN markets m ON m.id = mb.market_id
-            JOIN members mem ON mem.discord_id = mb.player_id
+            LEFT JOIN members mem ON mem.discord_id = mb.player_id
             ORDER BY mb.placed_at DESC
             LIMIT ?
             """,

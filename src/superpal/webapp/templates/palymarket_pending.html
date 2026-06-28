@@ -48,9 +48,11 @@
     <a class="subnav-link" href="/palymarket/portfolio">Portfolio</a>
     <a class="subnav-link" href="/palymarket/activity">Activity</a>
     <a class="subnav-link" href="/palymarket/propose">Propose</a>
-    <a class="subnav-link active" href="/palymarket/pending">
+    {% if is_admin %}
+    <a class="subnav-link {% if active_tab == 'pending' %}active{% endif %}" href="/palymarket/pending">
       Pending{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
     </a>
+    {% endif %}
   </nav>
 
   <div class="page">

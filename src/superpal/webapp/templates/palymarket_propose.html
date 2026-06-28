@@ -59,9 +59,7 @@
   </nav>
 
   <div class="page">
-    {% if request.query_params.get('error') %}
-    <div class="flash-error">{{ request.query_params.get('error') | replace('_', ' ') }}</div>
-    {% endif %}
+    {% if error %}<div class="flash-error">Error: {{ error | replace('_', ' ') }}</div>{% endif %}
     <div class="propose-card">
       <div class="propose-title">Propose a Market</div>
       <div class="propose-sub">
