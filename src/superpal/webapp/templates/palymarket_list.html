@@ -3,158 +3,172 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Palymarket — Bringus Card Game</title>
+  <title>Palymarket — Prediction Markets</title>
   <link rel="icon" href="/static/favicon.ico">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
-    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
-              padding-bottom: 16px; border-bottom: 1px solid #3f4147; flex-wrap: wrap; }
-    h1 { font-size: 1.4rem; font-weight: 700; }
-    .subtitle { color: #72767d; font-size: 13px; margin-top: 2px; }
-    .balance-badge { background: #2b2d31; border-radius: 8px; padding: 10px 16px;
-                     font-size: 14px; font-weight: 600; color: #faa61a;
-                     margin-left: auto; border: 1px solid #3f4147; }
-    .section-title { font-size: 11px; font-weight: 700; color: #72767d;
-                     letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
-    .exchange-box { background: #2b2d31; border-radius: 8px; padding: 16px;
-                    margin-bottom: 24px; border: 1px solid #3f4147; max-width: 420px; }
-    .exchange-note { font-size: 12px; color: #72767d; margin-bottom: 10px; }
-    .exchange-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    input[type="number"] { background: #313338; border: 1px solid #3f4147; border-radius: 4px;
-                           color: #dcddde; padding: 6px 10px; font-size: 13px; width: 110px; }
-    .btn { display: inline-block; padding: 6px 14px; border-radius: 4px;
-           font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
-    .btn-primary { background: #5865f2; color: #fff; }
-    .btn-primary:hover { background: #4752c4; }
-    .nav-links { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
-    .nav-link { color: #b9bbbe; font-size: 13px; text-decoration: none; }
-    .nav-link:hover { color: #fff; }
-    .nav-link-admin { color: #faa61a; }
-    .group-header { font-size: 13px; font-weight: 700; color: #fff; margin: 20px 0 10px;
-                    padding-bottom: 6px; border-bottom: 1px solid #3f4147; }
-    .market-card { background: #2b2d31; border-radius: 8px; padding: 16px;
-                   border: 1px solid #3f4147; margin-bottom: 10px; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; min-height: 100vh; }
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 16px 24px;
+              border-bottom: 1px solid #3f4147; flex-wrap: wrap; }
+    .topbar h1 { font-size: 1.3rem; font-weight: 700; }
+    .topbar-sub { color: #72767d; font-size: 12px; }
+    .balance-pill { margin-left: auto; background: #2b2d31; border: 1px solid #3f4147;
+                    border-radius: 20px; padding: 6px 14px; font-size: 13px;
+                    font-weight: 600; color: #faa61a; }
+    .subnav { display: flex; gap: 0; border-bottom: 1px solid #3f4147;
+              padding: 0 24px; background: #1e1f22; }
+    .subnav-link { display: inline-block; padding: 12px 16px; font-size: 13px;
+                   font-weight: 600; color: #72767d; text-decoration: none;
+                   border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .subnav-link:hover { color: #dcddde; }
+    .subnav-link.active { color: #fff; border-bottom-color: #5865f2; }
+    .badge { display: inline-block; background: #ed4245; color: #fff; border-radius: 10px;
+             font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px;
+             vertical-align: middle; }
+    .page { padding: 24px; max-width: 900px; }
+    .flash { padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+    .flash-success { background: #3ba55c20; border: 1px solid #3ba55c40; color: #3ba55c; }
+    .flash-error { background: #ed424520; border: 1px solid #ed424540; color: #ed4245; }
+    .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                     text-transform: uppercase; color: #72767d; margin: 24px 0 12px; }
+    .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                   gap: 12px; }
+    .market-card { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                   padding: 16px; text-decoration: none; display: block; color: inherit;
+                   transition: border-color 0.1s; }
     .market-card:hover { border-color: #5865f2; }
-    .market-title a { font-size: 15px; font-weight: 700; color: #fff; text-decoration: none; }
-    .market-title a:hover { color: #5865f2; }
-    .market-desc { font-size: 12px; color: #72767d; margin: 4px 0 10px; }
-    .market-meta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 3px;
-                    font-size: 11px; font-weight: 700; }
+    .market-card.muted { opacity: 0.65; }
+    .mc-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 6px;
+                line-height: 1.3; }
+    .mc-desc { font-size: 11px; color: #72767d; margin-bottom: 12px;
+               line-height: 1.4; max-height: 2.8em; overflow: hidden; }
+    .prob-bar-wrap { margin-bottom: 8px; }
+    .prob-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+    .prob-bar-yes { background: #3ba55c; }
+    .prob-bar-no { background: #ed4245; }
+    .prob-labels { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
+    .prob-yes { color: #3ba55c; }
+    .prob-no { color: #ed4245; }
+    .mc-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+                 margin-top: 10px; font-size: 11px; }
+    .status-badge { padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; }
     .status-open { background: #3ba55c20; color: #3ba55c; }
     .status-closed { background: #faa61a20; color: #faa61a; }
     .status-resolved { background: #5865f220; color: #5865f2; }
-    .pool-yes { color: #3ba55c; font-size: 12px; font-weight: 600; }
-    .pool-no { color: #ed4245; font-size: 12px; font-weight: 600; }
-    .my-bet { font-size: 11px; color: #b9bbbe; background: #313338;
-              border-radius: 4px; padding: 2px 8px; }
-    .view-link { margin-left: auto; font-size: 12px; color: #5865f2; text-decoration: none; }
-    .view-link:hover { color: #96a0ff; }
-    .empty-state { color: #72767d; font-size: 13px; font-style: italic; padding: 12px 0; }
-    .dimmed { opacity: 0.7; }
+    .volume-note { color: #72767d; }
+    .my-pos { background: #5865f220; color: #96a0ff; border-radius: 3px; padding: 2px 7px; }
+    .empty { color: #72767d; font-size: 13px; font-style: italic; padding: 20px 0; }
   </style>
 </head>
 <body>
-  <div class="header">
+  <div class="topbar">
     <div>
       <h1>Palymarket</h1>
-      <div class="subtitle">Prediction markets — bet Palycoins on outcomes</div>
+      <div class="topbar-sub">Prediction markets — bet Palycoins on outcomes</div>
     </div>
-    <div class="balance-badge">{{ balance }} Palycoins</div>
+    <div class="balance-pill">{{ balance }} Palycoins</div>
   </div>
 
-  {% if request.query_params.get('error') %}
-  <div style="background:#ed4245;color:white;padding:10px 16px;border-radius:6px;margin-bottom:16px;">
-    Error: {{ request.query_params.get('error') | replace('_', ' ') }}
-  </div>
-  {% endif %}
-
-  <div class="nav-links">
-    <a class="nav-link" href="/collection">My Collection</a>
-    <a class="nav-link" href="/marketplace">Marketplace</a>
+  <nav class="subnav">
+    <a class="subnav-link {% if active_tab == 'markets' %}active{% endif %}" href="/palymarket">Markets</a>
+    <a class="subnav-link {% if active_tab == 'portfolio' %}active{% endif %}" href="/palymarket/portfolio">Portfolio</a>
+    <a class="subnav-link {% if active_tab == 'activity' %}active{% endif %}" href="/palymarket/activity">Activity</a>
+    <a class="subnav-link {% if active_tab == 'propose' %}active{% endif %}" href="/palymarket/propose">Propose</a>
     {% if is_admin %}
-    <a class="nav-link nav-link-admin" href="/palymarket/pending">Pending Approvals</a>
+    <a class="subnav-link {% if active_tab == 'pending' %}active{% endif %}" href="/palymarket/pending">
+      Pending{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
+    </a>
     {% endif %}
-  </div>
+  </nav>
 
-  <div class="exchange-box">
-    <div class="section-title">Exchange Pringles</div>
-    <p class="exchange-note">Rate: 200 Pringles → 100 Palycoins</p>
-    <form method="post" action="/palymarket/exchange" class="exchange-form">
-      <input type="number" name="pringle_amount" min="200" step="200" placeholder="200" required>
-      <button class="btn btn-primary" type="submit">Exchange</button>
-    </form>
-  </div>
-
-  {% set open_markets = markets | selectattr("status", "equalto", "open") | list %}
-  {% set closed_markets = markets | selectattr("status", "equalto", "closed") | list %}
-  {% set resolved_markets = markets | selectattr("status", "equalto", "resolved") | list %}
-
-  {% if open_markets %}
-  <div class="group-header">Open Markets</div>
-  {% for market in open_markets %}
-  <div class="market-card">
-    <div class="market-title"><a href="/palymarket/{{ market.id }}">{{ market.title }}</a></div>
-    {% if market.description %}
-    <div class="market-desc">{{ market.description }}</div>
+  <div class="page">
+    {% if proposed %}
+    <div class="flash flash-success">Market submitted for admin review.</div>
     {% endif %}
-    <div class="market-meta">
-      <span class="status-badge status-open">OPEN</span>
-      <span class="pool-yes">YES {{ market.yes_pool }}</span>
-      <span class="pool-no">NO {{ market.no_pool }}</span>
-      {% if market.id in bet_map %}
-      <span class="my-bet">Your bet: {{ bet_map[market.id].side | upper }} {{ bet_map[market.id].amount }}</span>
-      {% endif %}
-      <a class="view-link" href="/palymarket/{{ market.id }}">View →</a>
+    {% if error %}
+    <div class="flash flash-error">Error: {{ error | replace('_', ' ') }}</div>
+    {% endif %}
+
+    {% set open_markets = markets | selectattr("status", "equalto", "open") | list %}
+    {% set closed_markets = markets | selectattr("status", "equalto", "closed") | list %}
+    {% set resolved_markets = markets | selectattr("status", "equalto", "resolved") | list %}
+
+    {% if open_markets %}
+    <div class="section-label">Open Markets</div>
+    <div class="market-grid">
+      {% for m in open_markets %}
+      <a class="market-card" href="/palymarket/{{ m.id }}">
+        <div class="mc-title">{{ m.title }}</div>
+        {% if m.description %}<div class="mc-desc">{{ m.description }}</div>{% endif %}
+        <div class="prob-bar-wrap">
+          <div class="prob-bar">
+            <div class="prob-bar-yes" style="width: {{ m._yes_pct }}%"></div>
+            <div class="prob-bar-no" style="width: {{ 100 - m._yes_pct }}%"></div>
+          </div>
+          <div class="prob-labels">
+            <span class="prob-yes">{{ m._yes_pct }}% YES</span>
+            <span class="prob-no">{{ 100 - m._yes_pct }}% NO</span>
+          </div>
+        </div>
+        <div class="mc-footer">
+          <span class="status-badge status-open">OPEN</span>
+          <span class="volume-note">{{ m.yes_pool + m.no_pool }} vol</span>
+          {% if m.id in bet_map %}
+          <span class="my-pos">You: {{ bet_map[m.id].side | upper }} {{ bet_map[m.id].amount }}</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
     </div>
-  </div>
-  {% endfor %}
-  {% endif %}
-
-  {% if closed_markets %}
-  <div class="group-header">Awaiting Resolution</div>
-  {% for market in closed_markets %}
-  <div class="market-card">
-    <div class="market-title"><a href="/palymarket/{{ market.id }}">{{ market.title }}</a></div>
-    {% if market.description %}
-    <div class="market-desc">{{ market.description }}</div>
     {% endif %}
-    <div class="market-meta">
-      <span class="status-badge status-closed">CLOSED</span>
-      <span class="pool-yes">YES {{ market.yes_pool }}</span>
-      <span class="pool-no">NO {{ market.no_pool }}</span>
-      {% if market.id in bet_map %}
-      <span class="my-bet">Your bet: {{ bet_map[market.id].side | upper }} {{ bet_map[market.id].amount }}</span>
-      {% endif %}
-      <a class="view-link" href="/palymarket/{{ market.id }}">View →</a>
-    </div>
-  </div>
-  {% endfor %}
-  {% endif %}
 
-  {% if resolved_markets %}
-  <div class="group-header">Resolved</div>
-  {% for market in resolved_markets %}
-  <div class="market-card dimmed">
-    <div class="market-title"><a href="/palymarket/{{ market.id }}">{{ market.title }}</a></div>
-    {% if market.description %}
-    <div class="market-desc">{{ market.description }}</div>
+    {% if closed_markets %}
+    <div class="section-label">Awaiting Resolution</div>
+    <div class="market-grid">
+      {% for m in closed_markets %}
+      <a class="market-card" href="/palymarket/{{ m.id }}">
+        <div class="mc-title">{{ m.title }}</div>
+        {% if m.description %}<div class="mc-desc">{{ m.description }}</div>{% endif %}
+        <div class="prob-bar-wrap">
+          <div class="prob-bar">
+            <div class="prob-bar-yes" style="width: {{ m._yes_pct }}%"></div>
+            <div class="prob-bar-no" style="width: {{ 100 - m._yes_pct }}%"></div>
+          </div>
+          <div class="prob-labels">
+            <span class="prob-yes">{{ m._yes_pct }}% YES</span>
+            <span class="prob-no">{{ 100 - m._yes_pct }}% NO</span>
+          </div>
+        </div>
+        <div class="mc-footer">
+          <span class="status-badge status-closed">CLOSED</span>
+          <span class="volume-note">{{ m.yes_pool + m.no_pool }} vol</span>
+          {% if m.id in bet_map %}
+          <span class="my-pos">You: {{ bet_map[m.id].side | upper }} {{ bet_map[m.id].amount }}</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
     {% endif %}
-    <div class="market-meta">
-      <span class="status-badge status-resolved">RESOLVED: {{ market.outcome | upper }}</span>
-      <span class="pool-yes">YES {{ market.yes_pool }}</span>
-      <span class="pool-no">NO {{ market.no_pool }}</span>
-      <a class="view-link" href="/palymarket/{{ market.id }}">View →</a>
-    </div>
-  </div>
-  {% endfor %}
-  {% endif %}
 
-  {% if not open_markets and not closed_markets and not resolved_markets %}
-  <div class="empty-state">
-    No markets yet. Use <code style="color:#96a0ff">/palymarket-propose</code> in Discord to propose one.
+    {% if resolved_markets %}
+    <div class="section-label">Resolved</div>
+    <div class="market-grid">
+      {% for m in resolved_markets %}
+      <a class="market-card muted" href="/palymarket/{{ m.id }}">
+        <div class="mc-title">{{ m.title }}</div>
+        <div class="mc-footer">
+          <span class="status-badge status-resolved">{{ m.outcome | upper }} WON</span>
+          <span class="volume-note">{{ m.yes_pool + m.no_pool }} vol</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not open_markets and not closed_markets and not resolved_markets %}
+    <p class="empty">No markets yet. Use <code style="color:#96a0ff">/palymarket-propose</code> in Discord or <a href="/palymarket/propose" style="color:#5865f2">propose one here</a>.</p>
+    {% endif %}
   </div>
-  {% endif %}
 </body>
 </html>

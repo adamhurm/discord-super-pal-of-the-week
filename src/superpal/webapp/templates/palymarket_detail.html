@@ -7,181 +7,276 @@
   <link rel="icon" href="/static/favicon.ico">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
-    .back-link { color: #72767d; text-decoration: none; font-size: 13px;
-                 display: inline-block; margin-bottom: 16px; }
-    .back-link:hover { color: #dcddde; }
-    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
-    .market-desc { color: #72767d; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; min-height: 100vh; }
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 16px 24px;
+              border-bottom: 1px solid #3f4147; }
+    .topbar h1 { font-size: 1.3rem; font-weight: 700; }
+    .subnav { display: flex; gap: 0; border-bottom: 1px solid #3f4147;
+              padding: 0 24px; background: #1e1f22; }
+    .subnav-link { display: inline-block; padding: 12px 16px; font-size: 13px;
+                   font-weight: 600; color: #72767d; text-decoration: none;
+                   border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .subnav-link:hover { color: #dcddde; }
+    .subnav-link.active { color: #fff; border-bottom-color: #5865f2; }
+    .badge { display: inline-block; background: #ed4245; color: #fff; border-radius: 10px;
+             font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px;
+             vertical-align: middle; }
+    .page { padding: 24px; max-width: 800px; }
+    .back { color: #72767d; text-decoration: none; font-size: 12px; display: inline-block;
+            margin-bottom: 16px; }
+    .back:hover { color: #dcddde; }
+    .market-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; line-height: 1.3; }
+    .market-desc { color: #72767d; font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
     .status-badge { display: inline-block; padding: 3px 10px; border-radius: 3px;
-                    font-size: 11px; font-weight: 700; margin-bottom: 16px; }
+                    font-size: 11px; font-weight: 700; margin-bottom: 20px; }
     .status-open { background: #3ba55c20; color: #3ba55c; }
     .status-closed { background: #faa61a20; color: #faa61a; }
     .status-resolved { background: #5865f220; color: #5865f2; }
+    .prob-section { display: flex; gap: 0; margin-bottom: 20px; border-radius: 8px;
+                    overflow: hidden; border: 1px solid #3f4147; }
+    .prob-box { flex: 1; padding: 20px 16px; text-align: center; }
+    .prob-box-yes { background: #3ba55c12; border-right: 1px solid #3f4147; }
+    .prob-box-no { background: #ed424512; }
+    .prob-pct { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+    .prob-pct-yes { color: #3ba55c; }
+    .prob-pct-no { color: #ed4245; }
+    .prob-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                  text-transform: uppercase; color: #72767d; margin-top: 4px; }
+    .prob-sub { font-size: 11px; color: #72767d; margin-top: 2px; }
+    .prob-bar { display: flex; height: 8px; border-radius: 0; margin-bottom: 20px; }
+    .prob-bar-yes { background: #3ba55c; }
+    .prob-bar-no { background: #ed4245; }
+    .chart-section { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                     padding: 16px; margin-bottom: 16px; }
+    .chart-title { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                   text-transform: uppercase; color: #72767d; margin-bottom: 10px; }
+    .chart-empty { font-size: 12px; color: #72767d; font-style: italic; padding: 20px 0; text-align: center; }
+    svg.prob-chart { width: 100%; height: auto; display: block; }
     .outcome-banner { background: #5865f220; border: 1px solid #5865f240; border-radius: 8px;
-                      padding: 14px 18px; margin-bottom: 20px; font-size: 14px; font-weight: 700;
+                      padding: 14px 18px; margin-bottom: 16px; font-size: 14px; font-weight: 700;
                       color: #96a0ff; text-align: center; }
-    .pool-row { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-    .pool-box { flex: 1; min-width: 120px; background: #2b2d31; border-radius: 8px;
-                padding: 16px; text-align: center; border: 1px solid #3f4147; }
-    .pool-box-yes { border-color: #3ba55c40; }
-    .pool-box-no { border-color: #ed424540; }
-    .pool-box-total { border-color: #5865f240; }
-    .pool-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
-                  text-transform: uppercase; margin-bottom: 6px; }
-    .pool-yes-label { color: #3ba55c; }
-    .pool-no-label { color: #ed4245; }
-    .pool-total-label { color: #5865f2; }
-    .pool-amount { font-size: 1.6rem; font-weight: 700; color: #fff; }
-    .pool-sub { font-size: 11px; color: #72767d; margin-top: 2px; }
-    .section { background: #2b2d31; border-radius: 8px; padding: 16px;
-               margin-bottom: 16px; border: 1px solid #3f4147; }
-    .section-title { font-size: 11px; font-weight: 700; color: #72767d;
-                     letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
-    .current-bet { background: #313338; border-radius: 6px; padding: 10px 14px;
-                   font-size: 13px; margin-bottom: 12px; }
-    .bet-side-yes { color: #3ba55c; font-weight: 700; }
-    .bet-side-no { color: #ed4245; font-weight: 700; }
-    .bet-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    select { background: #313338; border: 1px solid #3f4147; border-radius: 4px;
-             color: #dcddde; padding: 6px 10px; font-size: 13px; }
-    input[type="number"] { background: #313338; border: 1px solid #3f4147; border-radius: 4px;
-                           color: #dcddde; padding: 6px 10px; font-size: 13px; width: 100px; }
+    .section { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+               padding: 16px; margin-bottom: 16px; }
+    .section-title { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                     text-transform: uppercase; color: #72767d; margin-bottom: 12px; }
     .balance-note { font-size: 12px; color: #72767d; margin-bottom: 10px; }
-    .btn { display: inline-block; padding: 6px 14px; border-radius: 4px;
+    .current-pos { background: #313338; border-radius: 6px; padding: 10px 14px;
+                   font-size: 13px; margin-bottom: 12px; }
+    .side-toggle { display: flex; gap: 0; margin-bottom: 10px; border-radius: 6px; overflow: hidden;
+                   border: 1px solid #3f4147; width: fit-content; }
+    .side-toggle label { padding: 7px 20px; font-size: 13px; font-weight: 700; cursor: pointer;
+                         transition: background 0.1s; }
+    .side-toggle input[type="radio"] { display: none; }
+    .side-toggle input[value="yes"]:checked + label { background: #3ba55c; color: #fff; }
+    .side-toggle input[value="no"]:checked + label { background: #ed4245; color: #fff; }
+    .side-toggle label { background: #313338; color: #72767d; }
+    .side-toggle label:hover { background: #3f4147; color: #dcddde; }
+    .bet-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    input[type="number"] { background: #313338; border: 1px solid #3f4147; border-radius: 4px;
+                           color: #dcddde; padding: 7px 10px; font-size: 13px; width: 110px; }
+    .btn { display: inline-block; padding: 7px 16px; border-radius: 4px;
            font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
     .btn-primary { background: #5865f2; color: #fff; }
     .btn-primary:hover { background: #4752c4; }
     .btn-warning { background: #faa61a; color: #000; }
     .btn-warning:hover { background: #e09416; }
+    .payout-preview { font-size: 12px; color: #96a0ff; margin-top: 8px; min-height: 16px; }
     .admin-divider { margin-top: 14px; padding-top: 14px; border-top: 1px solid #3f4147;
                      display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .admin-label { font-size: 11px; font-weight: 700; color: #72767d;
                    letter-spacing: 1px; text-transform: uppercase; }
     .resolve-form { display: flex; gap: 8px; align-items: center; }
+    select { background: #313338; border: 1px solid #3f4147; border-radius: 4px;
+             color: #dcddde; padding: 7px 10px; font-size: 13px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th { color: #72767d; text-align: left; padding: 6px 8px;
          border-bottom: 1px solid #3f4147; font-weight: 600; }
-    td { padding: 6px 8px; border-bottom: 1px solid #3f4147; color: #b9bbbe; }
+    td { padding: 7px 8px; border-bottom: 1px solid #3f4147; color: #b9bbbe; }
     tr:last-child td { border-bottom: none; }
-    .td-yes { color: #3ba55c; font-weight: 600; }
-    .td-no { color: #ed4245; font-weight: 600; }
+    .td-yes { color: #3ba55c; font-weight: 700; }
+    .td-no { color: #ed4245; font-weight: 700; }
+    .flash-error { background: #ed424520; border: 1px solid #ed424540; color: #ed4245;
+                   padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <a class="back-link" href="/palymarket">← Back to Palymarket</a>
-
-  {% if request.query_params.get('error') %}
-  <div style="background:#ed4245;color:white;padding:10px 16px;border-radius:6px;margin-bottom:16px;">
-    Error: {{ request.query_params.get('error') | replace('_', ' ') }}
+  <div class="topbar">
+    <div><h1>Palymarket</h1></div>
   </div>
-  {% endif %}
+  <nav class="subnav">
+    <a class="subnav-link" href="/palymarket">Markets</a>
+    <a class="subnav-link" href="/palymarket/portfolio">Portfolio</a>
+    <a class="subnav-link" href="/palymarket/activity">Activity</a>
+    <a class="subnav-link" href="/palymarket/propose">Propose</a>
+    {% if is_admin %}
+    <a class="subnav-link" href="/palymarket/pending">
+      Pending{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
+    </a>
+    {% endif %}
+  </nav>
 
-  <h1>{{ market.title }}</h1>
-  {% if market.description %}
-  <div class="market-desc">{{ market.description }}</div>
-  {% endif %}
+  <div class="page">
+    <a class="back" href="/palymarket">← Markets</a>
 
-  {% if market.status == "open" %}
-  <span class="status-badge status-open">OPEN</span>
-  {% elif market.status == "closed" %}
-  <span class="status-badge status-closed">AWAITING RESOLUTION</span>
-  {% elif market.status == "resolved" %}
-  <span class="status-badge status-resolved">RESOLVED</span>
-  {% else %}
-  <span class="status-badge" style="background:#3f414780;color:#72767d;">{{ market.status | upper }}</span>
-  {% endif %}
+    {% if error %}
+    <div class="flash-error">Error: {{ error | replace('_', ' ') }}</div>
+    {% endif %}
 
-  {% if market.status == "resolved" %}
-  <div class="outcome-banner">
-    Outcome: {{ market.outcome | upper }}
-    {% if market.outcome == "yes" %} — YES wins!{% else %} — NO wins!{% endif %}
-  </div>
-  {% endif %}
+    <div class="market-title">{{ market.title }}</div>
+    {% if market.description %}<div class="market-desc">{{ market.description }}</div>{% endif %}
 
-  <div class="pool-row">
-    <div class="pool-box pool-box-yes">
-      <div class="pool-label pool-yes-label">YES Pool</div>
-      <div class="pool-amount">{{ market.yes_pool }}</div>
-      <div class="pool-sub">Palycoins</div>
-    </div>
-    <div class="pool-box pool-box-no">
-      <div class="pool-label pool-no-label">NO Pool</div>
-      <div class="pool-amount">{{ market.no_pool }}</div>
-      <div class="pool-sub">Palycoins</div>
-    </div>
-    <div class="pool-box pool-box-total">
-      <div class="pool-label pool-total-label">Total Pool</div>
-      <div class="pool-amount">{{ market.yes_pool + market.no_pool }}</div>
-      <div class="pool-sub">Palycoins</div>
-    </div>
-  </div>
+    {% if market.status == "open" %}<span class="status-badge status-open">OPEN</span>
+    {% elif market.status == "closed" %}<span class="status-badge status-closed">AWAITING RESOLUTION</span>
+    {% elif market.status == "resolved" %}<span class="status-badge status-resolved">RESOLVED</span>
+    {% else %}<span class="status-badge" style="background:#3f414780;color:#72767d;">{{ market.status | upper }}</span>
+    {% endif %}
 
-  {% if market.status == "open" %}
-  <div class="section">
-    <div class="section-title">{% if player_bet %}Update Your Bet{% else %}Place a Bet{% endif %}</div>
-    <div class="balance-note">Balance: {{ balance }} Palycoins</div>
-    {% if player_bet %}
-    <div class="current-bet">
-      Current bet: <span class="bet-side-{{ player_bet.side }}">{{ player_bet.side | upper }}</span>
-      &mdash; {{ player_bet.amount }} Palycoins
+    {% if market.status == "resolved" %}
+    <div class="outcome-banner">
+      Outcome: <strong>{{ market.outcome | upper }}</strong>
+      {% if market.outcome == "yes" %} — YES wins!{% else %} — NO wins!{% endif %}
     </div>
     {% endif %}
-    <form method="post" action="/palymarket/{{ market.id }}/bet" class="bet-form">
-      <select name="side">
-        <option value="yes"{% if player_bet and player_bet.side == "yes" %} selected{% endif %}>YES</option>
-        <option value="no"{% if player_bet and player_bet.side == "no" %} selected{% endif %}>NO</option>
-      </select>
-      <input type="number" name="amount" min="1"
-             value="{{ player_bet.amount if player_bet else 1 }}" required>
-      <button class="btn btn-primary" type="submit">
-        {% if player_bet %}Update Bet{% else %}Place Bet{% endif %}
-      </button>
-    </form>
-    {% if is_admin %}
-    <div class="admin-divider">
-      <span class="admin-label">Admin</span>
-      <form method="post" action="/palymarket/{{ market.id }}/close">
-        <button class="btn btn-warning" type="submit">Close Market</button>
+
+    <div class="prob-section">
+      <div class="prob-box prob-box-yes">
+        <div class="prob-pct prob-pct-yes">{{ yes_pct }}%</div>
+        <div class="prob-label">YES</div>
+        <div class="prob-sub">{{ market.yes_pool }} Palycoins</div>
+      </div>
+      <div class="prob-box prob-box-no">
+        <div class="prob-pct prob-pct-no">{{ no_pct }}%</div>
+        <div class="prob-label">NO</div>
+        <div class="prob-sub">{{ market.no_pool }} Palycoins</div>
+      </div>
+    </div>
+    <div class="prob-bar">
+      <div class="prob-bar-yes" style="width: {{ yes_pct }}%"></div>
+      <div class="prob-bar-no" style="width: {{ no_pct }}%"></div>
+    </div>
+
+    <div class="chart-section">
+      <div class="chart-title">Probability History</div>
+      {% if svg_points %}
+      <svg class="prob-chart" viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg">
+        <line x1="10" y1="60" x2="590" y2="60"
+              stroke="#3f4147" stroke-width="1" stroke-dasharray="4,4"/>
+        <polyline points="{{ svg_points }}"
+                  fill="none" stroke="#5865f2" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+      {% else %}
+      <div class="chart-empty">No chart data yet — probability history builds as bets are placed.</div>
+      {% endif %}
+    </div>
+
+    {% if market.status == "open" %}
+    <div class="section">
+      <div class="section-title">{% if player_bet %}Update Your Bet{% else %}Place a Bet{% endif %}</div>
+      <div class="balance-note">Balance: {{ balance }} Palycoins</div>
+      {% if player_bet %}
+      <div class="current-pos">
+        Current position:
+        <span class="{% if player_bet.side == 'yes' %}td-yes{% else %}td-no{% endif %}">
+          {{ player_bet.side | upper }}
+        </span>
+        &mdash; {{ player_bet.amount }} Palycoins
+      </div>
+      {% endif %}
+      <form method="post" action="/palymarket/{{ market.id }}/bet"
+            id="bet-form"
+            data-yes-pool="{{ market.yes_pool }}"
+            data-no-pool="{{ market.no_pool }}"
+            data-old-amount="{{ player_bet.amount if player_bet else 0 }}"
+            data-old-side="{{ player_bet.side if player_bet else '' }}">
+        <div class="side-toggle">
+          <input type="radio" name="side" id="side-yes" value="yes"
+                 {% if not player_bet or player_bet.side == "yes" %}checked{% endif %}>
+          <label for="side-yes">YES</label>
+          <input type="radio" name="side" id="side-no" value="no"
+                 {% if player_bet and player_bet.side == "no" %}checked{% endif %}>
+          <label for="side-no">NO</label>
+        </div>
+        <div class="bet-row">
+          <input type="number" name="amount" id="bet-amount" min="1"
+                 value="{{ player_bet.amount if player_bet else 1 }}" required>
+          <button class="btn btn-primary" type="submit">
+            {% if player_bet %}Update Bet{% else %}Place Bet{% endif %}
+          </button>
+        </div>
+        <div class="payout-preview" id="payout-preview"></div>
+      </form>
+      {% if is_admin %}
+      <div class="admin-divider">
+        <span class="admin-label">Admin</span>
+        <form method="post" action="/palymarket/{{ market.id }}/close">
+          <button class="btn btn-warning" type="submit">Close Market</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% elif market.status == "closed" and is_admin %}
+    <div class="section">
+      <div class="section-title">Admin — Resolve Market</div>
+      <form method="post" action="/palymarket/{{ market.id }}/resolve" class="resolve-form">
+        <select name="outcome">
+          <option value="yes">YES</option>
+          <option value="no">NO</option>
+        </select>
+        <button class="btn btn-primary" type="submit">Resolve</button>
       </form>
     </div>
     {% endif %}
-  </div>
-  {% elif market.status == "closed" and is_admin %}
-  <div class="section">
-    <div class="section-title">Admin — Resolve Market</div>
-    <form method="post" action="/palymarket/{{ market.id }}/resolve" class="resolve-form">
-      <select name="outcome">
-        <option value="yes">YES</option>
-        <option value="no">NO</option>
-      </select>
-      <button class="btn btn-primary" type="submit">Resolve</button>
-    </form>
-  </div>
-  {% endif %}
 
-  {% if bets %}
-  <div class="section">
-    <div class="section-title">All Bets ({{ bets | length }})</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Player</th>
-          <th>Side</th>
-          <th>Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for bet in bets %}
-        <tr>
-          <td>{{ bet.player_id }}</td>
-          <td class="td-{{ bet.side }}">{{ bet.side | upper }}</td>
-          <td>{{ bet.amount }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if bets %}
+    <div class="section">
+      <div class="section-title">All Bets ({{ bets | length }})</div>
+      <table>
+        <thead>
+          <tr><th>Player</th><th>Side</th><th>Amount</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+          {% for bet in bets %}
+          <tr>
+            <td>{{ bet.display_name }}</td>
+            <td class="td-{{ bet.side }}">{{ bet.side | upper }}</td>
+            <td>{{ bet.amount }}</td>
+            <td style="color:#72767d">{{ bet.placed_at.strftime('%b %d %H:%M') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
+
+  <script>
+    const form = document.getElementById('bet-form');
+    if (form) {
+      const yesPool = parseInt(form.dataset.yesPool);
+      const noPool = parseInt(form.dataset.noPool);
+      const oldAmount = parseInt(form.dataset.oldAmount) || 0;
+      const oldSide = form.dataset.oldSide;
+      const preview = document.getElementById('payout-preview');
+
+      function updatePreview() {
+        const side = document.querySelector('input[name="side"]:checked').value;
+        const amount = parseInt(document.getElementById('bet-amount').value) || 0;
+        if (amount <= 0) { preview.textContent = ''; return; }
+        let yp = yesPool, np = noPool;
+        if (oldSide === 'yes') yp -= oldAmount;
+        else if (oldSide === 'no') np -= oldAmount;
+        if (side === 'yes') yp += amount;
+        else np += amount;
+        const winning = side === 'yes' ? yp : np;
+        const total = yp + np;
+        const payout = winning > 0 ? Math.floor(amount / winning * total) : amount;
+        preview.textContent = `If ${side.toUpperCase()} wins → ~${payout} Palycoins`;
+      }
+
+      document.querySelectorAll('input[name="side"], #bet-amount')
+        .forEach(el => el.addEventListener('input', updatePreview));
+      updatePreview();
+    }
+  </script>
 </body>
 </html>
