@@ -32,7 +32,7 @@ async def exchange(
     """
     if from_currency == to_currency:
         return False, "same_currency", 0
-    if from_currency not in _RATES or to_currency not in _RATES:
+    if from_currency not in _BALANCE_COL or to_currency not in _BALANCE_COL:
         return False, "unknown_currency", 0
     rate = _RATES.get((from_currency, to_currency))
     if rate is None:
