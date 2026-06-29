@@ -1,0 +1,26 @@
+<nav class="global-nav" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: #2f3136; border-bottom: 1px solid #3f4147; flex-wrap: wrap;">
+  <div class="nav-identity" style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+    {% if avatar_url %}
+      <img class="nav-avatar" src="{{ avatar_url }}" alt="" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">
+    {% else %}
+      <div class="nav-avatar-placeholder" style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; flex-shrink: 0;">{{ display_name[0] | upper }}</div>
+    {% endif %}
+    <span class="nav-username" style="font-weight: 600; font-size: 14px; color: #dcddde;">{{ display_name }}</span>
+  </div>
+  <div class="nav-links" style="display: flex; gap: 4px;">
+    <a href="/collection" class="nav-link" style="padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: {% if active_page == 'collection' %}#5865f2{% else %}transparent{% endif %}; color: {% if active_page == 'collection' %}#fff{% else %}#72767d{% endif %}; text-decoration: none; display: inline-block; transition: all 0.2s;">Collection</a>
+    <a href="/marketplace" class="nav-link" style="padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: {% if active_page == 'marketplace' %}#5865f2{% else %}transparent{% endif %}; color: {% if active_page == 'marketplace' %}#fff{% else %}#72767d{% endif %}; text-decoration: none; display: inline-block; transition: all 0.2s;">Marketplace</a>
+    <a href="/palymarket" class="nav-link" style="padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: {% if active_page == 'palymarket' %}#5865f2{% else %}transparent{% endif %}; color: {% if active_page == 'palymarket' %}#fff{% else %}#72767d{% endif %}; text-decoration: none; display: inline-block; transition: all 0.2s;">Palymarket</a>
+    <a href="/economy" class="nav-link" style="padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: {% if active_page == 'economy' %}#5865f2{% else %}transparent{% endif %}; color: {% if active_page == 'economy' %}#fff{% else %}#72767d{% endif %}; text-decoration: none; display: inline-block; transition: all 0.2s;">Economy</a>
+  </div>
+  <style>
+    .nav-link:hover {
+      background: #313338 !important;
+      color: #dcddde !important;
+    }
+    .nav-link[style*="#5865f2"]:hover {
+      background: #5865f2 !important;
+      color: #fff !important;
+    }
+  </style>
+</nav>
