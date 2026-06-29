@@ -114,6 +114,7 @@
   </style>
 </head>
 <body>
+  {% include "_nav.html" %}
   <div class="header">
     {% if avatar_url %}
       <img class="avatar" src="{{ avatar_url }}" alt="">
@@ -126,9 +127,6 @@
       <div class="subtitle">{{ completion_pct }}% of members collected</div>
       <div class="subtitle">{{ total_cards }} card{{ 's' if total_cards != 1 else '' }} in circulation · {{ total_draws }} total draw{{ 's' if total_draws != 1 else '' }}</div>
     </div>
-    <a href="/marketplace" style="margin-left:auto;padding:5px 12px;background:#3f4147;
-   color:#b9bbbe;border-radius:4px;font-size:12px;font-weight:600;text-decoration:none;
-   margin-right:8px;">🏪 Marketplace</a>
     <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help">?</button>
   </div>
 

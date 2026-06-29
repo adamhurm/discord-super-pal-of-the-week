@@ -103,6 +103,7 @@
   </style>
 </head>
 <body>
+  {% include "_nav.html" %}
 <div class="page">
   <div class="topbar">
     {% if avatar_url %}
@@ -112,7 +113,6 @@
     {% endif %}
     <span class="topbar-name">{{ display_name }}</span>
     <div class="nav">
-      <a class="nav-btn" href="/collection">My Collection</a>
       <button class="nav-btn active" onclick="showTab('listings', event)">Marketplace</button>
       <button class="nav-btn" onclick="showTab('offers', event)">
         My Offers{% if pending_offer_count %}<span class="badge">{{ pending_offer_count }}</span>{% endif %}

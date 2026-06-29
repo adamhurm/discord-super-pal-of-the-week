@@ -180,6 +180,7 @@ async def marketplace_view(request: Request):
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
     ctx = await _marketplace_context(session.user_id)
+    ctx["active_page"] = "marketplace"
     return templates.TemplateResponse(request, "marketplace.html", ctx)
 
 
@@ -310,6 +311,7 @@ async def collection_view(request: Request):
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
     ctx = await _collection_context(session.user_id)
+    ctx["active_page"] = "collection"
     return templates.TemplateResponse(request, "collection.html", ctx)
 
 
