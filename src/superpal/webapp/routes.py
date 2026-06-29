@@ -760,6 +760,7 @@ async def palymarket_list(request: Request):
         "proposed": request.query_params.get("proposed") == "1",
         "error": request.query_params.get("error"),
         "active_tab": "markets",
+        "active_page": "palymarket",
     })
 
 
@@ -776,6 +777,7 @@ async def palymarket_pending(request: Request):
         "is_admin": True,
         "pending_count": len(markets),
         "active_tab": "pending",
+        "active_page": "palymarket",
     })
 
 
@@ -808,6 +810,7 @@ async def palymarket_portfolio(request: Request):
         "is_admin": is_admin,
         "pending_count": pending_count,
         "active_tab": "portfolio",
+        "active_page": "palymarket",
     })
 
 
@@ -824,6 +827,7 @@ async def palymarket_activity(request: Request):
         "is_admin": is_admin,
         "pending_count": pending_count,
         "active_tab": "activity",
+        "active_page": "palymarket",
     })
 
 
@@ -838,6 +842,8 @@ async def palymarket_propose_form(request: Request):
         "is_admin": is_admin,
         "pending_count": pending_count,
         "active_tab": "propose",
+        "active_page": "palymarket",
+        
         "error": request.query_params.get("error"),
     })
 
@@ -936,6 +942,8 @@ async def palymarket_detail(request: Request, market_id: int):
         "no_pct": no_pct,
         "svg_points": svg_points,
         "active_tab": None,
+        "active_page": "palymarket",
+        
         "error": request.query_params.get("error"),
     })
 
