@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bringus Card Game</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; }
+    .hub-main { padding: 40px 24px; max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+    .hub-subtitle { color: #72767d; font-size: 14px; margin-bottom: 32px; }
+    .hub-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 480px) {
+      .hub-grid { grid-template-columns: 1fr; }
+    }
+    .hub-tile {
+      display: block;
+      background: #2b2d31;
+      border-radius: 8px;
+      padding: 24px;
+      text-decoration: none;
+      color: #dcddde;
+      border: 1px solid #3f4147;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .hub-tile:hover {
+      background: #313338;
+      border-color: #5865f2;
+    }
+    .hub-tile-title {
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    .hub-tile-desc {
+      font-size: 13px;
+      color: #72767d;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <div class="hub-main">
+    <h1>Welcome back, {{ display_name }}</h1>
+    <p class="hub-subtitle">What would you like to do?</p>
+    <div class="hub-grid">
+      <a href="/collection" class="hub-tile">
+        <div class="hub-tile-title">My Collection</div>
+        <div class="hub-tile-desc">Browse and manage your cards</div>
+      </a>
+      <a href="/marketplace" class="hub-tile">
+        <div class="hub-tile-title">Marketplace</div>
+        <div class="hub-tile-desc">Trade cards with other players</div>
+      </a>
+      <a href="/palymarket" class="hub-tile">
+        <div class="hub-tile-title">Palymarket</div>
+        <div class="hub-tile-desc">Prediction markets and Palycoins</div>
+      </a>
+      <a href="/economy" class="hub-tile">
+        <div class="hub-tile-title">Economy</div>
+        <div class="hub-tile-desc">Balances and currency exchange</div>
+      </a>
+    </div>
+  </div>
+</body>
+</html>
