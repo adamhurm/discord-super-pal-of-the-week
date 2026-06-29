@@ -7,7 +7,7 @@
   <link rel="icon" href="/static/favicon.ico">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 0; }
     h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
     .balances { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
     .balance-card { flex: 1; min-width: 120px; background: #2b2d31; border-radius: 8px;
@@ -52,7 +52,7 @@
 </head>
 <body>
   {% include "_nav.html" %}
-
+  <div style="padding: 24px">
   {% if request.query_params.get('success') %}
   <div class="banner banner-success">{{ request.query_params.get('success') | replace('+', ' ') }}</div>
   {% endif %}
@@ -138,5 +138,6 @@
     }
     updatePreview();
   </script>
+  </div>
 </body>
 </html>

@@ -18,7 +18,7 @@
 </style>
 <nav class="global-nav" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: #2f3136; border-bottom: 1px solid #3f4147; flex-wrap: wrap;">
   <div class="nav-identity" style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
-    <img class="nav-avatar" src="{{ avatar_url }}" alt="" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">
+    {% if avatar_url %}<img class="nav-avatar" src="{{ avatar_url }}" alt="" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">{% endif %}
     <span class="nav-username" style="font-weight: 600; font-size: 14px; color: #dcddde;">{{ display_name }}</span>
   </div>
   <div class="nav-links" style="display: flex; gap: 4px;">

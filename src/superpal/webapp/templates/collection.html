@@ -8,7 +8,7 @@
   {% if replace_url %}<script>history.replaceState(null, '', '{{ replace_url }}');</script>{% endif %}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 0; }
     .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
               padding-bottom: 16px; border-bottom: 1px solid #3f4147; flex-wrap: wrap; }
     .avatar { width: 56px; height: 56px; border-radius: 50%; background: #5865f2;
@@ -115,6 +115,7 @@
 </head>
 <body>
   {% include "_nav.html" %}
+  <div style="padding: 24px">
   <div class="header">
     {% if avatar_url %}
       <img class="avatar" src="{{ avatar_url }}" alt="">
@@ -364,5 +365,6 @@
       form.submit();
     }
   </script>
+  </div>
 </body>
 </html>

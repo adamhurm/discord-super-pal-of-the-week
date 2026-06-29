@@ -82,18 +82,12 @@ async def landing(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "index.html")
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (session.user_id,),
-        ) as cur:
-            row = await cur.fetchone()
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(
         request,
         "home.html",
         {
-            "display_name": row[0] if row else "Unknown",
-            "avatar_url": row[1] if row else None,
+            **member,
             "active_page": None,
         },
     )
