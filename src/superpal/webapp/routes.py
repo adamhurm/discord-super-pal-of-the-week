@@ -174,6 +174,19 @@ async def _marketplace_context(user_id: str) -> dict:
     }
 
 
+async def _member_display(user_id: str) -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    return {
+        "display_name": row[0] if row else "Unknown",
+        "avatar_url": row[1] if row else None,
+    }
+
+
 @router.get("/marketplace", response_class=HTMLResponse)
 async def marketplace_view(request: Request):
     session = await get_session_from_request(request)
@@ -751,7 +764,9 @@ async def palymarket_list(request: Request):
     for m in markets:
         total = m.yes_pool + m.no_pool
         m._yes_pct = round(m.yes_pool / total * 100) if total > 0 else 50
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_list.html", {
+        **member,
         "balance": balance,
         "markets": markets,
         "bet_map": bet_map,
@@ -772,7 +787,9 @@ async def palymarket_pending(request: Request):
     if session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html")
     markets = await palymarket_svc.list_pending_markets()
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_pending.html", {
+        **member,
         "markets": markets,
         "is_admin": True,
         "pending_count": len(markets),
@@ -803,7 +820,9 @@ async def palymarket_portfolio(request: Request):
     portfolio = await palymarket_svc.get_player_portfolio(session.user_id)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     total_staked = sum(p["amount"] for p in portfolio["active"])
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_portfolio.html", {
+        **member,
         "active": portfolio["active"],
         "resolved": portfolio["resolved"],
         "total_staked": total_staked,
@@ -822,7 +841,9 @@ async def palymarket_activity(request: Request):
     is_admin = session.link_type == "admin"
     activity = await palymarket_svc.get_recent_activity(limit=50)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_activity.html", {
+        **member,
         "activity": activity,
         "is_admin": is_admin,
         "pending_count": pending_count,
@@ -838,12 +859,13 @@ async def palymarket_propose_form(request: Request):
         return templates.TemplateResponse(request, "expired.html")
     is_admin = session.link_type == "admin"
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_propose.html", {
+        **member,
         "is_admin": is_admin,
         "pending_count": pending_count,
         "active_tab": "propose",
         "active_page": "palymarket",
-        
         "error": request.query_params.get("error"),
     })
 
@@ -874,7 +896,9 @@ async def economy(request: Request):
     from superpal.cards.pringle_service import get_balance as get_pringle_balance
     pringles = await get_pringle_balance(session.user_id)
     palycoins = await palymarket_svc.get_palycoin_balance(session.user_id)
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "economy.html", {
+        **member,
         "boins": boins, "pringles": pringles, "palycoins": palycoins,
         "active_page": "economy",
     })
@@ -932,7 +956,9 @@ async def palymarket_detail(request: Request, market_id: int):
     else:
         svg_points = None
 
+    member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_detail.html", {
+        **member,
         "market": market,
         "bets": bets,
         "player_bet": player_bet,
@@ -944,7 +970,6 @@ async def palymarket_detail(request: Request, market_id: int):
         "svg_points": svg_points,
         "active_tab": None,
         "active_page": "palymarket",
-        
         "error": request.query_params.get("error"),
     })
 
