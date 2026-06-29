@@ -876,6 +876,7 @@ async def economy(request: Request):
     palycoins = await palymarket_svc.get_palycoin_balance(session.user_id)
     return templates.TemplateResponse(request, "economy.html", {
         "boins": boins, "pringles": pringles, "palycoins": palycoins,
+        "active_page": "economy",
     })
 
 

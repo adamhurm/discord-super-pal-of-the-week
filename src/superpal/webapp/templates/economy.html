@@ -8,9 +8,6 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #1e1f22; color: #dcddde; font-family: sans-serif; padding: 24px; }
-    .back-link { color: #72767d; text-decoration: none; font-size: 13px;
-                 display: inline-block; margin-bottom: 16px; }
-    .back-link:hover { color: #dcddde; }
     h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
     .balances { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
     .balance-card { flex: 1; min-width: 120px; background: #2b2d31; border-radius: 8px;
@@ -54,7 +51,7 @@
   </style>
 </head>
 <body>
-  <a class="back-link" href="/">← Back</a>
+  {% include "_nav.html" %}
 
   {% if request.query_params.get('success') %}
   <div class="banner banner-success">{{ request.query_params.get('success') | replace('+', ' ') }}</div>
