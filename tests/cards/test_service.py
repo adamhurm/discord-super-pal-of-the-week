@@ -814,3 +814,87 @@ def test_get_week_start_sunday_before_noon_returns_previous_week():
 def test_get_week_start_sunday_after_noon_returns_today():
     result = _get_week_start()
     assert result == "2026-05-17T12:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_get_owned_card_subjects_returns_owned(db):
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card One", "avatar_url": None},
+        ]
+    )
+    await svc.award_card("alice", "card1", "common", 2)
+    result = await svc.get_owned_card_subjects("alice")
+    assert result == [{"discord_id": "card1", "display_name": "Card One", "is_synthetic": False}]
+
+
+@pytest.mark.asyncio
+async def test_get_owned_card_subjects_flags_synthetic(db):
+    _db_mod, svc = db
+    await svc.sync_members([{"discord_id": "alice", "display_name": "Alice", "avatar_url": None}])
+    await svc.add_member("custom1", "Bringus Prime")
+    await svc.award_card("alice", "custom1", "legendary", 1)
+    result = await svc.get_owned_card_subjects("alice")
+    assert result == [
+        {"discord_id": "custom1", "display_name": "Bringus Prime", "is_synthetic": True}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_owned_card_subjects_excludes_zero_quantity(db):
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card One", "avatar_url": None},
+        ]
+    )
+    await svc.award_card("alice", "card1", "common", 0)
+    result = await svc.get_owned_card_subjects("alice")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_owned_card_subjects_deduplicates_across_rarities(db):
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "card1", "display_name": "Card One", "avatar_url": None},
+        ]
+    )
+    await svc.award_card("alice", "card1", "common", 2)
+    await svc.award_card("alice", "card1", "rare", 1)
+    result = await svc.get_owned_card_subjects("alice")
+    assert len(result) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_owned_card_subjects_orders_by_display_name(db):
+    _db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "alice", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "zeb", "display_name": "Zeb", "avatar_url": None},
+            {"discord_id": "amy", "display_name": "Amy", "avatar_url": None},
+        ]
+    )
+    await svc.award_card("alice", "zeb", "common", 1)
+    await svc.award_card("alice", "amy", "common", 1)
+    result = await svc.get_owned_card_subjects("alice")
+    assert [r["display_name"] for r in result] == ["Amy", "Zeb"]
+
+
+@pytest.mark.asyncio
+async def test_get_member_display_name_returns_name(db):
+    _db_mod, svc = db
+    await svc.sync_members([{"discord_id": "alice", "display_name": "Alice", "avatar_url": None}])
+    assert await svc.get_member_display_name("alice") == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_get_member_display_name_returns_none_for_unknown(db):
+    _db_mod, svc = db
+    assert await svc.get_member_display_name("nonexistent") is None

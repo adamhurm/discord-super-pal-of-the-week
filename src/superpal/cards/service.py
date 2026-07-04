@@ -1325,3 +1325,30 @@ async def award_card(
         first_acquired_at=r[5],
         drawn_by_name=r[6],
     )
+
+
+async def get_owned_card_subjects(owner_id: str) -> list[dict]:
+    """Return distinct card subjects (real or synthetic) the owner has at least one copy of.
+    Returns list of dicts with keys: discord_id, display_name, is_synthetic."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT DISTINCT m.discord_id, m.display_name, m.is_synthetic "
+            "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
+            "WHERE uc.owner_id = ? AND uc.quantity > 0 "
+            "ORDER BY m.display_name",
+            (owner_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {"discord_id": r[0], "display_name": r[1], "is_synthetic": bool(r[2])} for r in rows
+    ]
+
+
+async def get_member_display_name(discord_id: str) -> str | None:
+    """Return a member's display name, or None if no such member exists."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?", (discord_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else None
