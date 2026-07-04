@@ -27,7 +27,9 @@ from superpal.cards.fight_service import (
     accept_fight,
     create_fight,
     create_fight_token,
+    decline_fight,
     expire_pending_challenges,
+    get_fight,
     get_fight_leaderboard,
 )
 from superpal.cards.models import RARITY_LABELS
@@ -409,29 +411,7 @@ class FightChallengeView(discord.ui.View):
         await interaction.response.edit_message(
             content="Challenge accepted! DMs are on their way.", view=None
         )
-
-        # DM both players their lobby magic links
-        challenger_url = await create_fight_token(
-            self.fight_id, self.challenger_id, WEBAPP_BASE_URL
-        )
-        opponent_url = await create_fight_token(self.fight_id, self.opponent_id, WEBAPP_BASE_URL)
-
-        for uid, url in ((self.challenger_id, challenger_url), (self.opponent_id, opponent_url)):
-            user = interaction.client.get_user(int(uid))
-            if user:
-                try:
-                    other_name = (
-                        self.challenger_name
-                        if uid == self.opponent_id
-                        else interaction.user.display_name
-                    )
-                    await user.send(
-                        f"Your **{self.mode}** battle vs. **{other_name}** "
-                        f"is ready!\n\nOpen the fight lobby: <{url}>",
-                        suppress_embeds=True,
-                    )
-                except discord.Forbidden:
-                    pass
+        await send_fight_lobby_dms(self.fight_id, self.challenger_id, self.opponent_id, self.mode)
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
     async def decline_button(
@@ -443,6 +423,12 @@ class FightChallengeView(discord.ui.View):
             )
             return
         self.stop()
+        fight = await decline_fight(self.fight_id)
+        if fight is None:
+            await interaction.response.edit_message(
+                content="This challenge has already expired or been resolved.", view=None
+            )
+            return
         await interaction.response.edit_message(content="Challenge declined.", view=None)
 
     async def on_timeout(self) -> None:
@@ -452,6 +438,76 @@ class FightChallengeView(discord.ui.View):
                 await self.message.edit(content="Fight challenge expired.", view=None)
             except discord.NotFound:
                 pass
+
+
+async def send_fight_lobby_dms(
+    fight_id: int, challenger_id: str, opponent_id: str, mode: str
+) -> None:
+    """DM both players their fight lobby magic links after a challenge is accepted."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        names: dict[str, str] = {}
+        for uid in (challenger_id, opponent_id):
+            async with db.execute(
+                "SELECT display_name FROM members WHERE discord_id = ?", (uid,)
+            ) as cur:
+                row = await cur.fetchone()
+            names[uid] = row[0] if row else uid
+
+    guild = bot.get_guild(int(superpal_env.GUILD_ID))
+    if guild is None:
+        return
+
+    for uid, other_uid in ((challenger_id, opponent_id), (opponent_id, challenger_id)):
+        member = guild.get_member(int(uid))
+        if member is None:
+            continue
+        url = await create_fight_token(fight_id, uid, WEBAPP_BASE_URL)
+        try:
+            await member.send(
+                f"Your **{mode}** battle vs. **{names[other_uid]}** "
+                f"is ready!\n\nOpen the fight lobby: <{url}>",
+                suppress_embeds=True,
+            )
+        except discord.Forbidden:
+            pass
+
+
+async def notify_fight_challenge(fight_id: int) -> None:
+    """DM the opponent about a fight challenge created with no Discord channel (i.e. via web)."""
+    fight = await get_fight(fight_id)
+    if fight is None:
+        return
+    guild = bot.get_guild(int(superpal_env.GUILD_ID))
+    if guild is None:
+        return
+    opponent = guild.get_member(int(fight.opponent_id))
+    if opponent is None:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name FROM members WHERE discord_id = ?", (fight.challenger_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    challenger_name = row[0] if row else fight.challenger_id
+
+    view = FightChallengeView(
+        fight_id=fight.id,
+        challenger_id=fight.challenger_id,
+        opponent_id=fight.opponent_id,
+        challenger_name=challenger_name,
+        mode=fight.mode,
+    )
+    try:
+        dm = await opponent.send(
+            content=(
+                f"**{challenger_name}** challenges you to a **{fight.mode.upper()} Battle**!\n\n"
+                f"You have {FIGHT_TOKEN_EXPIRY_MINUTES} minutes to respond."
+            ),
+            view=view,
+        )
+        view.message = dm
+    except discord.Forbidden:
+        pass
 
 
 async def notify_trade_offer(offer_id: int) -> None:

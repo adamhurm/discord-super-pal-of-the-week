@@ -15,9 +15,14 @@ from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
     RARITY_STATS,
+    accept_fight,
+    create_fight,
+    decline_fight,
+    get_active_fight_between,
     get_fight,
     get_fight_session,
     get_fight_state,
+    get_pending_challenges,
     mark_player_ready,
     process_action,
     set_fight_cards,
@@ -39,6 +44,7 @@ from superpal.cards.service import (
     get_all_members_for_admin,
     get_collection,
     get_draw_audit,
+    get_fight_opponents,
     get_my_offers,
     get_player_listings,
     get_pool_stats,
@@ -122,6 +128,30 @@ async def _collection_context(user_id: str) -> dict:
         key = f"{card['member_id']}:{card['rarity']}"
         card["listing_id"] = listed_card_keys.get(key)
 
+    fight_opponents = await get_fight_opponents(user_id)
+
+    pending = await get_pending_challenges(user_id)
+    challenger_ids = {c.challenger_id for c in pending}
+    challenger_names: dict[str, str] = {}
+    if challenger_ids:
+        placeholders = ",".join("?" for _ in challenger_ids)
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT discord_id, display_name FROM members "
+                f"WHERE discord_id IN ({placeholders})",
+                tuple(challenger_ids),
+            ) as cur:
+                challenger_names = {r[0]: r[1] for r in await cur.fetchall()}
+    pending_challenges = [
+        {
+            "id": c.id,
+            "mode": c.mode,
+            "challenger_id": c.challenger_id,
+            "challenger_display_name": challenger_names.get(c.challenger_id, c.challenger_id),
+        }
+        for c in pending
+    ]
+
     return {
         "display_name": row[0] if row else "Unknown",
         "avatar_url": row[1] if row else None,
@@ -131,6 +161,8 @@ async def _collection_context(user_id: str) -> dict:
         "total_cards": sum(c["quantity"] for c in data["owned"]),
         "total_draws": total_draws,
         "unique_members": unique_members,
+        "fight_opponents": fight_opponents,
+        "pending_challenges": pending_challenges,
         "completion_pct": completion_pct,
     }
 
@@ -522,6 +554,76 @@ async def admin_set_bio_stats(
         json.dumps(stats_dict) if stats_dict else "",
     )
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ─── Fight challenge routes ──────────────────────────────────────────────────
+
+
+@router.post("/collection/fight/challenge")
+async def create_fight_challenge_route(
+    request: Request,
+    opponent_id: str = Form(...),
+    mode: str = Form(...),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+
+    if mode not in ("quick", "extended"):
+        return RedirectResponse(url="/collection", status_code=303)
+    if opponent_id == session.user_id:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    eligible = await get_fight_opponents(session.user_id)
+    if opponent_id not in {m["discord_id"] for m in eligible}:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    if await get_active_fight_between(session.user_id, opponent_id):
+        return RedirectResponse(url="/collection", status_code=303)
+
+    fight = await create_fight(session.user_id, opponent_id, mode, channel_id=None)
+    try:
+        from bot import notify_fight_challenge as _notify
+        asyncio.create_task(_notify(fight.id))  # noqa: RUF006
+    except ImportError:
+        pass
+    return RedirectResponse(url="/collection", status_code=303)
+
+
+@router.post("/collection/fight/{fight_id}/accept")
+async def accept_fight_challenge_route(fight_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+
+    fight = await get_fight(fight_id)
+    if fight is None or session.user_id != fight.opponent_id:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    accepted = await accept_fight(fight_id)
+    if accepted is not None:
+        try:
+            from bot import send_fight_lobby_dms as _dm
+            asyncio.create_task(  # noqa: RUF006
+                _dm(fight_id, fight.challenger_id, fight.opponent_id, fight.mode)
+            )
+        except ImportError:
+            pass
+    return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
+
+
+@router.post("/collection/fight/{fight_id}/decline")
+async def decline_fight_challenge_route(fight_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+
+    fight = await get_fight(fight_id)
+    if fight is None or session.user_id != fight.opponent_id:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    await decline_fight(fight_id)
+    return RedirectResponse(url="/collection", status_code=303)
 
 
 # ─── Fight routes ────────────────────────────────────────────────────────────

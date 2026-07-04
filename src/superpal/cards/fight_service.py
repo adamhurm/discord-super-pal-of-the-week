@@ -188,6 +188,48 @@ async def accept_fight(fight_id: int) -> Fight | None:
     return _row_to_fight(row) if row else None
 
 
+async def decline_fight(fight_id: int) -> Fight | None:
+    """Set fight status to 'declined'. Returns None if fight is not in pending state."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE fights SET status = 'declined', last_activity_at = ? "
+            "WHERE id = ? AND status = 'pending'",
+            (now, fight_id),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            return None
+        async with db.execute(f"{_FIGHT_SELECT} WHERE id = ?", (fight_id,)) as c:
+            row = await c.fetchone()
+    return _row_to_fight(row) if row else None
+
+
+async def get_pending_challenges(opponent_id: str) -> list[Fight]:
+    """Return pending fights where opponent_id is the challenged player, newest first."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"{_FIGHT_SELECT} WHERE status = 'pending' AND opponent_id = ? "
+            "ORDER BY created_at DESC",
+            (opponent_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [_row_to_fight(row) for row in rows]
+
+
+async def get_active_fight_between(player_a: str, player_b: str) -> Fight | None:
+    """Return the most recent unresolved fight (pending/lobby/active) between two players."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"{_FIGHT_SELECT} WHERE status IN ('pending','lobby','active') "
+            "AND ((challenger_id = ? AND opponent_id = ?) "
+            "OR (challenger_id = ? AND opponent_id = ?)) ORDER BY id DESC LIMIT 1",
+            (player_a, player_b, player_b, player_a),
+        ) as cur:
+            row = await cur.fetchone()
+    return _row_to_fight(row) if row else None
+
+
 async def create_fight_token(fight_id: int, player_id: str, base_url: str) -> str:
     """Create a one-time fight lobby token. Returns the full lobby URL."""
     token = str(uuid.uuid4())

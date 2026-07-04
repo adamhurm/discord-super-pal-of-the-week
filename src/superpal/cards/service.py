@@ -504,6 +504,19 @@ async def get_collection(owner_id: str) -> dict:
     return {"owned": owned, "undiscovered": undiscovered, "counts": counts}
 
 
+async def get_fight_opponents(exclude_id: str) -> list[dict]:
+    """Return real, non-excluded members eligible to be challenged to a fight."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT discord_id, display_name FROM members "
+            "WHERE is_excluded = 0 AND is_synthetic = 0 AND discord_id != ? "
+            "ORDER BY display_name",
+            (exclude_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [{"discord_id": r[0], "display_name": r[1]} for r in rows]
+
+
 async def reset_draw_log() -> None:
     """Delete all draw_log entries for the current week, restoring everyone's draws."""
     week_start = _get_week_start()

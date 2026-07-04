@@ -128,8 +128,30 @@
       <div class="subtitle">{{ completion_pct }}% of members collected</div>
       <div class="subtitle">{{ total_cards }} card{{ 's' if total_cards != 1 else '' }} in circulation · {{ total_draws }} total draw{{ 's' if total_draws != 1 else '' }}</div>
     </div>
+    <button class="help-btn" onclick="document.getElementById('fight-modal-backdrop').style.display='flex'" title="Challenge to Fight">⚔</button>
     <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="Help">?</button>
   </div>
+
+  {% if pending_challenges %}
+  <div class="pending-challenges" style="background:#2b2d31;border-radius:8px;padding:12px 16px;margin-bottom:20px;">
+    <h3 style="font-size:0.85rem;color:#b9bbbe;margin-bottom:8px;">Fight Challenges</h3>
+    {% for c in pending_challenges %}
+    <div class="challenge-row" style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;">
+      <span style="flex:1;">
+        <strong>{{ c.challenger_display_name }}</strong> challenges you to a {{ c.mode }} battle
+      </span>
+      <form method="post" action="/collection/fight/{{ c.id }}/accept">
+        <button type="submit" style="background:#27ae60;color:#fff;border:none;border-radius:4px;
+                padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;">Accept</button>
+      </form>
+      <form method="post" action="/collection/fight/{{ c.id }}/decline">
+        <button type="submit" style="background:#3f4147;color:#ed4245;border:none;border-radius:4px;
+                padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;">Decline</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <div class="pills">
     <span class="pill pill-common">COMMON ×{{ counts.common }}</span>
@@ -271,6 +293,45 @@
             List It
           </button>
           <button type="button" onclick="closeListForm()"
+                  style="background:#3f4147;color:#b9bbbe;border:none;border-radius:4px;
+                         padding:7px 16px;font-size:13px;cursor:pointer;">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Fight challenge form -->
+  <div id="fight-modal-backdrop" style="display:none;position:fixed;inset:0;
+       background:rgba(0,0,0,0.75);z-index:150;align-items:center;justify-content:center;"
+       onclick="if(event.target===this)this.style.display='none'">
+    <div style="background:#2b2d31;border-radius:8px;padding:24px;max-width:360px;width:90%;">
+      <h2 style="font-size:1rem;margin-bottom:12px;color:#fff;">Challenge to Fight</h2>
+      <form method="post" action="/collection/fight/challenge">
+        <label style="font-size:12px;color:#72767d;display:block;margin-bottom:4px;">Opponent</label>
+        <select name="opponent_id" required
+                style="width:100%;background:#313338;border:1px solid #3f4147;border-radius:4px;
+                       color:#dcddde;padding:6px 10px;font-size:13px;margin-bottom:12px;">
+          {% for opp in fight_opponents %}
+          <option value="{{ opp.discord_id }}">{{ opp.display_name }}</option>
+          {% endfor %}
+        </select>
+        <label style="font-size:12px;color:#72767d;display:block;margin-bottom:4px;">Mode</label>
+        <select name="mode" required
+                style="width:100%;background:#313338;border:1px solid #3f4147;border-radius:4px;
+                       color:#dcddde;padding:6px 10px;font-size:13px;margin-bottom:12px;">
+          <option value="quick">Quick (1v1)</option>
+          <option value="extended">Extended (3v3)</option>
+        </select>
+        <div style="display:flex;gap:8px;">
+          <button type="submit"
+                  style="background:#5865f2;color:#fff;border:none;border-radius:4px;
+                         padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;flex:1;">
+            Send Challenge
+          </button>
+          <button type="button"
+                  onclick="document.getElementById('fight-modal-backdrop').style.display='none'"
                   style="background:#3f4147;color:#b9bbbe;border:none;border-radius:4px;
                          padding:7px 16px;font-size:13px;cursor:pointer;">
             Cancel
