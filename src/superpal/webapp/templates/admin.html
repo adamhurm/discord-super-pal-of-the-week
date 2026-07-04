@@ -159,6 +159,7 @@
         <div class="form-row">
           <label>Owner (receives the card)</label>
           <select name="owner_id">
+            <option value="everyone">Everyone</option>
             {% for m in members %}<option value="{{ m.discord_id }}">{{ m.display_name }}</option>{% endfor %}
           </select>
         </div>
@@ -193,6 +194,7 @@
         <div class="form-row">
           <label>User</label>
           <select name="user_id">
+            <option value="everyone">Everyone</option>
             {% for m in members %}<option value="{{ m.discord_id }}">{{ m.display_name }}</option>{% endfor %}
           </select>
         </div>

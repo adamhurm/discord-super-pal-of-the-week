@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -320,6 +320,64 @@ async def test_admin_award_card_success_redirects(client):
         )
     assert response.status_code == 303
     assert response.headers["location"] == "/admin"
+
+
+@pytest.mark.asyncio
+async def test_admin_award_card_everyone_skips_excluded_members(client):
+    link = _link(link_type="admin")
+    members = [
+        {"discord_id": "111", "is_excluded": False},
+        {"discord_id": "222", "is_excluded": True},
+        {"discord_id": "333", "is_excluded": False},
+    ]
+    award_card_mock = AsyncMock(return_value=None)
+    get_members_mock = AsyncMock(return_value=members)
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.get_all_members_for_admin", new=get_members_mock),
+        patch("superpal.webapp.routes.award_card", new=award_card_mock),
+    ):
+        award_data = {
+            "owner_id": "everyone",
+            "card_member_id": "999",
+            "rarity": "common",
+            "quantity": "2",
+        }
+        response = await client.post("/admin/award", data=award_data, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
+    assert award_card_mock.await_args_list == [
+        call("111", "999", "common", 2),
+        call("333", "999", "common", 2),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_admin_add_draws_everyone_skips_excluded_members(client):
+    link = _link(link_type="admin")
+    members = [
+        {"discord_id": "111", "is_excluded": False},
+        {"discord_id": "222", "is_excluded": True},
+        {"discord_id": "333", "is_excluded": False},
+    ]
+    add_draws_mock = AsyncMock(return_value=None)
+    get_members_mock = AsyncMock(return_value=members)
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.get_all_members_for_admin", new=get_members_mock),
+        patch("superpal.webapp.routes.add_draws", new=add_draws_mock),
+    ):
+        response = await client.post(
+            "/admin/add-draws",
+            data={"user_id": "everyone", "quantity": "3"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
+    assert add_draws_mock.await_args_list == [
+        call("111", 3),
+        call("333", 3),
+    ]
 
 
 @pytest.mark.asyncio

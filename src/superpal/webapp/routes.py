@@ -455,7 +455,14 @@ async def admin_award_card(
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
-    await award_card(owner_id, card_member_id, rarity, max(1, quantity))
+    quantity = max(1, quantity)
+    if owner_id == "everyone":
+        members = await get_all_members_for_admin()
+        for m in members:
+            if not m["is_excluded"]:
+                await award_card(m["discord_id"], card_member_id, rarity, quantity)
+    else:
+        await award_card(owner_id, card_member_id, rarity, quantity)
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -482,7 +489,14 @@ async def admin_add_draws(
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
-    await add_draws(user_id, max(1, quantity))
+    quantity = max(1, quantity)
+    if user_id == "everyone":
+        members = await get_all_members_for_admin()
+        for m in members:
+            if not m["is_excluded"]:
+                await add_draws(m["discord_id"], quantity)
+    else:
+        await add_draws(user_id, quantity)
     return RedirectResponse(url="/admin", status_code=303)
 
 
