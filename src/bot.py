@@ -99,6 +99,28 @@ def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
         return []
 
 
+def _label_card_subjects(subjects: list[dict]) -> list[tuple[str, str]]:
+    """Format (label, discord_id) pairs for card autocomplete, disambiguating collisions.
+
+    Synthetic (non-Discord) subjects get a " (Custom)" tag. Any label that still
+    collides with another entry after tagging gets the subject's last 4 ID chars appended.
+    """
+    labeled = [
+        (
+            f"{s['display_name']} (Custom)" if s["is_synthetic"] else s["display_name"],
+            s["discord_id"],
+        )
+        for s in subjects
+    ]
+    label_counts: dict[str, int] = {}
+    for label, _ in labeled:
+        label_counts[label] = label_counts.get(label, 0) + 1
+    return [
+        (f"{label} ({discord_id[-4:]})" if label_counts[label] > 1 else label, discord_id)
+        for label, discord_id in labeled
+    ]
+
+
 def _resolve_avatar_url(avatar_url: str | None) -> str | None:
     """Return an absolute URL for Discord embeds.
 

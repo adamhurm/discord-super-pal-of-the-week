@@ -351,3 +351,67 @@ class TestCommandsList:
         call_args = mock_channel.send.call_args[0][0]
         assert "!spotw" in call_args
         assert "!karatechop" in call_args
+
+
+class TestLabelCardSubjects:
+    """Tests for _label_card_subjects autocomplete label formatting."""
+
+    def test_plain_label_for_real_member(self, mock_env):
+        from bot import _label_card_subjects
+
+        subjects = [{"discord_id": "111", "display_name": "Alice", "is_synthetic": False}]
+        assert _label_card_subjects(subjects) == [("Alice", "111")]
+
+    def test_custom_tag_for_synthetic_member(self, mock_env):
+        from bot import _label_card_subjects
+
+        subjects = [
+            {"discord_id": "111", "display_name": "Bringus Prime", "is_synthetic": True}
+        ]
+        assert _label_card_subjects(subjects) == [("Bringus Prime (Custom)", "111")]
+
+    def test_no_suffix_when_no_collision(self, mock_env):
+        from bot import _label_card_subjects
+
+        subjects = [
+            {"discord_id": "111", "display_name": "Alice", "is_synthetic": False},
+            {"discord_id": "222", "display_name": "Bob", "is_synthetic": True},
+        ]
+        assert _label_card_subjects(subjects) == [
+            ("Alice", "111"),
+            ("Bob (Custom)", "222"),
+        ]
+
+    def test_disambiguates_colliding_real_names_with_id_suffix(self, mock_env):
+        from bot import _label_card_subjects
+
+        subjects = [
+            {
+                "discord_id": "111111111111111111",
+                "display_name": "Steve",
+                "is_synthetic": False,
+            },
+            {
+                "discord_id": "222222222222222222",
+                "display_name": "Steve",
+                "is_synthetic": False,
+            },
+        ]
+        result = _label_card_subjects(subjects)
+        assert result == [
+            ("Steve (1111)", "111111111111111111"),
+            ("Steve (2222)", "222222222222222222"),
+        ]
+
+    def test_disambiguates_colliding_synthetic_names(self, mock_env):
+        from bot import _label_card_subjects
+
+        subjects = [
+            {"discord_id": "aaaa1111", "display_name": "Bringus", "is_synthetic": True},
+            {"discord_id": "bbbb2222", "display_name": "Bringus", "is_synthetic": True},
+        ]
+        result = _label_card_subjects(subjects)
+        assert result == [
+            ("Bringus (Custom) (1111)", "aaaa1111"),
+            ("Bringus (Custom) (2222)", "bbbb2222"),
+        ]
