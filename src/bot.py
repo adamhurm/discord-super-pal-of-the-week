@@ -910,7 +910,7 @@ async def _card_subject_autocomplete(
         (label, discord_id) for label, discord_id in labeled if current.lower() in label.lower()
     ]
     return [
-        discord.app_commands.Choice(name=label, value=discord_id)
+        discord.app_commands.Choice(name=label[:100], value=discord_id)
         for label, discord_id in matches[:25]
     ]
 
