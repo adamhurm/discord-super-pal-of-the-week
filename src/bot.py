@@ -52,7 +52,9 @@ from superpal.cards.service import (
     get_card_quantity,
     get_collection,
     get_leaderboard,
+    get_member_display_name,
     get_offer_by_id,
+    get_owned_card_subjects,
     gift_card,
     set_offer_discord_message_id,
     sync_members,
@@ -634,7 +636,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
 
 @bot.tree.command(name="card-display", description="Show a card you own in the channel")
 @discord.app_commands.describe(
-    member="The member whose card you want to display",
+    card="The card you want to display",
     rarity="The rarity of the card to display",
 )
 @discord.app_commands.choices(
@@ -647,7 +649,7 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
 )
 async def display_card_command(
     interaction: discord.Interaction,
-    member: discord.Member,
+    card: str,
     rarity: str,
 ) -> None:
     await interaction.response.defer()
@@ -656,13 +658,14 @@ async def display_card_command(
             "SELECT uc.id, m.display_name, m.avatar_url, m.bio, m.stats, uc.drawn_by_name "
             "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
             "WHERE uc.owner_id = ? AND uc.card_member_id = ? AND uc.rarity = ? AND uc.quantity > 0",
-            (str(interaction.user.id), str(member.id), rarity),
+            (str(interaction.user.id), card, rarity),
         ) as cur:
             row = await cur.fetchone()
 
     if row is None:
+        display_name = await get_member_display_name(card) or "Unknown"
         await interaction.followup.send(
-            f"You don't own a {rarity.upper()} {member.display_name} card.",
+            f"You don't own a {rarity.upper()} {display_name} card.",
             ephemeral=True,
         )
         return
@@ -706,7 +709,7 @@ async def my_collection_command(interaction: discord.Interaction) -> None:
     description="Trade 3 duplicate cards for a random card of the same rarity",
 )
 @discord.app_commands.describe(
-    member="The member whose card you want to trade in",
+    card="The card you want to trade in",
     rarity="The rarity of the card to trade",
 )
 @discord.app_commands.choices(
@@ -719,19 +722,20 @@ async def my_collection_command(interaction: discord.Interaction) -> None:
 )
 async def trade_in_command(
     interaction: discord.Interaction,
-    member: discord.Member,
+    card: str,
     rarity: str,
 ) -> None:
     await interaction.response.defer(ephemeral=True)
-    card = await trade_in(
+    result_card = await trade_in(
         owner_id=str(interaction.user.id),
-        card_member_id=str(member.id),
+        card_member_id=card,
         rarity=rarity,
         drawn_by_name=interaction.user.display_name,
     )
-    if card is None:
+    if result_card is None:
+        display_name = await get_member_display_name(card) or "Unknown"
         await interaction.followup.send(
-            f"You need at least 3× {rarity.upper()} {member.display_name} to trade in.",  # noqa: RUF001
+            f"You need at least 3× {rarity.upper()} {display_name} to trade in.",  # noqa: RUF001
             ephemeral=True,
         )
         return
@@ -739,7 +743,7 @@ async def trade_in_command(
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-            (card.card_member_id,),
+            (result_card.card_member_id,),
         ) as cur:
             row = await cur.fetchone()
 
@@ -748,9 +752,9 @@ async def trade_in_command(
     embed = build_card_embed(
         display_name=display_name,
         avatar_url=avatar_url,
-        rarity=card.rarity,
-        card_number=card.id,
-        drawn_by=card.drawn_by_name or interaction.user.display_name,
+        rarity=result_card.rarity,
+        card_number=result_card.id,
+        drawn_by=result_card.drawn_by_name or interaction.user.display_name,
         bio=row[2] if row else None,
         stats_pairs=_parse_stats(row[3] if row else None),
     )
@@ -762,7 +766,7 @@ async def trade_in_command(
     description="Spend 5 duplicate cards to upgrade a member's card rarity",
 )
 @discord.app_commands.describe(
-    member="The member whose card you want to upgrade",
+    card="The card you want to upgrade",
     rarity="The current rarity of the card",
 )
 @discord.app_commands.choices(
@@ -774,19 +778,20 @@ async def trade_in_command(
 )
 async def upgrade_command(
     interaction: discord.Interaction,
-    member: discord.Member,
+    card: str,
     rarity: str,
 ) -> None:
     await interaction.response.defer(ephemeral=True)
-    card = await upgrade(
+    result_card = await upgrade(
         owner_id=str(interaction.user.id),
-        card_member_id=str(member.id),
+        card_member_id=card,
         rarity=rarity,
         drawn_by_name=interaction.user.display_name,
     )
-    if card is None:
+    if result_card is None:
+        display_name = await get_member_display_name(card) or "Unknown"
         await interaction.followup.send(
-            f"You need at least 5× {rarity.upper()} {member.display_name} to upgrade.",  # noqa: RUF001
+            f"You need at least 5× {rarity.upper()} {display_name} to upgrade.",  # noqa: RUF001
             ephemeral=True,
         )
         return
@@ -794,7 +799,7 @@ async def upgrade_command(
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-            (card.card_member_id,),
+            (result_card.card_member_id,),
         ) as cur:
             row = await cur.fetchone()
 
@@ -803,14 +808,14 @@ async def upgrade_command(
     embed = build_card_embed(
         display_name=display_name,
         avatar_url=avatar_url,
-        rarity=card.rarity,
-        card_number=card.id,
-        drawn_by=card.drawn_by_name or interaction.user.display_name,
+        rarity=result_card.rarity,
+        card_number=result_card.id,
+        drawn_by=result_card.drawn_by_name or interaction.user.display_name,
         bio=row[2] if row else None,
         stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send(
-        f"Upgrade complete! {member.display_name} is now {card.rarity.upper()}:",
+        f"Upgrade complete! {display_name} is now {result_card.rarity.upper()}:",
         embed=embed,
         ephemeral=True,
     )
@@ -845,7 +850,7 @@ async def propose_trade_command(interaction: discord.Interaction) -> None:
 @bot.tree.command(name="card-gift", description="Give one of your cards to another player")
 @discord.app_commands.describe(
     recipient="The server member to receive the gift",
-    member="The member card you want to gift",
+    card="The card you want to gift",
     rarity="The rarity of the card to gift",
 )
 @discord.app_commands.choices(
@@ -859,7 +864,7 @@ async def propose_trade_command(interaction: discord.Interaction) -> None:
 async def gift_card_command(
     interaction: discord.Interaction,
     recipient: discord.Member,
-    member: discord.Member,
+    card: str,
     rarity: str,
 ) -> None:
     gifter_id = str(interaction.user.id)
@@ -870,10 +875,11 @@ async def gift_card_command(
         )
         return
 
-    qty = await get_card_quantity(gifter_id, str(member.id), rarity)
+    display_name = await get_member_display_name(card) or "Unknown"
+    qty = await get_card_quantity(gifter_id, card, rarity)
     if qty < 1:
         await interaction.response.send_message(
-            f"You don't own a {RARITY_LABELS[rarity]} {member.display_name} card.",
+            f"You don't own a {RARITY_LABELS[rarity]} {display_name} card.",
             ephemeral=True,
         )
         return
@@ -882,17 +888,37 @@ async def gift_card_command(
         interaction=interaction,
         gifter_id=gifter_id,
         recipient=recipient,
-        card_member_id=str(member.id),
+        card_member_id=card,
         rarity=rarity,
     )
     await interaction.response.send_message(
         (
-            f"You're about to gift a **{RARITY_LABELS[rarity]} {member.display_name}**"
+            f"You're about to gift a **{RARITY_LABELS[rarity]} {display_name}**"
             f" to {recipient.mention} — confirm?"
         ),
         view=view,
         ephemeral=True,
     )
+
+
+async def _card_subject_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[discord.app_commands.Choice[str]]:
+    subjects = await get_owned_card_subjects(str(interaction.user.id))
+    labeled = _label_card_subjects(subjects)
+    matches = [
+        (label, discord_id) for label, discord_id in labeled if current.lower() in label.lower()
+    ]
+    return [
+        discord.app_commands.Choice(name=label, value=discord_id)
+        for label, discord_id in matches[:25]
+    ]
+
+
+display_card_command.autocomplete("card")(_card_subject_autocomplete)
+trade_in_command.autocomplete("card")(_card_subject_autocomplete)
+upgrade_command.autocomplete("card")(_card_subject_autocomplete)
+gift_card_command.autocomplete("card")(_card_subject_autocomplete)
 
 
 @bot.tree.command(name="card-collection-leaderboard", description="Show the top 10 card collectors")
