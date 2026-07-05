@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -10,7 +11,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 import superpal.palymarket.service as palymarket_svc
-from superpal.economy import boin_service, exchange_service
 from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
@@ -53,6 +53,7 @@ from superpal.cards.service import (
 from superpal.cards.service import (
     sync_members as _sync_members,
 )
+from superpal.economy import boin_service, exchange_service
 from superpal.webapp.auth import get_session_from_request, set_session_cookie
 
 # fight_id -> {player_id: WebSocket}
@@ -73,6 +74,8 @@ def _tojson_dc(value: object) -> str:
 
 
 templates.env.filters["tojson"] = _tojson_dc
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -460,7 +463,10 @@ async def admin_award_card(
         members = await get_all_members_for_admin()
         for m in members:
             if not m["is_excluded"]:
-                await award_card(m["discord_id"], card_member_id, rarity, quantity)
+                try:
+                    await award_card(m["discord_id"], card_member_id, rarity, quantity)
+                except aiosqlite.OperationalError:
+                    log.exception("award_card failed for member %s", m["discord_id"])
     else:
         await award_card(owner_id, card_member_id, rarity, quantity)
     return RedirectResponse(url="/admin", status_code=303)
@@ -494,7 +500,10 @@ async def admin_add_draws(
         members = await get_all_members_for_admin()
         for m in members:
             if not m["is_excluded"]:
-                await add_draws(m["discord_id"], quantity)
+                try:
+                    await add_draws(m["discord_id"], quantity)
+                except aiosqlite.OperationalError:
+                    log.exception("add_draws failed for member %s", m["discord_id"])
     else:
         await add_draws(user_id, quantity)
     return RedirectResponse(url="/admin", status_code=303)
