@@ -167,6 +167,10 @@ CREATE TABLE IF NOT EXISTS trade_offer_items (
 async def init_db() -> None:
     """Create all tables if they don't already exist."""
     async with aiosqlite.connect(DB_PATH) as db:
+        # WAL lets reads and writes proceed concurrently instead of serializing
+        # on one exclusive lock per write — without it, concurrent card draws
+        # and admin bulk-awards contend for the same lock and can time out.
+        await db.execute("PRAGMA journal_mode=WAL")
         await db.executescript(_SCHEMA)
         await db.commit()
         try:
