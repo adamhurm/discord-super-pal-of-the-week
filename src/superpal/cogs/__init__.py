@@ -1,0 +1,5 @@
+"""Discord cogs for the Super Pal bot. bot.py loads EXTENSIONS in setup_hook."""
+
+EXTENSIONS = [
+    "superpal.cogs.cards",
+]

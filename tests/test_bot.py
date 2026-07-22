@@ -357,13 +357,13 @@ class TestLabelCardSubjects:
     """Tests for _label_card_subjects autocomplete label formatting."""
 
     def test_plain_label_for_real_member(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [{"discord_id": "111", "display_name": "Alice", "is_synthetic": False}]
         assert _label_card_subjects(subjects) == [("Alice", "111")]
 
     def test_custom_tag_for_synthetic_member(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {"discord_id": "111", "display_name": "Bringus Prime", "is_synthetic": True}
@@ -371,7 +371,7 @@ class TestLabelCardSubjects:
         assert _label_card_subjects(subjects) == [("Bringus Prime (Custom)", "111")]
 
     def test_no_suffix_when_no_collision(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {"discord_id": "111", "display_name": "Alice", "is_synthetic": False},
@@ -383,7 +383,7 @@ class TestLabelCardSubjects:
         ]
 
     def test_disambiguates_colliding_real_names_with_id_suffix(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {
@@ -404,7 +404,7 @@ class TestLabelCardSubjects:
         ]
 
     def test_disambiguates_colliding_synthetic_names(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {"discord_id": "aaaa1111", "display_name": "Bringus", "is_synthetic": True},

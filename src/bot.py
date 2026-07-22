@@ -10,7 +10,6 @@ import datetime
 import secrets
 from typing import cast
 
-import aiosqlite
 import discord
 import uvicorn
 from discord import app_commands
@@ -20,8 +19,7 @@ import superpal.env as superpal_env
 import superpal.notify as notify
 import superpal.palymarket.service as palymarket_svc
 import superpal.static as superpal_static
-from superpal.cards.db import DB_PATH, init_db
-from superpal.cards.embeds import build_card_embed
+from superpal.cards.db import init_db
 from superpal.cards.fight_service import (
     FIGHT_TOKEN_EXPIRY_MINUTES,
     accept_fight,
@@ -30,7 +28,6 @@ from superpal.cards.fight_service import (
     expire_pending_challenges,
     get_fight_leaderboard,
 )
-from superpal.cards.models import RARITY_LABELS
 from superpal.cards.pringle_service import (
     ITEM_COSTS,
     ITEM_DESCRIPTIONS,
@@ -44,27 +41,22 @@ from superpal.cards.pringle_service import (
 )
 from superpal.cards.service import (
     TRADE_EXPIRY_MINUTES,
-    accept_offer,
-    decline_offer,
     decline_trade,
     draw_card,
     execute_trade,
-    expire_offer,
     generate_magic_link,
-    get_card_quantity,
-    get_collection,
-    get_leaderboard,
-    get_member_card_context,
-    get_member_display_name,
-    get_owned_card_subjects,
-    gift_card,
     sync_members,
-    trade_in,
-    upgrade,
 )
-from superpal.env import WEBAPP_BASE_URL
+from superpal.cogs import EXTENSIONS
+from superpal.cogs.helpers import (
+    _is_clippy,
+    _member_card_embed,
+    get_non_bot_members,
+    get_super_pal_role,
+)
 from superpal.economy import boin_service, exchange_service, game_service
 from superpal.economy.boin_service import award_daily_to_all
+from superpal.env import WEBAPP_BASE_URL
 from superpal.schedule import next_noon_utc, next_sunday_noon_utc
 
 FIGHT_CHALLENGE_TIMEOUT = FIGHT_TOKEN_EXPIRY_MINUTES * 60
@@ -79,99 +71,16 @@ log = superpal_env.log
 intents = discord.Intents.default()
 intents.members = True  # Required to list all users in a guild
 intents.message_content = True  # Required to use spin-the-wheel and grab winner
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+class SuperPalBot(commands.Bot):
+    async def setup_hook(self) -> None:
+        for ext in EXTENSIONS:
+            await self.load_extension(ext)
+
+
+bot = SuperPalBot(command_prefix="!", intents=intents)
 notify.set_bot(bot)
-
-CLIPPY_ROLE_ID = 1085646770006151259
-
-
-def _is_clippy(interaction: discord.Interaction) -> bool:
-    role_ids = [r.id for r in getattr(interaction.user, "roles", [])]
-    return CLIPPY_ROLE_ID in role_ids
-
-
-def _label_card_subjects(subjects: list[dict]) -> list[tuple[str, str]]:
-    """Format (label, discord_id) pairs for card autocomplete, disambiguating collisions.
-
-    Synthetic (non-Discord) subjects get a " (Custom)" tag. Any label that still
-    collides with another entry after tagging gets the subject's last 4 ID chars appended.
-    """
-    labeled = [
-        (
-            f"{s['display_name']} (Custom)" if s["is_synthetic"] else s["display_name"],
-            s["discord_id"],
-        )
-        for s in subjects
-    ]
-    label_counts: dict[str, int] = {}
-    for label, _ in labeled:
-        label_counts[label] = label_counts.get(label, 0) + 1
-    return [
-        (f"{label} ({discord_id[-4:]})" if label_counts[label] > 1 else label, discord_id)
-        for label, discord_id in labeled
-    ]
-
-
-def _resolve_avatar_url(avatar_url: str | None) -> str | None:
-    """Return an absolute URL for Discord embeds.
-
-    Synthetic members store avatars as relative paths (/static/avatars/...).
-    Discord's embed API requires HTTP(S) URLs, so prefix with WEBAPP_BASE_URL.
-    """
-    if not avatar_url or avatar_url.startswith("http"):
-        return avatar_url
-    return f"{WEBAPP_BASE_URL.rstrip('/')}{avatar_url}"
-
-
-async def _member_card_embed(
-    card_member_id: str,
-    rarity: str,
-    card_number: int,
-    drawn_by: str,
-    action_label: str = "drawn by",
-) -> discord.Embed:
-    """Build a card embed from the member's stored display fields."""
-    ctx = await get_member_card_context(card_member_id)
-    return build_card_embed(
-        display_name=ctx.display_name if ctx else "Unknown",
-        avatar_url=_resolve_avatar_url(ctx.avatar_url if ctx else None),
-        rarity=rarity,
-        card_number=card_number,
-        drawn_by=drawn_by,
-        bio=ctx.bio if ctx else None,
-        stats_pairs=ctx.stats_pairs if ctx else [],
-        action_label=action_label,
-    )
-
-
-##################
-# Helper Functions
-##################
-def get_non_bot_members(guild: discord.Guild) -> list[discord.Member]:
-    """Get list of non-bot members from a guild.
-
-    Args:
-        guild: Discord guild to get members from
-
-    Returns:
-        List of non-bot members
-    """
-    return [m for m in guild.members if not m.bot]
-
-
-def get_super_pal_role(guild: discord.Guild) -> discord.Role | None:
-    """Get the Super Pal of the Week role from a guild.
-
-    Args:
-        guild: Discord guild to get role from
-
-    Returns:
-        Super Pal role or None if not found
-    """
-    role = discord.utils.get(guild.roles, name=superpal_static.SUPER_PAL_ROLE_NAME)
-    if not role:
-        log.error(f"Super Pal role '{superpal_static.SUPER_PAL_ROLE_NAME}' not found in guild")
-    return role
 
 
 ##################
@@ -229,142 +138,6 @@ class TradeView(discord.ui.View):
                 await self.message.edit(content="Trade offer expired.", view=None)
             except discord.NotFound:
                 pass
-
-
-class TradeOfferView(discord.ui.View):
-    """Discord DM view sent when a marketplace offer arrives."""
-
-    def __init__(self, offer_id: int, listing_owner_id: str):
-        super().__init__(timeout=TRADE_OFFER_EXPIRY_HOURS * 3600)
-        self.offer_id = offer_id
-        self.listing_owner_id = listing_owner_id
-        self.message: discord.Message | None = None
-
-    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
-    async def accept_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if str(interaction.user.id) != self.listing_owner_id:
-            await interaction.response.send_message(
-                "Only the listing owner can accept.", ephemeral=True
-            )
-            return
-        success, reason = await accept_offer(self.offer_id, self.listing_owner_id)
-        self.stop()
-        if success:
-            await interaction.response.edit_message(
-                content="Trade accepted! Cards have been exchanged.", view=None
-            )
-        else:
-            msg = {
-                "not_found": "This offer no longer exists.",
-                "not_owner": "You are not the listing owner.",
-                "listing_no_card": "Trade failed — you no longer have those listing cards.",
-                "offer_no_card": "Trade failed — the proposer no longer has their offered cards.",
-            }.get(reason or "", "Trade failed.")
-            await interaction.response.edit_message(content=msg, view=None)
-
-    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
-    async def decline_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if str(interaction.user.id) != self.listing_owner_id:
-            await interaction.response.send_message(
-                "Only the listing owner can decline.", ephemeral=True
-            )
-            return
-        await decline_offer(self.offer_id, self.listing_owner_id)
-        self.stop()
-        await interaction.response.edit_message(content="Offer declined.", view=None)
-
-    async def on_timeout(self) -> None:
-        await expire_offer(self.offer_id)
-        if self.message:
-            try:
-                await self.message.edit(content="Offer expired.", view=None)
-            except discord.NotFound:
-                pass
-
-
-class GiftConfirmView(discord.ui.View):
-    def __init__(
-        self,
-        interaction: discord.Interaction,
-        gifter_id: str,
-        recipient: discord.Member,
-        card_member_id: str,
-        rarity: str,
-    ):
-        super().__init__(timeout=60)
-        self.interaction = interaction
-        self.gifter_id = gifter_id
-        self.recipient = recipient
-        self.card_member_id = card_member_id
-        self.rarity = rarity
-
-    async def on_timeout(self) -> None:
-        try:
-            await self.interaction.edit_original_response(
-                content="Gift confirmation expired.", view=None
-            )
-        except discord.HTTPException:
-            pass
-
-    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
-    async def confirm_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if str(interaction.user.id) != self.gifter_id:
-            await interaction.response.send_message(
-                "Only the gifter can confirm this.", ephemeral=True
-            )
-            return
-
-        self.stop()
-        card, err = await gift_card(
-            gifter_id=self.gifter_id,
-            recipient_id=str(self.recipient.id),
-            card_member_id=self.card_member_id,
-            rarity=self.rarity,
-            drawn_by_name=interaction.user.display_name,
-        )
-
-        if card is None:
-            msg = {
-                "no_card": "You no longer have that card.",
-                "self_gift": "You can't gift a card to yourself.",
-            }.get(err or "", "Gift failed.")
-            await interaction.response.edit_message(content=msg, view=None)
-            return
-
-        embed = await _member_card_embed(
-            self.card_member_id,
-            rarity=self.rarity,
-            card_number=card.id,
-            drawn_by=self.recipient.display_name,
-            action_label=f"gifted by {interaction.user.display_name} to",
-        )
-        await interaction.response.edit_message(content="Gift sent!", view=None)
-        if isinstance(interaction.channel, discord.abc.Messageable):
-            await interaction.channel.send(
-                content=(
-                    f"{self.recipient.mention} just received "
-                    f"a gift from {interaction.user.mention}!"
-                ),
-                embed=embed,
-            )
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if str(interaction.user.id) != self.gifter_id:
-            await interaction.response.send_message(
-                "Only the gifter can cancel this.", ephemeral=True
-            )
-            return
-        self.stop()
-        await interaction.response.edit_message(content="Gift cancelled.", view=None)
 
 
 #######################
@@ -513,393 +286,6 @@ async def add_super_pal(interaction: discord.Interaction, new_super_pal: discord
         await interaction.response.send_message(
             "Sorry, there was an error processing your request.", ephemeral=True
         )
-
-
-@bot.tree.command(
-    name="card-draw",
-    description="Draw a card from the Bringus deck (up to 5 per week)",
-)
-async def draw_card_command(interaction: discord.Interaction) -> None:
-    await interaction.response.defer()
-    member = interaction.user
-    is_super_pal = any(
-        r.name == superpal_static.SUPER_PAL_ROLE_NAME for r in getattr(member, "roles", [])
-    )
-    max_draws = 10 if is_super_pal else 5
-
-    card = await draw_card(
-        owner_id=str(member.id), max_draws=max_draws, drawn_by_name=member.display_name
-    )
-    if card is None:
-        limit_label = "10 draws" if is_super_pal else "5 draws"
-        await interaction.followup.send(
-            f"You've used your {limit_label} for this week. Come back Sunday!",
-            ephemeral=True,
-        )
-        return
-
-    embed = await _member_card_embed(
-        card.card_member_id,
-        rarity=card.rarity,
-        card_number=card.id,
-        drawn_by=card.drawn_by_name or member.display_name,
-    )
-    await interaction.followup.send(embed=embed)
-
-
-@bot.tree.command(name="card-display", description="Show a card you own in the channel")
-@discord.app_commands.describe(
-    card="The card you want to display",
-    rarity="The rarity of the card to display",
-)
-@discord.app_commands.choices(
-    rarity=[
-        discord.app_commands.Choice(name="Common", value="common"),
-        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-        discord.app_commands.Choice(name="Rare", value="rare"),
-        discord.app_commands.Choice(name="Legendary", value="legendary"),
-    ]
-)
-async def display_card_command(
-    interaction: discord.Interaction,
-    card: str,
-    rarity: str,
-) -> None:
-    await interaction.response.defer()
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT uc.id, uc.drawn_by_name FROM user_cards uc "
-            "WHERE uc.owner_id = ? AND uc.card_member_id = ? AND uc.rarity = ? AND uc.quantity > 0",
-            (str(interaction.user.id), card, rarity),
-        ) as cur:
-            row = await cur.fetchone()
-
-    if row is None:
-        display_name = await get_member_display_name(card) or "Unknown"
-        await interaction.followup.send(
-            f"You don't own a {rarity.upper()} {display_name} card.",
-            ephemeral=True,
-        )
-        return
-
-    card_id, drawn_by_name = row
-    embed = await _member_card_embed(
-        card,
-        rarity=rarity,
-        card_number=card_id,
-        drawn_by=drawn_by_name or interaction.user.display_name,
-    )
-    await interaction.followup.send(embed=embed)
-
-
-@bot.tree.command(name="card-collection", description="Get a private link to your card collection")
-async def my_collection_command(interaction: discord.Interaction) -> None:
-    url = await generate_magic_link(
-        user_id=str(interaction.user.id),
-        link_type="collection",
-        base_url=WEBAPP_BASE_URL,
-    )
-    try:
-        await interaction.user.send(
-            f"Here's your private collection link (valid for 24 hours after first click):\n{url}"
-        )
-        await interaction.response.send_message(
-            "Check your DMs for your collection link!", ephemeral=True
-        )
-    except discord.Forbidden:
-        await interaction.response.send_message(
-            "I couldn't send you a DM. Please enable DMs from server members and try again.",
-            ephemeral=True,
-        )
-
-
-@bot.tree.command(
-    name="card-trade-in",
-    description="Trade 3 duplicate cards for a random card of the same rarity",
-)
-@discord.app_commands.describe(
-    card="The card you want to trade in",
-    rarity="The rarity of the card to trade",
-)
-@discord.app_commands.choices(
-    rarity=[
-        discord.app_commands.Choice(name="Common", value="common"),
-        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-        discord.app_commands.Choice(name="Rare", value="rare"),
-        discord.app_commands.Choice(name="Legendary", value="legendary"),
-    ]
-)
-async def trade_in_command(
-    interaction: discord.Interaction,
-    card: str,
-    rarity: str,
-) -> None:
-    await interaction.response.defer(ephemeral=True)
-    result_card = await trade_in(
-        owner_id=str(interaction.user.id),
-        card_member_id=card,
-        rarity=rarity,
-        drawn_by_name=interaction.user.display_name,
-    )
-    if result_card is None:
-        display_name = await get_member_display_name(card) or "Unknown"
-        await interaction.followup.send(
-            f"You need at least 3× {rarity.upper()} {display_name} to trade in.",  # noqa: RUF001
-            ephemeral=True,
-        )
-        return
-
-    embed = await _member_card_embed(
-        result_card.card_member_id,
-        rarity=result_card.rarity,
-        card_number=result_card.id,
-        drawn_by=result_card.drawn_by_name or interaction.user.display_name,
-    )
-    await interaction.followup.send("Trade complete! You received:", embed=embed, ephemeral=True)
-
-
-@bot.tree.command(
-    name="card-upgrade",
-    description="Spend 5 duplicate cards to upgrade a member's card rarity",
-)
-@discord.app_commands.describe(
-    card="The card you want to upgrade",
-    rarity="The current rarity of the card",
-)
-@discord.app_commands.choices(
-    rarity=[
-        discord.app_commands.Choice(name="Common", value="common"),
-        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-        discord.app_commands.Choice(name="Rare", value="rare"),
-    ]
-)
-async def upgrade_command(
-    interaction: discord.Interaction,
-    card: str,
-    rarity: str,
-) -> None:
-    await interaction.response.defer(ephemeral=True)
-    result_card = await upgrade(
-        owner_id=str(interaction.user.id),
-        card_member_id=card,
-        rarity=rarity,
-        drawn_by_name=interaction.user.display_name,
-    )
-    if result_card is None:
-        display_name = await get_member_display_name(card) or "Unknown"
-        await interaction.followup.send(
-            f"You need at least 5× {rarity.upper()} {display_name} to upgrade.",  # noqa: RUF001
-            ephemeral=True,
-        )
-        return
-
-    display_name = await get_member_display_name(result_card.card_member_id) or "Unknown"
-    embed = await _member_card_embed(
-        result_card.card_member_id,
-        rarity=result_card.rarity,
-        card_number=result_card.id,
-        drawn_by=result_card.drawn_by_name or interaction.user.display_name,
-    )
-    await interaction.followup.send(
-        f"Upgrade complete! {display_name} is now {result_card.rarity.upper()}:",
-        embed=embed,
-        ephemeral=True,
-    )
-
-
-@bot.tree.command(
-    name="card-trade",
-    description="Open the trade marketplace to list cards and make offers",
-)
-async def propose_trade_command(interaction: discord.Interaction) -> None:
-    await interaction.response.defer(ephemeral=True)
-    url = await generate_magic_link(
-        user_id=str(interaction.user.id),
-        link_type="collection",
-        base_url=WEBAPP_BASE_URL,
-    )
-    try:
-        await interaction.user.send(
-            f"Open this link to access the trade marketplace "
-            f"(valid 24 hours after first click):\n{url}\n\n"
-            "Once open, click **Marketplace** in the top nav to browse listings and make offers. "
-            "Right-click any card in your collection to list it for trade."
-        )
-        await interaction.followup.send("Check your DMs for your marketplace link!", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.followup.send(
-            f"Here's your marketplace link (enable DMs to receive these privately):\n{url}",
-            ephemeral=True,
-        )
-
-
-@bot.tree.command(name="card-gift", description="Give one of your cards to another player")
-@discord.app_commands.describe(
-    recipient="The server member to receive the gift",
-    card="The card you want to gift",
-    rarity="The rarity of the card to gift",
-)
-@discord.app_commands.choices(
-    rarity=[
-        discord.app_commands.Choice(name="Common", value="common"),
-        discord.app_commands.Choice(name="Uncommon", value="uncommon"),
-        discord.app_commands.Choice(name="Rare", value="rare"),
-        discord.app_commands.Choice(name="Legendary", value="legendary"),
-    ]
-)
-async def gift_card_command(
-    interaction: discord.Interaction,
-    recipient: discord.Member,
-    card: str,
-    rarity: str,
-) -> None:
-    gifter_id = str(interaction.user.id)
-
-    if interaction.user.id == recipient.id:
-        await interaction.response.send_message(
-            "You can't gift a card to yourself.", ephemeral=True
-        )
-        return
-
-    display_name = await get_member_display_name(card) or "Unknown"
-    qty = await get_card_quantity(gifter_id, card, rarity)
-    if qty < 1:
-        await interaction.response.send_message(
-            f"You don't own a {RARITY_LABELS[rarity]} {display_name} card.",
-            ephemeral=True,
-        )
-        return
-
-    view = GiftConfirmView(
-        interaction=interaction,
-        gifter_id=gifter_id,
-        recipient=recipient,
-        card_member_id=card,
-        rarity=rarity,
-    )
-    await interaction.response.send_message(
-        (
-            f"You're about to gift a **{RARITY_LABELS[rarity]} {display_name}**"
-            f" to {recipient.mention} — confirm?"
-        ),
-        view=view,
-        ephemeral=True,
-    )
-
-
-async def _card_subject_autocomplete(
-    interaction: discord.Interaction, current: str
-) -> list[discord.app_commands.Choice[str]]:
-    subjects = await get_owned_card_subjects(str(interaction.user.id))
-    labeled = _label_card_subjects(subjects)
-    matches = [
-        (label, discord_id) for label, discord_id in labeled if current.lower() in label.lower()
-    ]
-    return [
-        discord.app_commands.Choice(name=label[:100], value=discord_id)
-        for label, discord_id in matches[:25]
-    ]
-
-
-display_card_command.autocomplete("card")(_card_subject_autocomplete)
-trade_in_command.autocomplete("card")(_card_subject_autocomplete)
-upgrade_command.autocomplete("card")(_card_subject_autocomplete)
-gift_card_command.autocomplete("card")(_card_subject_autocomplete)
-
-
-@bot.tree.command(name="card-collection-leaderboard", description="Show the top 10 card collectors")
-@discord.app_commands.describe(sort_by="What to rank players by")
-@discord.app_commands.choices(
-    sort_by=[
-        discord.app_commands.Choice(name="Total Cards", value="total"),
-        discord.app_commands.Choice(name="Legendary Cards", value="legendary"),
-        discord.app_commands.Choice(name="Unique Members", value="unique"),
-    ]
-)
-async def card_collection_leaderboard_command(
-    interaction: discord.Interaction,
-    sort_by: str = "total",
-) -> None:
-    await interaction.response.defer()
-    rows = await get_leaderboard(sort_by)
-
-    title_map = {"total": "Total Cards", "legendary": "Legendary Cards", "unique": "Unique Members"}
-    unit_map = {"total": "cards", "legendary": "legendary cards", "unique": "unique members"}
-    title = f"Top 10 — {title_map.get(sort_by, 'Total Cards')}"
-    unit = unit_map.get(sort_by, "cards")
-
-    if not rows:
-        embed = discord.Embed(
-            title=title,
-            description="No cards have been collected yet!",
-            color=discord.Color(0x5865F2),
-        )
-    else:
-        lines = [
-            f"{rank}. {row['display_name']} — {row['total']} {unit}"
-            for rank, row in enumerate(rows, start=1)
-        ]
-        embed = discord.Embed(
-            title=title, description="\n".join(lines), color=discord.Color(0x5865F2)
-        )
-
-    await interaction.followup.send(embed=embed)
-
-
-@bot.tree.command(name="card-progress", description="Check your card collection progress")
-async def card_progress_command(interaction: discord.Interaction) -> None:
-    await interaction.response.defer(ephemeral=True)
-    data = await get_collection(str(interaction.user.id))
-    owned: list[dict] = data["owned"]
-    undiscovered: list[dict] = data["undiscovered"]
-
-    unique_members_collected = len({c["member_id"] for c in owned})
-    total_eligible = unique_members_collected + len(undiscovered)
-    completion_pct = (
-        round(unique_members_collected / total_eligible * 100) if total_eligible > 0 else 0
-    )
-
-    rarity_members: dict[str, set[str]] = {
-        "common": set(),
-        "uncommon": set(),
-        "rare": set(),
-        "legendary": set(),
-    }
-    member_rarities: dict[str, set[str]] = {}
-    member_names: dict[str, str] = {}
-    for card in owned:
-        rarity_members[card["rarity"]].add(card["member_id"])
-        member_rarities.setdefault(card["member_id"], set()).add(card["rarity"])
-        member_names[card["member_id"]] = card["display_name"]
-
-    per_rarity = {r: len(s) for r, s in rarity_members.items()}
-    all_rarities = {"common", "uncommon", "rare", "legendary"}
-    complete_sets = sorted(
-        member_names[mid] for mid, r in member_rarities.items() if r >= all_rarities
-    )
-
-    embed = discord.Embed(title="Your Card Progress", color=discord.Color.blurple())
-    embed.add_field(
-        name="Collection",
-        value=f"{unique_members_collected}/{total_eligible} members ({completion_pct}%)",
-        inline=False,
-    )
-    embed.add_field(
-        name="Members by Rarity",
-        value=(
-            f"Common: {per_rarity['common']} · "
-            f"Uncommon: {per_rarity['uncommon']} · "
-            f"Rare: {per_rarity['rare']} · "
-            f"Legendary: {per_rarity['legendary']}"
-        ),
-        inline=False,
-    )
-    embed.add_field(
-        name="Complete Sets",
-        value=", ".join(complete_sets) if complete_sets else "None yet",
-        inline=False,
-    )
-    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="card-fight", description="Challenge another player to a card battle")
@@ -1148,8 +534,7 @@ async def card_pringles_command(interaction: discord.Interaction, action: str = 
 )
 async def admin_link_command(interaction: discord.Interaction) -> None:
     member = interaction.user
-    role_ids = [r.id for r in getattr(member, "roles", [])]
-    if CLIPPY_ROLE_ID not in role_ids:
+    if not _is_clippy(interaction):
         await interaction.response.send_message(
             "You don't have permission to use this command.", ephemeral=True
         )
@@ -1180,9 +565,7 @@ async def admin_link_command(interaction: discord.Interaction) -> None:
 )
 @discord.app_commands.describe(message="The message to post to the channel")
 async def announce_command(interaction: discord.Interaction, message: str) -> None:
-    member = interaction.user
-    role_ids = [r.id for r in getattr(member, "roles", [])]
-    if CLIPPY_ROLE_ID not in role_ids:
+    if not _is_clippy(interaction):
         await interaction.response.send_message(
             "You don't have permission to use this command.", ephemeral=True
         )

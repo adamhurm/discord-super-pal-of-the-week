@@ -61,7 +61,7 @@ async def notify_trade_offer(offer_id: int) -> None:
         f"{await get_member_display_name(item.member_id) or item.member_id}"
         for item in offer.listing.items
     ]
-    from bot import TradeOfferView
+    from superpal.cogs.cards import TradeOfferView
 
     view = TradeOfferView(offer_id=offer_id, listing_owner_id=offer.listing.owner_id)
     content = (
