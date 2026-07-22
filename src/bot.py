@@ -7,7 +7,6 @@ featuring AI-powered image generation, automated role management, and fun comman
 
 import asyncio
 import datetime
-import json
 import secrets
 from typing import cast
 
@@ -35,10 +34,12 @@ from superpal.cards.pringle_service import (
     ITEM_COSTS,
     ITEM_DESCRIPTIONS,
     ITEM_NAMES,
+    add_pringles,
     buy_item,
     get_balance,
     get_player_items,
     reset_heal_potions_for_empty_players,
+    spend_pringles,
 )
 from superpal.cards.service import (
     TRADE_EXPIRY_MINUTES,
@@ -52,8 +53,10 @@ from superpal.cards.service import (
     get_card_quantity,
     get_collection,
     get_leaderboard,
+    get_member_card_context,
     get_member_display_name,
     get_offer_by_id,
+    get_offer_discord_message_id,
     get_owned_card_subjects,
     gift_card,
     set_offer_discord_message_id,
@@ -92,15 +95,6 @@ def _is_clippy(interaction: discord.Interaction) -> bool:
 _guild_members_cache: list[dict] | None = None
 
 
-def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
-    if not raw:
-        return []
-    try:
-        return list(json.loads(raw).items())
-    except (json.JSONDecodeError, AttributeError):
-        return []
-
-
 def _label_card_subjects(subjects: list[dict]) -> list[tuple[str, str]]:
     """Format (label, discord_id) pairs for card autocomplete, disambiguating collisions.
 
@@ -132,6 +126,27 @@ def _resolve_avatar_url(avatar_url: str | None) -> str | None:
     if not avatar_url or avatar_url.startswith("http"):
         return avatar_url
     return f"{WEBAPP_BASE_URL.rstrip('/')}{avatar_url}"
+
+
+async def _member_card_embed(
+    card_member_id: str,
+    rarity: str,
+    card_number: int,
+    drawn_by: str,
+    action_label: str = "drawn by",
+) -> discord.Embed:
+    """Build a card embed from the member's stored display fields."""
+    ctx = await get_member_card_context(card_member_id)
+    return build_card_embed(
+        display_name=ctx.display_name if ctx else "Unknown",
+        avatar_url=_resolve_avatar_url(ctx.avatar_url if ctx else None),
+        rarity=rarity,
+        card_number=card_number,
+        drawn_by=drawn_by,
+        bio=ctx.bio if ctx else None,
+        stats_pairs=ctx.stats_pairs if ctx else [],
+        action_label=action_label,
+    )
 
 
 ##################
@@ -327,23 +342,11 @@ class GiftConfirmView(discord.ui.View):
             await interaction.response.edit_message(content=msg, view=None)
             return
 
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-                (self.card_member_id,),
-            ) as cur:
-                row = await cur.fetchone()
-
-        display_name = row[0] if row else "Unknown"
-        avatar_url = _resolve_avatar_url(row[1] if row else None)
-        embed = build_card_embed(
-            display_name=display_name,
-            avatar_url=avatar_url,
+        embed = await _member_card_embed(
+            self.card_member_id,
             rarity=self.rarity,
             card_number=card.id,
             drawn_by=self.recipient.display_name,
-            bio=row[2] if row else None,
-            stats_pairs=_parse_stats(row[3] if row else None),
             action_label=f"gifted by {interaction.user.display_name} to",
         )
         await interaction.response.edit_message(content="Gift sent!", view=None)
@@ -465,25 +468,16 @@ async def notify_trade_offer(offer_id: int) -> None:
     member = guild.get_member(int(offer.listing.owner_id))
     if member is None:
         return
-    async with aiosqlite.connect(DB_PATH) as db:
-        offer_names = []
-        for item in offer.items:
-            async with db.execute(
-                "SELECT display_name FROM members WHERE discord_id = ?", (item.member_id,)
-            ) as cur:
-                row = await cur.fetchone()
-            offer_names.append(
-                f"{RARITY_LABELS[item.rarity]} {row[0] if row else item.member_id}"
-            )
-        listing_names = []
-        for item in offer.listing.items:
-            async with db.execute(
-                "SELECT display_name FROM members WHERE discord_id = ?", (item.member_id,)
-            ) as cur:
-                row = await cur.fetchone()
-            listing_names.append(
-                f"{RARITY_LABELS[item.rarity]} {row[0] if row else item.member_id}"
-            )
+    offer_names = [
+        f"{RARITY_LABELS[item.rarity]} "
+        f"{await get_member_display_name(item.member_id) or item.member_id}"
+        for item in offer.items
+    ]
+    listing_names = [
+        f"{RARITY_LABELS[item.rarity]} "
+        f"{await get_member_display_name(item.member_id) or item.member_id}"
+        for item in offer.listing.items
+    ]
     view = TradeOfferView(offer_id=offer_id, listing_owner_id=offer.listing.owner_id)
     content = (
         f"**{offer.proposer_display_name}** made an offer on your listing!\n\n"
@@ -504,14 +498,9 @@ async def edit_offer_dm(offer_id: int, message: str) -> None:
     offer = await get_offer_by_id(offer_id)
     if offer is None:
         return
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT discord_message_id FROM trade_offers WHERE id = ?", (offer_id,)
-        ) as cur:
-            row = await cur.fetchone()
-    if not row or not row[0]:
+    discord_message_id = await get_offer_discord_message_id(offer_id)
+    if not discord_message_id:
         return
-    discord_message_id = row[0]
     guild = bot.get_guild(int(superpal_env.GUILD_ID))
     if guild is None:
         return
@@ -612,24 +601,11 @@ async def draw_card_command(interaction: discord.Interaction) -> None:
         )
         return
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-            (card.card_member_id,),
-        ) as cur:
-            row = await cur.fetchone()
-
-    display_name = row[0] if row else "Unknown"
-    avatar_url = _resolve_avatar_url(row[1] if row else None)
-
-    embed = build_card_embed(
-        display_name=display_name,
-        avatar_url=avatar_url,
+    embed = await _member_card_embed(
+        card.card_member_id,
         rarity=card.rarity,
         card_number=card.id,
         drawn_by=card.drawn_by_name or member.display_name,
-        bio=row[2] if row else None,
-        stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send(embed=embed)
 
@@ -655,8 +631,7 @@ async def display_card_command(
     await interaction.response.defer()
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT uc.id, m.display_name, m.avatar_url, m.bio, m.stats, uc.drawn_by_name "
-            "FROM user_cards uc JOIN members m ON uc.card_member_id = m.discord_id "
+            "SELECT uc.id, uc.drawn_by_name FROM user_cards uc "
             "WHERE uc.owner_id = ? AND uc.card_member_id = ? AND uc.rarity = ? AND uc.quantity > 0",
             (str(interaction.user.id), card, rarity),
         ) as cur:
@@ -670,15 +645,12 @@ async def display_card_command(
         )
         return
 
-    card_id, display_name, avatar_url, bio, stats_raw, drawn_by_name = row
-    embed = build_card_embed(
-        display_name=display_name,
-        avatar_url=_resolve_avatar_url(avatar_url),
+    card_id, drawn_by_name = row
+    embed = await _member_card_embed(
+        card,
         rarity=rarity,
         card_number=card_id,
         drawn_by=drawn_by_name or interaction.user.display_name,
-        bio=bio,
-        stats_pairs=_parse_stats(stats_raw),
     )
     await interaction.followup.send(embed=embed)
 
@@ -740,23 +712,11 @@ async def trade_in_command(
         )
         return
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-            (result_card.card_member_id,),
-        ) as cur:
-            row = await cur.fetchone()
-
-    display_name = row[0] if row else "Unknown"
-    avatar_url = _resolve_avatar_url(row[1] if row else None)
-    embed = build_card_embed(
-        display_name=display_name,
-        avatar_url=avatar_url,
+    embed = await _member_card_embed(
+        result_card.card_member_id,
         rarity=result_card.rarity,
         card_number=result_card.id,
         drawn_by=result_card.drawn_by_name or interaction.user.display_name,
-        bio=row[2] if row else None,
-        stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send("Trade complete! You received:", embed=embed, ephemeral=True)
 
@@ -796,23 +756,12 @@ async def upgrade_command(
         )
         return
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-            (result_card.card_member_id,),
-        ) as cur:
-            row = await cur.fetchone()
-
-    display_name = row[0] if row else "Unknown"
-    avatar_url = _resolve_avatar_url(row[1] if row else None)
-    embed = build_card_embed(
-        display_name=display_name,
-        avatar_url=avatar_url,
+    display_name = await get_member_display_name(result_card.card_member_id) or "Unknown"
+    embed = await _member_card_embed(
+        result_card.card_member_id,
         rarity=result_card.rarity,
         card_number=result_card.id,
         drawn_by=result_card.drawn_by_name or interaction.user.display_name,
-        bio=row[2] if row else None,
-        stats_pairs=_parse_stats(row[3] if row else None),
     )
     await interaction.followup.send(
         f"Upgrade complete! {display_name} is now {result_card.rarity.upper()}:",
@@ -1218,20 +1167,13 @@ async def card_pringles_command(interaction: discord.Interaction, action: str = 
             ephemeral=True,
         )
     elif action == "trade-in":
-        balance = await get_balance(player_id)
-        if balance < 100:
+        if not await spend_pringles(player_id, 100):
+            balance = await get_balance(player_id)
             await interaction.followup.send(
                 f"You need 100 Pringles to trade in for a card draw. You have {balance}.",
                 ephemeral=True,
             )
             return
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE members SET pringle_balance = pringle_balance - 100 WHERE discord_id = ?",
-                (player_id,),
-            )
-            await db.commit()
 
         is_super_pal = any(
             r.name == superpal_static.SUPER_PAL_ROLE_NAME
@@ -1243,33 +1185,17 @@ async def card_pringles_command(interaction: discord.Interaction, action: str = 
         )
         if card is None:
             # Refund if draw fails (shouldn't happen but be safe)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE members SET pringle_balance = pringle_balance + 100 "
-                    "WHERE discord_id = ?",
-                    (player_id,),
-                )
-                await db.commit()
+            await add_pringles(player_id, 100)
             await interaction.followup.send(
                 "Could not draw a card (something went wrong). Pringles refunded.", ephemeral=True
             )
             return
 
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
-                (card.card_member_id,),
-            ) as cur:
-                row = await cur.fetchone()
-
-        embed = build_card_embed(
-            display_name=row[0] if row else "Unknown",
-            avatar_url=_resolve_avatar_url(row[1] if row else None),
+        embed = await _member_card_embed(
+            card.card_member_id,
             rarity=card.rarity,
             card_number=card.id,
             drawn_by=card.drawn_by_name or interaction.user.display_name,
-            bio=row[2] if row else None,
-            stats_pairs=_parse_stats(row[3] if row else None),
         )
         new_balance = await get_balance(player_id)
         await interaction.followup.send(

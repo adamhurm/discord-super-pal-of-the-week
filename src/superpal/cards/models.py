@@ -35,6 +35,17 @@ class Member:
 
 
 @dataclass
+class MemberCardContext:
+    """Member fields needed to render a card embed or page header."""
+
+    discord_id: str
+    display_name: str
+    avatar_url: str | None
+    bio: str | None
+    stats_pairs: list[tuple[str, str]]
+
+
+@dataclass
 class UserCard:
     id: int
     owner_id: str

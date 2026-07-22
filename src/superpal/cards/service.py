@@ -12,6 +12,7 @@ from superpal.cards.models import (
     RARITY_WEIGHTS,
     CardRef,
     MagicLink,
+    MemberCardContext,
     PendingTrade,
     TradeListingFull,
     TradeOfferFull,
@@ -21,6 +22,15 @@ from superpal.schedule import next_sunday_noon_utc
 
 TRADE_EXPIRY_MINUTES = 10
 TRADE_OFFER_EXPIRY_HOURS = 24
+
+
+def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
+    if not raw:
+        return []
+    try:
+        return list(json.loads(raw).items())
+    except (json.JSONDecodeError, AttributeError):
+        return []
 
 
 def _get_week_start() -> str:
@@ -472,14 +482,6 @@ async def get_collection(owner_id: str) -> dict:
             (owner_id,),
         ) as cur:
             owned_rows = await cur.fetchall()
-
-    def _parse_stats(raw: str | None) -> list[tuple[str, str]]:
-        if not raw:
-            return []
-        try:
-            return list(json.loads(raw).items())
-        except (json.JSONDecodeError, AttributeError):
-            return []
 
     owned = [
         {
@@ -1352,3 +1354,32 @@ async def get_member_display_name(discord_id: str) -> str | None:
         ) as cur:
             row = await cur.fetchone()
     return row[0] if row else None
+
+
+async def get_member_card_context(discord_id: str) -> MemberCardContext | None:
+    """Return the member fields used to render card embeds and page headers."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT display_name, avatar_url, bio, stats FROM members WHERE discord_id = ?",
+            (discord_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return None
+    return MemberCardContext(
+        discord_id=discord_id,
+        display_name=row[0],
+        avatar_url=row[1],
+        bio=row[2],
+        stats_pairs=_parse_stats(row[3]),
+    )
+
+
+async def get_offer_discord_message_id(offer_id: int) -> str | None:
+    """Return the Discord DM message ID stored on an offer, or None."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT discord_message_id FROM trade_offers WHERE id = ?", (offer_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row and row[0] else None

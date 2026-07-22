@@ -898,3 +898,33 @@ async def test_get_member_display_name_returns_name(db):
 async def test_get_member_display_name_returns_none_for_unknown(db):
     _db_mod, svc = db
     assert await svc.get_member_display_name("nonexistent") is None
+
+
+@pytest.mark.asyncio
+async def test_get_member_card_context_returns_fields(db):
+    _db_mod, svc = db
+    await svc.sync_members([{"discord_id": "alice", "display_name": "Alice", "avatar_url": None}])
+    await svc.set_member_bio_stats("alice", "A cool pal", '{"ATK": "9", "DEF": "3"}')
+    ctx = await svc.get_member_card_context("alice")
+    assert ctx is not None
+    assert ctx.discord_id == "alice"
+    assert ctx.display_name == "Alice"
+    assert ctx.avatar_url is None
+    assert ctx.bio == "A cool pal"
+    assert ctx.stats_pairs == [("ATK", "9"), ("DEF", "3")]
+
+
+@pytest.mark.asyncio
+async def test_get_member_card_context_none_for_unknown(db):
+    _db_mod, svc = db
+    assert await svc.get_member_card_context("nonexistent") is None
+
+
+@pytest.mark.asyncio
+async def test_get_member_card_context_malformed_stats(db):
+    _db_mod, svc = db
+    await svc.sync_members([{"discord_id": "alice", "display_name": "Alice", "avatar_url": None}])
+    await svc.set_member_bio_stats("alice", "", "not json")
+    ctx = await svc.get_member_card_context("alice")
+    assert ctx is not None
+    assert ctx.stats_pairs == []

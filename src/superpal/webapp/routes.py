@@ -39,6 +39,8 @@ from superpal.cards.service import (
     get_all_members_for_admin,
     get_collection,
     get_draw_audit,
+    get_member_card_context,
+    get_member_display_name,
     get_my_offers,
     get_player_listings,
     get_pool_stats,
@@ -98,12 +100,8 @@ async def landing(request: Request):
 
 async def _collection_context(user_id: str) -> dict:
     data = await get_collection(user_id)
+    member = await _member_display(user_id)
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (user_id,),
-        ) as cur:
-            row = await cur.fetchone()
         async with db.execute(
             "SELECT COALESCE(SUM(draws_used), 0) FROM draw_log WHERE user_id = ?",
             (user_id,),
@@ -126,8 +124,7 @@ async def _collection_context(user_id: str) -> dict:
         card["listing_id"] = listed_card_keys.get(key)
 
     return {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
+        **member,
         "owned": data["owned"],
         "undiscovered": data["undiscovered"],
         "counts": data["counts"],
@@ -153,15 +150,8 @@ async def _marketplace_context(user_id: str) -> dict:
         trader_counts[oid]["count"] += 1
     active_traders = sorted(trader_counts.values(), key=lambda x: -x["count"])
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?", (user_id,)
-        ) as cur:
-            row = await cur.fetchone()
-
     return {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
+        **(await _member_display(user_id)),
         "listings": listings,
         "my_listings": my_listings,
         "my_offers": my_offers,
@@ -172,15 +162,10 @@ async def _marketplace_context(user_id: str) -> dict:
 
 
 async def _member_display(user_id: str) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (user_id,),
-        ) as cur:
-            row = await cur.fetchone()
+    member = await get_member_card_context(user_id)
     return {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
+        "display_name": member.display_name if member else "Unknown",
+        "avatar_url": member.avatar_url if member else None,
     }
 
 
@@ -337,18 +322,11 @@ async def collection_trade_in(
     card = await trade_in(owner_id=session.user_id, card_member_id=member_id, rarity=rarity)
     if card is None:
         return RedirectResponse(url="/collection", status_code=303)
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (card.card_member_id,),
-        ) as cur:
-            row = await cur.fetchone()
     return templates.TemplateResponse(
         request,
         "trade_result.html",
         {
-            "display_name": row[0] if row else "Unknown",
-            "avatar_url": row[1] if row else None,
+            **(await _member_display(card.card_member_id)),
             "rarity": card.rarity,
             "quantity": card.quantity,
         },
@@ -588,12 +566,7 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
 
     # Load opponent name
     opponent_id = fight.opponent_id if is_challenger else fight.challenger_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name FROM members WHERE discord_id = ?", (opponent_id,)
-        ) as cur:
-            row = await cur.fetchone()
-    opponent_name = row[0] if row else opponent_id
+    opponent_name = await get_member_display_name(opponent_id) or opponent_id
 
     # Load user's cards for the picker
     data = await get_collection(player_id)
@@ -671,12 +644,7 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
 
     effective_fs = session_token or fs
     opponent_id = fight.opponent_id if player_id == fight.challenger_id else fight.challenger_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name FROM members WHERE discord_id = ?", (opponent_id,)
-        ) as cur:
-            row = await cur.fetchone()
-    opponent_name = row[0] if row else opponent_id
+    opponent_name = await get_member_display_name(opponent_id) or opponent_id
 
     items = await get_player_items(player_id)
 

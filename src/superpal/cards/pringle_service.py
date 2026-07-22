@@ -34,6 +34,36 @@ async def get_balance(player_id: str) -> int:
     return row[0] if row and row[0] is not None else 0
 
 
+async def spend_pringles(player_id: str, amount: int) -> bool:
+    """Atomically deduct Pringles. Returns False if the balance is insufficient."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN EXCLUSIVE")
+        async with db.execute(
+            "SELECT pringle_balance FROM members WHERE discord_id = ?",
+            (player_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        balance = row[0] if row and row[0] is not None else 0
+        if balance < amount:
+            return False
+        await db.execute(
+            "UPDATE members SET pringle_balance = pringle_balance - ? WHERE discord_id = ?",
+            (amount, player_id),
+        )
+        await db.commit()
+    return True
+
+
+async def add_pringles(player_id: str, amount: int) -> None:
+    """Credit Pringles to a player."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE members SET pringle_balance = pringle_balance + ? WHERE discord_id = ?",
+            (amount, player_id),
+        )
+        await db.commit()
+
+
 async def get_player_items(player_id: str) -> dict[str, int]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
