@@ -17,6 +17,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import superpal.env as superpal_env
+import superpal.notify as notify
 import superpal.palymarket.service as palymarket_svc
 import superpal.static as superpal_static
 from superpal.cards.db import DB_PATH, init_db
@@ -55,11 +56,8 @@ from superpal.cards.service import (
     get_leaderboard,
     get_member_card_context,
     get_member_display_name,
-    get_offer_by_id,
-    get_offer_discord_message_id,
     get_owned_card_subjects,
     gift_card,
-    set_offer_discord_message_id,
     sync_members,
     trade_in,
     upgrade,
@@ -82,6 +80,7 @@ intents = discord.Intents.default()
 intents.members = True  # Required to list all users in a guild
 intents.message_content = True  # Required to use spin-the-wheel and grab winner
 bot = commands.Bot(command_prefix="!", intents=intents)
+notify.set_bot(bot)
 
 CLIPPY_ROLE_ID = 1085646770006151259
 
@@ -89,10 +88,6 @@ CLIPPY_ROLE_ID = 1085646770006151259
 def _is_clippy(interaction: discord.Interaction) -> bool:
     role_ids = [r.id for r in getattr(interaction.user, "roles", [])]
     return CLIPPY_ROLE_ID in role_ids
-
-
-# Shared guild member cache — set in on_ready, read by the webapp admin sync route
-_guild_members_cache: list[dict] | None = None
 
 
 def _label_card_subjects(subjects: list[dict]) -> list[tuple[str, str]]:
@@ -455,64 +450,6 @@ class FightChallengeView(discord.ui.View):
                 await self.message.edit(content="Fight challenge expired.", view=None)
             except discord.NotFound:
                 pass
-
-
-async def notify_trade_offer(offer_id: int) -> None:
-    """DM the listing owner about a new marketplace offer."""
-    offer = await get_offer_by_id(offer_id)
-    if offer is None:
-        return
-    guild = bot.get_guild(int(superpal_env.GUILD_ID))
-    if guild is None:
-        return
-    member = guild.get_member(int(offer.listing.owner_id))
-    if member is None:
-        return
-    offer_names = [
-        f"{RARITY_LABELS[item.rarity]} "
-        f"{await get_member_display_name(item.member_id) or item.member_id}"
-        for item in offer.items
-    ]
-    listing_names = [
-        f"{RARITY_LABELS[item.rarity]} "
-        f"{await get_member_display_name(item.member_id) or item.member_id}"
-        for item in offer.listing.items
-    ]
-    view = TradeOfferView(offer_id=offer_id, listing_owner_id=offer.listing.owner_id)
-    content = (
-        f"**{offer.proposer_display_name}** made an offer on your listing!\n\n"
-        f"Your listing: {', '.join(listing_names)}\n"
-        f"Their offer: {', '.join(offer_names)}\n\n"
-        f"View in marketplace: {WEBAPP_BASE_URL}/marketplace"
-    )
-    try:
-        dm = await member.send(content=content, view=view)
-        view.message = dm
-        await set_offer_discord_message_id(offer_id, str(dm.id))
-    except discord.Forbidden:
-        pass
-
-
-async def edit_offer_dm(offer_id: int, message: str) -> None:
-    """Edit the DM notification for an offer after web-UI accept/decline."""
-    offer = await get_offer_by_id(offer_id)
-    if offer is None:
-        return
-    discord_message_id = await get_offer_discord_message_id(offer_id)
-    if not discord_message_id:
-        return
-    guild = bot.get_guild(int(superpal_env.GUILD_ID))
-    if guild is None:
-        return
-    owner_member = guild.get_member(int(offer.listing.owner_id))
-    if owner_member is None:
-        return
-    try:
-        dm_channel = await owner_member.create_dm()
-        msg = await dm_channel.fetch_message(int(discord_message_id))
-        await msg.edit(content=message, view=None)
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-        pass
 
 
 ##################
@@ -1422,8 +1359,7 @@ async def on_ready():
             for m in guild.members
             if not m.bot
         ]
-        global _guild_members_cache
-        _guild_members_cache = members_data
+        notify.set_guild_members_cache(members_data)
         await sync_members(members_data)
         log.info("Synced %d members to card DB", len(members_data))
 

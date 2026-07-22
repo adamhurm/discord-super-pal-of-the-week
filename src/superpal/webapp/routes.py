@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+import superpal.notify as notify
 import superpal.palymarket.service as palymarket_svc
 from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
@@ -222,11 +223,7 @@ async def create_offer_route(
     ]
     offer = await create_offer(listing_id, session.user_id, items)
     if not isinstance(offer, str):
-        try:
-            from bot import notify_trade_offer as _notify
-            asyncio.create_task(_notify(offer.id))  # noqa: RUF006
-        except ImportError:
-            pass
+        asyncio.create_task(notify.notify_trade_offer(offer.id))  # noqa: RUF006
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -237,11 +234,9 @@ async def accept_offer_route(offer_id: int, request: Request):
         return templates.TemplateResponse(request, "expired.html")
     ok, _err = await accept_offer(offer_id, session.user_id)
     if ok:
-        try:
-            from bot import edit_offer_dm as _edit
-            asyncio.create_task(_edit(offer_id, "Trade accepted! Cards have been exchanged."))  # noqa: RUF006
-        except ImportError:
-            pass
+        asyncio.create_task(  # noqa: RUF006
+            notify.edit_offer_dm(offer_id, "Trade accepted! Cards have been exchanged.")
+        )
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -251,11 +246,7 @@ async def decline_offer_route(offer_id: int, request: Request):
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
     await decline_offer(offer_id, session.user_id)
-    try:
-        from bot import edit_offer_dm as _edit
-        asyncio.create_task(_edit(offer_id, "Offer declined."))  # noqa: RUF006
-    except ImportError:
-        pass
+    asyncio.create_task(notify.edit_offer_dm(offer_id, "Offer declined."))  # noqa: RUF006
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -359,13 +350,9 @@ async def admin_sync(request: Request):
     session = await get_session_from_request(request)
     if session is None or session.link_type != "admin":
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
-    try:
-        from bot import _guild_members_cache
-
-        if _guild_members_cache:
-            await _sync_members(_guild_members_cache)
-    except ImportError:
-        pass  # running in isolation — sync skipped
+    members = notify.get_guild_members_cache()
+    if members:
+        await _sync_members(members)
     return RedirectResponse(url="/admin", status_code=303)
 
 
