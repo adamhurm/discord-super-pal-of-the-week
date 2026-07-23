@@ -246,7 +246,6 @@
     const MY_PLAYER_ID = "{{ player_id }}";
     const OPP_PLAYER_ID = "{{ opponent_id }}";
     const FIGHT_ID = {{ fight_id }};
-    const FS = "{{ session_token }}";
     const MODE = "{{ fight_mode }}";
     const ITEM_NAMES = {{ item_names | tojson }};
 
@@ -273,7 +272,7 @@
 
     function connect() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/ws/fight/${FIGHT_ID}?fs=${FS}`);
+      ws = new WebSocket(`${proto}://${location.host}/ws/fight/${FIGHT_ID}`);
       ws.onopen = () => {};
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
@@ -814,7 +813,7 @@
     // renderState deduplicates via prevLogIds so already-animated entries never replay.
     const _pollInterval = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/fight/${FIGHT_ID}/state?fs=${encodeURIComponent(FS)}`);
+        const resp = await fetch(`/api/fight/${FIGHT_ID}/state`);
         if (resp.ok) {
           const state = await resp.json();
           if (!state.error) {

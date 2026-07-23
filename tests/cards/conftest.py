@@ -13,8 +13,10 @@ async def db_mods(tmp_path, monkeypatch):
     import superpal.cards.fight_service as fs_mod
     import superpal.cards.pringle_service as ps_mod
     import superpal.cards.service as svc_mod
+    import superpal.sessions as sessions_mod
 
     importlib.reload(db_mod)
+    importlib.reload(sessions_mod)
     importlib.reload(svc_mod)
     importlib.reload(fs_mod)
     importlib.reload(ps_mod)

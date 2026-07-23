@@ -6,6 +6,7 @@ from typing import cast
 
 import aiosqlite
 
+import superpal.sessions as sessions
 from superpal.cards.db import DB_PATH
 from superpal.cards.models import (
     RARITY_ORDER,
@@ -392,7 +393,7 @@ async def generate_magic_link(user_id: str, link_type: str, base_url: str) -> st
 
 async def use_magic_link(token: str) -> MagicLink | None:
     """Return a valid MagicLink for token if it exists and hasn't expired (24h from creation).
-    Each call issues a fresh session expiring at the same time as the link.
+    Each call issues a fresh rolling web session scoped to the link type.
     Returns None if the token is unknown or the link has expired."""
     now = datetime.now(timezone.utc)
 
@@ -414,50 +415,23 @@ async def use_magic_link(token: str) -> MagicLink | None:
         if now >= link_expires:
             return None
 
-        session_token = str(uuid.uuid4())
-        session_expires = link_expires.isoformat()
-
         # Record first use time but don't gate on it.
         consumed_at = row[4] if row[4] is not None else now.isoformat()
         await db.execute(
-            "UPDATE magic_links "
-            "SET consumed_at = ?, session_token = ?, session_expires_at = ? WHERE token = ?",
-            (consumed_at, session_token, session_expires, token),
+            "UPDATE magic_links SET consumed_at = ? WHERE token = ?",
+            (consumed_at, token),
         )
         await db.commit()
 
-        return MagicLink(
-            token=row[0],
-            user_id=row[1],
-            link_type=row[2],
-            created_at=row[3],
-            consumed_at=consumed_at,
-            session_token=session_token,
-            session_expires_at=session_expires,
-        )
-
-
-async def get_session(session_token: str) -> MagicLink | None:
-    """Look up an active session by session_token. Returns None if expired or not found."""
-    now = datetime.now(timezone.utc).isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT token, user_id, link_type, created_at, consumed_at, "
-            "session_token, session_expires_at "
-            "FROM magic_links WHERE session_token = ? AND session_expires_at > ?",
-            (session_token, now),
-        ) as cur:
-            row = await cur.fetchone()
-    if not row:
-        return None
+    session = await sessions.create_session(row[1], row[2])
     return MagicLink(
         token=row[0],
         user_id=row[1],
         link_type=row[2],
         created_at=row[3],
-        consumed_at=row[4],
-        session_token=row[5],
-        session_expires_at=row[6],
+        consumed_at=consumed_at,
+        session_token=session.token,
+        session_expires_at=session.expires_at,
     )
 
 
