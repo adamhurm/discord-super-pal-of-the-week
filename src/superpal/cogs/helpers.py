@@ -6,11 +6,9 @@ import superpal.env as superpal_env
 import superpal.static as superpal_static
 from superpal.cards.embeds import build_card_embed
 from superpal.cards.service import get_member_card_context
-from superpal.env import WEBAPP_BASE_URL
+from superpal.env import CLIPPY_ROLE_ID, WEBAPP_BASE_URL
 
 log = superpal_env.log
-
-CLIPPY_ROLE_ID = 1085646770006151259
 
 
 def _is_clippy(interaction: discord.Interaction) -> bool:

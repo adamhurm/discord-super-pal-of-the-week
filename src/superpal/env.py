@@ -92,6 +92,9 @@ except ValueError as e:
 # Optional variables with defaults
 EMOJI_GUILD_ID = get_env_int("EMOJI_GUILD_ID", default=GUILD_ID)
 
+# Role that gates admin commands (/admin-link, /announce, palymarket admin)
+CLIPPY_ROLE_ID = get_env_int("CLIPPY_ROLE_ID", default=1085646770006151259) or 1085646770006151259
+
 # Webapp configuration — or-fallbacks ensure non-None types when defaults are provided
 WEBAPP_HOST = get_env("WEBAPP_HOST", default="0.0.0.0") or "0.0.0.0"
 WEBAPP_PORT = get_env_int("WEBAPP_PORT", default=8080) or 8080
