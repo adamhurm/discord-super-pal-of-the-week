@@ -133,20 +133,6 @@ class PlayerItem:
 
 
 @dataclass
-class PendingTrade:
-    id: int
-    proposer_id: str
-    recipient_id: str
-    offer_member_id: str
-    offer_rarity: str
-    request_member_id: str
-    request_rarity: str
-    status: str
-    created_at: str
-    expires_at: str
-
-
-@dataclass
 class CardRef:
     member_id: str
     rarity: str

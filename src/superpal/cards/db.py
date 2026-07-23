@@ -113,21 +113,6 @@ CREATE TABLE IF NOT EXISTS magic_links (
     session_expires_at TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS pending_trades (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    proposer_id       TEXT NOT NULL REFERENCES members(discord_id),
-    recipient_id      TEXT NOT NULL REFERENCES members(discord_id),
-    offer_member_id   TEXT NOT NULL REFERENCES members(discord_id),
-    offer_rarity      TEXT NOT NULL CHECK(offer_rarity IN ('common','uncommon','rare','legendary')),
-    request_member_id TEXT NOT NULL REFERENCES members(discord_id),
-    request_rarity    TEXT NOT NULL
-                      CHECK(request_rarity IN ('common','uncommon','rare','legendary')),
-    status            TEXT NOT NULL DEFAULT 'pending'
-                      CHECK(status IN ('pending','accepted','declined','expired')),
-    created_at        TIMESTAMP NOT NULL,
-    expires_at        TIMESTAMP NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS trade_listings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id    TEXT NOT NULL REFERENCES members(discord_id),
@@ -172,6 +157,10 @@ async def init_db() -> None:
         # and admin bulk-awards contend for the same lock and can time out.
         await db.execute("PRAGMA journal_mode=WAL")
         await db.executescript(_SCHEMA)
+        await db.commit()
+        # The DM-based pending_trades flow was replaced by the marketplace
+        # (trade_listings/trade_offers); drop the orphaned table.
+        await db.execute("DROP TABLE IF EXISTS pending_trades")
         await db.commit()
         try:
             await db.execute(

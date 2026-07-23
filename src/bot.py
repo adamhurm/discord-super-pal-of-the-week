@@ -40,10 +40,7 @@ from superpal.cards.pringle_service import (
     spend_pringles,
 )
 from superpal.cards.service import (
-    TRADE_EXPIRY_MINUTES,
-    decline_trade,
     draw_card,
-    execute_trade,
     generate_magic_link,
     sync_members,
 )
@@ -60,7 +57,6 @@ from superpal.env import WEBAPP_BASE_URL
 from superpal.schedule import next_noon_utc, next_sunday_noon_utc
 
 FIGHT_CHALLENGE_TIMEOUT = FIGHT_TOKEN_EXPIRY_MINUTES * 60
-TRADE_OFFER_EXPIRY_HOURS = 24
 
 # Get logger
 log = superpal_env.log
@@ -81,63 +77,6 @@ class SuperPalBot(commands.Bot):
 
 bot = SuperPalBot(command_prefix="!", intents=intents)
 notify.set_bot(bot)
-
-
-##################
-# Trade UI Views #
-##################
-class TradeView(discord.ui.View):
-    def __init__(self, trade_id: int, proposer_id: str, recipient_id: str):
-        super().__init__(timeout=TRADE_EXPIRY_MINUTES * 60)
-        self.trade_id = trade_id
-        self.proposer_id = proposer_id
-        self.recipient_id = recipient_id
-        self.message: discord.Message | None = None
-
-    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
-    async def accept_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if str(interaction.user.id) != self.recipient_id:
-            await interaction.response.send_message(
-                "Only the trade recipient can accept this offer.", ephemeral=True
-            )
-            return
-        success, reason = await execute_trade(self.trade_id)
-        self.stop()
-        if success:
-            await interaction.response.edit_message(
-                content="Trade accepted! Cards have been exchanged.", view=None
-            )
-        else:
-            msg = {
-                "already_resolved": "This trade has already been resolved.",
-                "expired": "This trade has expired.",
-                "proposer_missing_card": "Trade failed — the proposer no longer has that card.",
-                "recipient_missing_card": "Trade failed — you no longer have that card.",
-            }.get(reason or "", "Trade failed.")
-            await interaction.response.edit_message(content=msg, view=None)
-
-    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
-    async def decline_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if str(interaction.user.id) != self.recipient_id:
-            await interaction.response.send_message(
-                "Only the trade recipient can decline this offer.", ephemeral=True
-            )
-            return
-        await decline_trade(self.trade_id)
-        self.stop()
-        await interaction.response.edit_message(content="Trade declined.", view=None)
-
-    async def on_timeout(self) -> None:
-        await decline_trade(self.trade_id)
-        if self.message:
-            try:
-                await self.message.edit(content="Trade offer expired.", view=None)
-            except discord.NotFound:
-                pass
 
 
 #######################
