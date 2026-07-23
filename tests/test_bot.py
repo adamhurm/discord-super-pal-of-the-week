@@ -13,60 +13,78 @@ import pytest
 
 
 class TestSuperPalPromotion:
-    """Tests for super pal promotion functionality."""
+    """Tests for promote_super_pal in superpal.cogs.superpal."""
+
+    def _new_member(self, name, mention, roles=None):
+        member = Mock(spec=discord.Member)
+        member.name = name
+        member.mention = mention
+        member.bot = False
+        member.roles = roles or []
+        member.add_roles = AsyncMock()
+        member.remove_roles = AsyncMock()
+        return member
 
     @pytest.mark.asyncio
-    async def test_promote_new_super_pal(
-        self, mock_env, mock_interaction, mock_member, mock_super_pal_role, mock_channel
+    async def test_promote_swaps_role_and_announces(
+        self, mock_env, mock_guild, mock_super_pal_role, mock_channel
     ):
-        """Test promoting a new user to super pal."""
-        # Setup
-        new_super_pal = Mock(spec=discord.Member)
-        new_super_pal.name = "NewSuperPal"
-        new_super_pal.mention = "<@999999999>"
-        new_super_pal.roles = []
-        new_super_pal.add_roles = AsyncMock()
+        from superpal.cogs.superpal import promote_super_pal
 
-        mock_interaction.user.remove_roles = AsyncMock()
-        mock_interaction.guild.roles = [mock_super_pal_role]
+        current = self._new_member("Current", "<@1>", roles=[mock_super_pal_role])
+        winner = self._new_member("Winner", "<@2>")
+        mock_guild.members = [current, winner]
+        mock_guild.roles = [mock_super_pal_role]
 
-        # Mock discord.utils.get to return the role
         with patch("discord.utils.get", return_value=mock_super_pal_role):
-            with patch("bot.bot") as mock_bot:
-                mock_bot.get_channel = Mock(return_value=mock_channel)
+            ok = await promote_super_pal(
+                mock_guild, mock_channel, winner, promoted_by="TestUser"
+            )
 
-                # Import and test the function logic
-                # Since we can't directly call the slash command, we'll test the logic
-                role = mock_super_pal_role
-                channel = mock_channel
-
-                if role not in new_super_pal.roles:
-                    await new_super_pal.add_roles(role)
-                    await mock_interaction.user.remove_roles(role)
-                    await channel.send(f"Congratulations {new_super_pal.mention}!")
-
-        # Verify
-        new_super_pal.add_roles.assert_called_once_with(mock_super_pal_role)
-        mock_interaction.user.remove_roles.assert_called_once_with(mock_super_pal_role)
-        mock_channel.send.assert_called_once()
+        assert ok is True
+        current.remove_roles.assert_awaited_once_with(mock_super_pal_role)
+        winner.add_roles.assert_awaited_once_with(mock_super_pal_role)
+        mock_channel.send.assert_awaited_once()
+        announcement = mock_channel.send.call_args[0][0]
+        assert winner.mention in announcement
+        assert "by TestUser" in announcement
 
     @pytest.mark.asyncio
-    async def test_promote_existing_super_pal(self, mock_env, mock_member, mock_super_pal_role):
-        """Test attempting to promote someone who is already super pal."""
-        # Setup - member already has the role
-        mock_member.roles = [mock_super_pal_role]
-        mock_member.add_roles = AsyncMock()
+    async def test_promote_removes_role_from_all_holders(
+        self, mock_env, mock_guild, mock_super_pal_role, mock_channel
+    ):
+        from superpal.cogs.superpal import promote_super_pal
 
-        # Test logic
-        if mock_super_pal_role in mock_member.roles:
-            already_super_pal = True
-        else:
-            already_super_pal = False
-            await mock_member.add_roles(mock_super_pal_role)
+        holder1 = self._new_member("H1", "<@1>", roles=[mock_super_pal_role])
+        holder2 = self._new_member("H2", "<@2>", roles=[mock_super_pal_role])
+        winner = self._new_member("Winner", "<@3>")
+        mock_guild.members = [holder1, holder2, winner]
+        mock_guild.roles = [mock_super_pal_role]
 
-        # Verify
-        assert already_super_pal is True
-        mock_member.add_roles.assert_not_called()
+        with patch("discord.utils.get", return_value=mock_super_pal_role):
+            ok = await promote_super_pal(mock_guild, mock_channel, winner)
+
+        assert ok is True
+        holder1.remove_roles.assert_awaited_once_with(mock_super_pal_role)
+        holder2.remove_roles.assert_awaited_once_with(mock_super_pal_role)
+        winner.add_roles.assert_awaited_once_with(mock_super_pal_role)
+        announcement = mock_channel.send.call_args[0][0]
+        assert "the super pal of the week" in announcement
+
+    @pytest.mark.asyncio
+    async def test_promote_fails_without_role(self, mock_env, mock_guild, mock_channel):
+        from superpal.cogs.superpal import promote_super_pal
+
+        winner = self._new_member("Winner", "<@3>")
+        mock_guild.members = [winner]
+        mock_guild.roles = []
+
+        with patch("discord.utils.get", return_value=None):
+            ok = await promote_super_pal(mock_guild, mock_channel, winner)
+
+        assert ok is False
+        winner.add_roles.assert_not_called()
+        mock_channel.send.assert_not_called()
 
 
 class TestWeeklyTask:
@@ -357,13 +375,13 @@ class TestLabelCardSubjects:
     """Tests for _label_card_subjects autocomplete label formatting."""
 
     def test_plain_label_for_real_member(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [{"discord_id": "111", "display_name": "Alice", "is_synthetic": False}]
         assert _label_card_subjects(subjects) == [("Alice", "111")]
 
     def test_custom_tag_for_synthetic_member(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {"discord_id": "111", "display_name": "Bringus Prime", "is_synthetic": True}
@@ -371,7 +389,7 @@ class TestLabelCardSubjects:
         assert _label_card_subjects(subjects) == [("Bringus Prime (Custom)", "111")]
 
     def test_no_suffix_when_no_collision(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {"discord_id": "111", "display_name": "Alice", "is_synthetic": False},
@@ -383,7 +401,7 @@ class TestLabelCardSubjects:
         ]
 
     def test_disambiguates_colliding_real_names_with_id_suffix(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {
@@ -404,7 +422,7 @@ class TestLabelCardSubjects:
         ]
 
     def test_disambiguates_colliding_synthetic_names(self, mock_env):
-        from bot import _label_card_subjects
+        from superpal.cogs.helpers import _label_card_subjects
 
         subjects = [
             {"discord_id": "aaaa1111", "display_name": "Bringus", "is_synthetic": True},

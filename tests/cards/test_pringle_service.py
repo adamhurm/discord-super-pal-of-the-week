@@ -161,3 +161,30 @@ async def test_reset_heal_potions_skips_players_with_heals(db):
     assert count == 1  # only player2 is reset
     assert (await ps.get_player_items("player1")).get("heal_potion") == 1  # unchanged
     assert (await ps.get_player_items("player2")).get("heal_potion") == 2
+
+
+@pytest.mark.asyncio
+async def test_spend_pringles_deducts(db):
+    db_mod, _, ps = db
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE members SET pringle_balance = 150 WHERE discord_id = 'player1'")
+        await conn.commit()
+    assert await ps.spend_pringles("player1", 100) is True
+    assert await ps.get_balance("player1") == 50
+
+
+@pytest.mark.asyncio
+async def test_spend_pringles_insufficient_leaves_balance(db):
+    db_mod, _, ps = db
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE members SET pringle_balance = 50 WHERE discord_id = 'player1'")
+        await conn.commit()
+    assert await ps.spend_pringles("player1", 100) is False
+    assert await ps.get_balance("player1") == 50
+
+
+@pytest.mark.asyncio
+async def test_add_pringles_credits(db):
+    _, _, ps = db
+    await ps.add_pringles("player1", 75)
+    assert await ps.get_balance("player1") == 75

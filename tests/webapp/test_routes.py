@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from superpal.cards.models import MagicLink
+from superpal.cards.models import MagicLink, MemberCardContext
 from superpal.webapp.app import create_app
 
 
@@ -17,6 +17,16 @@ def app():
 async def client(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+def _member(display_name="TestUser") -> MemberCardContext:
+    return MemberCardContext(
+        discord_id="111",
+        display_name=display_name,
+        avatar_url=None,
+        bio=None,
+        stats_pairs=[],
+    )
 
 
 def _link(link_type="collection") -> MagicLink:
@@ -43,7 +53,7 @@ async def test_link_redirect_on_valid_token(client):
     mock_cursor = MagicMock()
     mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
     mock_cursor.__aexit__ = AsyncMock(return_value=False)
-    mock_cursor.fetchone = AsyncMock(return_value=("TestUser", None))
+    mock_cursor.fetchone = AsyncMock(return_value=(0,))
     mock_conn = MagicMock()
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
@@ -51,6 +61,11 @@ async def test_link_redirect_on_valid_token(client):
     with (
         patch("superpal.webapp.routes.use_magic_link", new=AsyncMock(return_value=link)),
         patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/link/abc123", follow_redirects=False)
@@ -164,20 +179,13 @@ async def test_trade_in_success_shows_result(client):
         first_acquired_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    mock_cursor = MagicMock()
-    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
-    mock_cursor.__aexit__ = AsyncMock(return_value=False)
-    mock_cursor.fetchone = AsyncMock(return_value=("Florp Xennial", None))
-
-    mock_conn = MagicMock()
-    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-    mock_conn.__aexit__ = AsyncMock(return_value=False)
-    mock_conn.execute = MagicMock(return_value=mock_cursor)
-
     with (
         patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
         patch("superpal.webapp.routes.trade_in", new=AsyncMock(return_value=received_card)),
-        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member("Florp Xennial")),
+        ),
     ):
         response = await client.post(
             "/collection/trade-in",
@@ -402,7 +410,7 @@ async def test_collection_shows_completion_pct(client):
     mock_cursor = MagicMock()
     mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
     mock_cursor.__aexit__ = AsyncMock(return_value=False)
-    mock_cursor.fetchone = AsyncMock(return_value=("Alice", None))
+    mock_cursor.fetchone = AsyncMock(return_value=(0,))
 
     mock_conn = MagicMock()
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -412,6 +420,11 @@ async def test_collection_shows_completion_pct(client):
     with (
         patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
         patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member("Alice")),
+        ),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/collection")
