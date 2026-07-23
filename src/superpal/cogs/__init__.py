@@ -3,4 +3,5 @@
 EXTENSIONS = [
     "superpal.cogs.cards",
     "superpal.cogs.fights",
+    "superpal.cogs.shop",
 ]
