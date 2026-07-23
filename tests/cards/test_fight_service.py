@@ -593,3 +593,80 @@ async def test_get_fight_state_cards_include_avatar_url(db):
     # p1 has no avatar set — should be None
     p1_card = next(c for c in all_cards if c["card_member_id"] == "p1")
     assert p1_card["avatar_url"] is None
+
+
+# ─── get_player_fights tests ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_player_fights_orders_active_first(db):
+    _db_mod, _, fs, _ = db
+    completed = await fs.create_fight("p1", "p2", "quick")
+    active = await fs.create_fight("p1", "p2", "quick")
+
+    import aiosqlite
+
+    async with aiosqlite.connect(_db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE fights SET status = 'completed', winner_id = 'p2' WHERE id = ?",
+            (completed.id,),
+        )
+        await conn.execute(
+            "UPDATE fights SET status = 'active', current_turn_player_id = 'p1' WHERE id = ?",
+            (active.id,),
+        )
+        await conn.commit()
+
+    rows = await fs.get_player_fights("p1")
+    assert [r["id"] for r in rows] == [active.id, completed.id]
+    assert rows[0]["is_your_turn"] is True
+    assert rows[1]["you_won"] is False
+    assert rows[1]["opponent_id"] == "p2"
+
+
+@pytest.mark.asyncio
+async def test_get_player_fights_excludes_other_players(db):
+    _db_mod, _, fs, _ = db
+    await fs.create_fight("p1", "p2", "quick")
+    rows = await fs.get_player_fights("p3")
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_get_player_fights_uses_display_name(db):
+    _db_mod, svc, fs, _ = db
+    await svc.sync_members(
+        [
+            {"discord_id": "p1", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "p2", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
+    await fs.create_fight("p1", "p2", "quick")
+    rows = await fs.get_player_fights("p1")
+    assert rows[0]["opponent_display_name"] == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_fight_ended_by_escape_detects_escape(db):
+    _db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+
+    import json as _json
+
+    import aiosqlite
+
+    async with aiosqlite.connect(_db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO fight_log (fight_id, actor_id, action_type, action_detail, "
+            "narrative_text) VALUES (?, 'p2', 'run', ?, 'fled')",
+            (fight.id, _json.dumps({"escaped": True})),
+        )
+        await conn.commit()
+    assert await fs.fight_ended_by_escape(fight.id) is True
+
+
+@pytest.mark.asyncio
+async def test_fight_ended_by_escape_false_without_run(db):
+    _db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    assert await fs.fight_ended_by_escape(fight.id) is False

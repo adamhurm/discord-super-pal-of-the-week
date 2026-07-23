@@ -189,6 +189,65 @@ async def accept_fight(fight_id: int) -> Fight | None:
     return _row_to_fight(row) if row else None
 
 
+async def get_player_fights(player_id: str, limit: int = 15) -> list[dict]:
+    """Return a player's fights, active first, then most recent.
+
+    Each row: {id, mode, status, opponent_id, opponent_display_name,
+    is_your_turn, winner_id, you_won, created_at}.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """
+            SELECT f.id, f.mode, f.status, f.winner_id, f.current_turn_player_id, f.created_at,
+                   CASE WHEN f.challenger_id = :pid THEN f.opponent_id
+                        ELSE f.challenger_id END AS opponent_id,
+                   m.display_name
+            FROM fights f
+            LEFT JOIN members m ON m.discord_id =
+                 CASE WHEN f.challenger_id = :pid THEN f.opponent_id ELSE f.challenger_id END
+            WHERE (f.challenger_id = :pid OR f.opponent_id = :pid)
+            ORDER BY CASE f.status
+                         WHEN 'active' THEN 0 WHEN 'lobby' THEN 1
+                         WHEN 'pending' THEN 2 ELSE 3 END,
+                     f.created_at DESC
+            LIMIT :limit
+            """,
+            {"pid": player_id, "limit": limit},
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "id": r[0],
+            "mode": r[1],
+            "status": r[2],
+            "winner_id": r[3],
+            "is_your_turn": r[2] == "active" and r[4] == player_id,
+            "created_at": r[5],
+            "opponent_id": r[6],
+            "opponent_display_name": r[7] or r[6],
+            "you_won": (r[3] == player_id) if r[3] else None,
+        }
+        for r in rows
+    ]
+
+
+async def fight_ended_by_escape(fight_id: int) -> bool:
+    """True if the fight's most recent run attempt succeeded (loser escaped)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT action_detail FROM fight_log "
+            "WHERE fight_id = ? AND action_type = 'run' ORDER BY id DESC LIMIT 1",
+            (fight_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if not row or not row[0]:
+        return False
+    try:
+        return bool(json.loads(row[0]).get("escaped"))
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
 async def create_fight_token(fight_id: int, player_id: str, base_url: str) -> str:
     """Create a one-time fight lobby token. Returns the full lobby URL."""
     token = str(uuid.uuid4())
