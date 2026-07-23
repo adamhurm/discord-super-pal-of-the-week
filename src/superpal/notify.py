@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands
 
 import superpal.env as superpal_env
+from superpal.cards.fight_service import fight_ended_by_escape, get_fight
 from superpal.cards.models import RARITY_LABELS
 from superpal.cards.service import (
     get_member_display_name,
@@ -76,6 +77,53 @@ async def notify_trade_offer(offer_id: int) -> None:
         await set_offer_discord_message_id(offer_id, str(dm.id))
     except discord.Forbidden:
         pass
+
+
+async def announce_fight_result(fight_id: int) -> None:
+    """Post a completed fight's result to the Discord channel it was started from."""
+    if _bot is None:
+        return
+    fight = await get_fight(fight_id)
+    if (
+        fight is None
+        or fight.status != "completed"
+        or not fight.channel_id
+        or not fight.winner_id
+    ):
+        return
+    channel = _bot.get_channel(int(fight.channel_id))
+    if not isinstance(channel, discord.abc.Messageable):
+        return
+
+    winner_name = await get_member_display_name(fight.winner_id) or fight.winner_id
+    loser_id = (
+        fight.opponent_id if fight.winner_id == fight.challenger_id else fight.challenger_id
+    )
+    loser_name = await get_member_display_name(loser_id) or loser_id
+    escaped = await fight_ended_by_escape(fight_id)
+
+    if escaped:
+        headline = (
+            f"🏃 **{loser_name}** fled the battle — **{winner_name}** wins by default!"
+        )
+    else:
+        headline = f"🏆 **{winner_name}** defeated **{loser_name}**!"
+
+    stakes = "50 Pringles transferred to the winner"
+    if fight.mode == "extended":
+        stakes += " · +25 participation bonus for both players"
+    if escaped:
+        stakes += " · 25 Pringle escape penalty"
+
+    embed = discord.Embed(
+        title=f"{fight.mode.capitalize()} Battle Complete",
+        description=f"{headline}\n\n🥫 {stakes}",
+        color=0x3BA55C,
+    )
+    try:
+        await channel.send(embed=embed)
+    except discord.HTTPException as e:
+        log.error("Failed to announce fight %d result: %s", fight_id, e)
 
 
 async def edit_offer_dm(offer_id: int, message: str) -> None:

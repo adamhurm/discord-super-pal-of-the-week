@@ -18,13 +18,21 @@ from superpal.cards.fight_service import (
     RARITY_STATS,
     get_fight,
     get_fight_state,
+    get_player_fights,
     mark_player_ready,
     process_action,
     set_fight_cards,
     use_fight_token,
 )
 from superpal.cards.models import CardRef
-from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
+from superpal.cards.pringle_service import (
+    ITEM_COSTS,
+    ITEM_DESCRIPTIONS,
+    ITEM_NAMES,
+    buy_item,
+    get_balance,
+    get_player_items,
+)
 from superpal.cards.service import (
     accept_offer,
     add_draws,
@@ -502,7 +510,65 @@ async def admin_set_bio_stats(
     return RedirectResponse(url="/admin", status_code=303)
 
 
+# ─── Shop routes ─────────────────────────────────────────────────────────────
+
+
+@router.get("/shop", response_class=HTMLResponse)
+async def shop_view(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    items_owned = await get_player_items(session.user_id)
+    return templates.TemplateResponse(
+        request,
+        "shop.html",
+        {
+            **(await _member_display(session.user_id)),
+            "balance": await get_balance(session.user_id),
+            "items": [
+                {
+                    "type": item_type,
+                    "name": ITEM_NAMES[item_type],
+                    "cost": cost,
+                    "description": ITEM_DESCRIPTIONS[item_type],
+                    "owned": items_owned.get(item_type, 0),
+                }
+                for item_type, cost in ITEM_COSTS.items()
+            ],
+            "active_page": "shop",
+        },
+    )
+
+
+@router.post("/shop/buy")
+async def shop_buy(request: Request, item_type: str = Form(...)):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    ok, reason = await buy_item(session.user_id, item_type)
+    if ok:
+        return RedirectResponse(url=f"/shop?bought={item_type}", status_code=303)
+    return RedirectResponse(url=f"/shop?error={reason}", status_code=303)
+
+
 # ─── Fight routes ────────────────────────────────────────────────────────────
+
+
+@router.get("/fights", response_class=HTMLResponse)
+async def fights_view(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    fights = await get_player_fights(session.user_id)
+    return templates.TemplateResponse(
+        request,
+        "fights.html",
+        {
+            **(await _member_display(session.user_id)),
+            "fights": fights,
+            "active_page": "fights",
+        },
+    )
 
 
 async def _resolve_fight_player(request: Request, fight_id: int) -> str | None:
@@ -702,6 +768,7 @@ async def fight_ws(websocket: WebSocket, fight_id: int):
             await _broadcast(fight_id, {"type": "state", "data": new_state})
 
             if new_state.get("status") == "completed":
+                asyncio.create_task(notify.announce_fight_result(fight_id))  # noqa: RUF006
                 break
 
     except WebSocketDisconnect:

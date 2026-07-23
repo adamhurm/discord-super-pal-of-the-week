@@ -90,3 +90,86 @@ async def test_edit_offer_dm_edits_message(monkeypatch):
 
     dm_channel.fetch_message.assert_awaited_once_with(321)
     msg.edit.assert_awaited_once_with(content="Offer declined.", view=None)
+
+
+def _fake_fight(status="completed", channel_id="555", winner_id="p1", mode="quick"):
+    fight = MagicMock()
+    fight.status = status
+    fight.channel_id = channel_id
+    fight.winner_id = winner_id
+    fight.mode = mode
+    fight.challenger_id = "p1"
+    fight.opponent_id = "p2"
+    return fight
+
+
+@pytest.mark.asyncio
+async def test_announce_fight_result_noop_without_bot():
+    with patch("superpal.notify.get_fight", new=AsyncMock()) as get_fight:
+        await notify.announce_fight_result(1)
+    get_fight.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_announce_fight_result_sends_embed():
+    import discord
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock()
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    notify.set_bot(bot)
+
+    with (
+        patch("superpal.notify.get_fight", new=AsyncMock(return_value=_fake_fight())),
+        patch("superpal.notify.fight_ended_by_escape", new=AsyncMock(return_value=False)),
+        patch(
+            "superpal.notify.get_member_display_name",
+            new=AsyncMock(side_effect=lambda pid: {"p1": "Alice", "p2": "Bob"}.get(pid)),
+        ),
+    ):
+        await notify.announce_fight_result(1)
+
+    bot.get_channel.assert_called_once_with(555)
+    channel.send.assert_awaited_once()
+    embed = channel.send.call_args.kwargs["embed"]
+    assert "Alice" in embed.description
+    assert "Bob" in embed.description
+    assert "50 Pringles" in embed.description
+
+
+@pytest.mark.asyncio
+async def test_announce_fight_result_escape_flavor():
+    import discord
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock()
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    notify.set_bot(bot)
+
+    with (
+        patch(
+            "superpal.notify.get_fight",
+            new=AsyncMock(return_value=_fake_fight(mode="extended")),
+        ),
+        patch("superpal.notify.fight_ended_by_escape", new=AsyncMock(return_value=True)),
+        patch("superpal.notify.get_member_display_name", new=AsyncMock(return_value="Pal")),
+    ):
+        await notify.announce_fight_result(1)
+
+    embed = channel.send.call_args.kwargs["embed"]
+    assert "fled" in embed.description
+    assert "escape penalty" in embed.description
+    assert "participation bonus" in embed.description
+
+
+@pytest.mark.asyncio
+async def test_announce_fight_result_skips_incomplete_or_channelless():
+    bot = MagicMock()
+    notify.set_bot(bot)
+
+    for fight in (_fake_fight(status="active"), _fake_fight(channel_id=None), None):
+        with patch("superpal.notify.get_fight", new=AsyncMock(return_value=fight)):
+            await notify.announce_fight_result(1)
+    bot.get_channel.assert_not_called()

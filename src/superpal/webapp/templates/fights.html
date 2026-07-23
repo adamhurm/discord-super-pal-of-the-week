@@ -1,0 +1,54 @@
+{% extends "_base.html" %}
+{% block title %}Fights — Bringus Card Game{% endblock %}
+{% block style %}
+    .fight-row { display: flex; align-items: center; justify-content: space-between;
+                 gap: 12px; background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                 padding: 16px 20px; margin-bottom: 10px; flex-wrap: wrap; }
+    .fight-info { display: flex; flex-direction: column; gap: 4px; }
+    .fight-opponent { font-weight: 700; font-size: 15px; color: #fff; }
+    .fight-meta { font-size: 12px; color: #72767d; }
+    .status-pill { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                   text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
+    .status-active { background: #3ba55c20; color: #3ba55c; }
+    .status-lobby { background: #faa61a20; color: #faa61a; }
+    .status-pending { background: #72767d20; color: #b9bbbe; }
+    .status-completed { background: #5865f220; color: #5865f2; }
+    .status-expired { background: #72767d20; color: #72767d; }
+    .your-turn { color: #3ba55c; font-weight: 700; }
+    .empty-state { text-align: center; color: #72767d; padding: 48px 0; font-size: 14px; }
+{% endblock %}
+{% block content %}
+  <h1>Your Fights</h1>
+
+  {% if not fights %}
+  <div class="empty-state">
+    No fights yet. Challenge someone with <code>/card-fight</code> in Discord!
+  </div>
+  {% endif %}
+
+  {% for fight in fights %}
+  <div class="fight-row">
+    <div class="fight-info">
+      <div class="fight-opponent">vs. {{ fight.opponent_display_name }}</div>
+      <div class="fight-meta">
+        {{ fight.mode | capitalize }} battle
+        {% if fight.status == 'active' and fight.is_your_turn %}
+          · <span class="your-turn">your turn!</span>
+        {% elif fight.status == 'completed' %}
+          {% if fight.you_won %}· you won 🏆{% else %}· you lost{% endif %}
+        {% endif %}
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span class="status-pill status-{{ fight.status }}">{{ fight.status }}</span>
+      {% if fight.status == 'lobby' %}
+        <a class="btn btn-primary" href="/fight/{{ fight.id }}/lobby">Enter Lobby</a>
+      {% elif fight.status == 'active' %}
+        <a class="btn btn-primary" href="/fight/{{ fight.id }}/battle">Enter Battle</a>
+      {% elif fight.status == 'pending' %}
+        <span class="fight-meta">waiting for accept in Discord</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+{% endblock %}

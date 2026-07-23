@@ -586,3 +586,127 @@ async def test_fight_state_api_unauthorized(client):
     with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
         response = await client.get("/api/fight/1/state")
     assert response.status_code == 401
+
+
+# ─── Shop & fights page tests ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_shop_unauthenticated_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.get("/shop")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_shop_renders_items_and_balance(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_balance", new=AsyncMock(return_value=125)),
+        patch(
+            "superpal.webapp.routes.get_player_items",
+            new=AsyncMock(return_value={"heal_potion": 2}),
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+    ):
+        response = await client.get("/shop")
+    assert response.status_code == 200
+    assert "125" in response.text
+    assert "Heal Potion" in response.text
+    assert "Smoke Screen" in response.text
+
+
+@pytest.mark.asyncio
+async def test_shop_buy_success_redirects(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.buy_item", new=AsyncMock(return_value=(True, ""))),
+    ):
+        response = await client.post(
+            "/shop/buy", data={"item_type": "heal_potion"}, follow_redirects=False
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/shop?bought=heal_potion"
+
+
+@pytest.mark.asyncio
+async def test_shop_buy_insufficient_redirects_with_error(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.buy_item",
+            new=AsyncMock(return_value=(False, "insufficient_pringles")),
+        ),
+    ):
+        response = await client.post(
+            "/shop/buy", data={"item_type": "heal_potion"}, follow_redirects=False
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/shop?error=insufficient_pringles"
+
+
+@pytest.mark.asyncio
+async def test_fights_page_unauthenticated_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.get("/fights")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_fights_page_renders_rows(client):
+    fights = [
+        {
+            "id": 7,
+            "mode": "quick",
+            "status": "active",
+            "winner_id": None,
+            "is_your_turn": True,
+            "created_at": "2026-07-01",
+            "opponent_id": "222",
+            "opponent_display_name": "Bob",
+            "you_won": None,
+        },
+        {
+            "id": 6,
+            "mode": "extended",
+            "status": "completed",
+            "winner_id": "111",
+            "is_your_turn": False,
+            "created_at": "2026-06-01",
+            "opponent_id": "333",
+            "opponent_display_name": "Carol",
+            "you_won": True,
+        },
+    ]
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_player_fights", new=AsyncMock(return_value=fights)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+    ):
+        response = await client.get("/fights")
+    assert response.status_code == 200
+    assert "Bob" in response.text
+    assert "your turn" in response.text
+    assert "/fight/7/battle" in response.text
+    assert "Carol" in response.text
+    assert "you won" in response.text
