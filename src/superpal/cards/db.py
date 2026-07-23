@@ -78,11 +78,12 @@ CREATE TABLE IF NOT EXISTS fight_tokens (
     session_token TEXT
 );
 
-CREATE TABLE IF NOT EXISTS fight_sessions (
-    session_token TEXT PRIMARY KEY,
-    fight_id      INTEGER NOT NULL REFERENCES fights(id),
-    player_id     TEXT NOT NULL REFERENCES members(discord_id),
-    expires_at    TIMESTAMP NOT NULL
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    scope      TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS user_cards (
@@ -161,6 +162,9 @@ async def init_db() -> None:
         # The DM-based pending_trades flow was replaced by the marketplace
         # (trade_listings/trade_offers); drop the orphaned table.
         await db.execute("DROP TABLE IF EXISTS pending_trades")
+        await db.commit()
+        # fight_sessions was folded into the unified sessions table.
+        await db.execute("DROP TABLE IF EXISTS fight_sessions")
         await db.commit()
         try:
             await db.execute(

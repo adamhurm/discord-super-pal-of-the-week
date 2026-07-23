@@ -390,11 +390,13 @@ async def test_fight_token_flow(db):
     _, _, session_tok2 = result2
     assert session_tok2 == session_tok
 
-    # Session is valid
-    info = await fs.get_fight_session(session_tok)
-    assert info is not None
-    assert info["fight_id"] == fight.id
-    assert info["player_id"] == "p1"
+    # Session is valid and scoped to this fight
+    import superpal.sessions as sessions
+
+    session = await sessions.get_session(session_tok)
+    assert session is not None
+    assert session.fight_id == fight.id
+    assert session.user_id == "p1"
 
 
 # ─── get_fight_leaderboard tests ────────────────────────────────────────────

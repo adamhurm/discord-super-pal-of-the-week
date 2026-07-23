@@ -17,7 +17,6 @@ from superpal.cards.fight_service import (
     ATTACKS,
     RARITY_STATS,
     get_fight,
-    get_fight_session,
     get_fight_state,
     mark_player_ready,
     process_action,
@@ -57,7 +56,12 @@ from superpal.cards.service import (
     sync_members as _sync_members,
 )
 from superpal.economy import boin_service, exchange_service
-from superpal.webapp.auth import get_session_from_request, set_session_cookie
+from superpal.sessions import get_session as get_web_session
+from superpal.webapp.auth import (
+    SESSION_COOKIE_NAME,
+    get_session_from_request,
+    set_session_cookie,
+)
 
 # fight_id -> {player_id: WebSocket}
 _fight_connections: dict[int, dict[str, WebSocket]] = {}
@@ -327,7 +331,7 @@ async def collection_trade_in(
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_view(request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     ctx = await _admin_context()
     return templates.TemplateResponse(request, "admin.html", ctx)
@@ -336,7 +340,7 @@ async def admin_view(request: Request):
 @router.post("/admin/exclude/{member_id}")
 async def toggle_exclude(member_id: str, request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     members = await get_all_members_for_admin()
     current = next((m for m in members if m["discord_id"] == member_id), None)
@@ -348,7 +352,7 @@ async def toggle_exclude(member_id: str, request: Request):
 @router.post("/admin/sync")
 async def admin_sync(request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     members = notify.get_guild_members_cache()
     if members:
@@ -359,7 +363,7 @@ async def admin_sync(request: Request):
 @router.post("/admin/reset-draws")
 async def admin_reset_draws(request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await reset_draw_log()
     return RedirectResponse(url="/admin", status_code=303)
@@ -372,7 +376,7 @@ async def admin_add_member(
     display_name: str = Form(...),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     if not discord_id.strip():
         discord_id = str(uuid.uuid4())
@@ -387,7 +391,7 @@ async def admin_set_member_avatar(
     image: UploadFile = File(...),  # noqa: B008 — FastAPI sentinel pattern
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     suffix = Path(image.filename or "upload.png").suffix.lower()
     if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
@@ -406,7 +410,7 @@ async def admin_set_forced_rarity(
     rarity: str = Form(...),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await set_forced_rarity(member_id, rarity or None)
     return RedirectResponse(url="/admin", status_code=303)
@@ -421,7 +425,7 @@ async def admin_award_card(
     quantity: int = Form(1),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     quantity = max(1, quantity)
     if owner_id == "everyone":
@@ -440,7 +444,7 @@ async def admin_award_card(
 @router.get("/admin/audit", response_class=HTMLResponse)
 async def admin_audit(request: Request, user_id: str = ""):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     ctx = await _admin_context()
     audit_result = await get_draw_audit(user_id) if user_id else None
@@ -458,7 +462,7 @@ async def admin_add_draws(
     quantity: int = Form(1),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     quantity = max(1, quantity)
     if user_id == "everyone":
@@ -482,7 +486,7 @@ async def admin_set_bio_stats(
     stats_text: str = Form(""),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     stats_dict: dict[str, str] = {}
     for line in stats_text.splitlines():
@@ -501,42 +505,40 @@ async def admin_set_bio_stats(
 # ─── Fight routes ────────────────────────────────────────────────────────────
 
 
-async def _resolve_fight_session(request: Request, fight_id: int) -> tuple[str | None, str | None]:
+async def _resolve_fight_player(request: Request, fight_id: int) -> str | None:
     """
-    Determine the player_id for a fight request.
-    Returns (player_id, session_token) or (None, None) if unauthenticated.
-    Checks the `fs` query param first, then falls back to bringus_session.
+    Determine the player_id for a fight request from the session cookie.
+    A fight-scoped session must match this fight; any other session works
+    if the logged-in user is a participant.
     """
-    fs = request.query_params.get("fs")
-    if fs:
-        info = await get_fight_session(fs)
-        if info and info["fight_id"] == fight_id:
-            return info["player_id"], fs
-
-    # Fallback: regular bringus_session (e.g., player is already logged in)
     session = await get_session_from_request(request)
-    if session:
-        fight = await get_fight(fight_id)
-        if fight and session.user_id in (fight.challenger_id, fight.opponent_id):
-            return session.user_id, None
-
-    return None, None
+    if session is None:
+        return None
+    if session.fight_id is not None:
+        return session.user_id if session.fight_id == fight_id else None
+    fight = await get_fight(fight_id)
+    if fight and session.user_id in (fight.challenger_id, fight.opponent_id):
+        return session.user_id
+    return None
 
 
 @router.get("/fight/{fight_id}/lobby", response_class=HTMLResponse)
-async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = ""):
+async def fight_lobby(fight_id: int, request: Request, ft: str = ""):
     """Fight lobby: pick cards and click Ready."""
-    session_token = fs
-
-    # Consume a one-time fight token if present
+    # Consume a one-time fight token if present: set the session cookie and
+    # redirect to the plain lobby URL.
     if ft:
         result = await use_fight_token(ft)
         if result is None:
             return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
         _, player_id, session_token = result
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={session_token}", status_code=303)
+        resp = RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
+        existing = await get_session_from_request(request)
+        if existing is None or existing.user_id != player_id:
+            set_session_cookie(resp, session_token)
+        return resp
 
-    player_id, _ = await _resolve_fight_session(request, fight_id)
+    player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
@@ -545,7 +547,7 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
     if fight.status == "active":
-        return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={session_token}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/battle", status_code=303)
 
     # Determine which player is ready
     is_challenger = player_id == fight.challenger_id
@@ -569,7 +571,6 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
             "opponent_name": opponent_name,
             "owned_cards": owned_cards,
             "already_ready": already_ready,
-            "session_token": session_token,
             "rarity_stats": RARITY_STATS,
         },
     )
@@ -579,34 +580,32 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
 async def fight_ready(
     fight_id: int,
     request: Request,
-    fs: str = Form(""),
     slots: list[str] = Form(default=[]),  # noqa: B008 — FastAPI sentinel pattern
 ):
     """Mark the player as ready with chosen cards."""
-    info = await get_fight_session(fs)
-    if not info or info["fight_id"] != fight_id:
+    player_id = await _resolve_fight_player(request, fight_id)
+    if not player_id:
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
-    player_id = info["player_id"]
 
     fight = await get_fight(fight_id)
     if not fight or fight.status != "lobby":
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
     required_slots = 1 if fight.mode == "quick" else 3
     if len(slots) != required_slots:
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
     card_slots = []
     for i, slot_val in enumerate(slots, start=1):
         try:
             member_id, rarity = slot_val.split(":", 1)
         except ValueError:
-            return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+            return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
         card_slots.append({"card_member_id": member_id, "rarity": rarity, "slot": i})
 
     ok = await set_fight_cards(fight_id, player_id, card_slots)
     if not ok:
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
     both_ready, _ = await mark_player_ready(fight_id, player_id)
 
@@ -614,14 +613,14 @@ async def fight_ready(
         # Notify the other connected WS client (if any) that the fight started
         state = await get_fight_state(fight_id)
         await _broadcast(fight_id, {"type": "state", "data": state})
-        return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/battle", status_code=303)
 
-    return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+    return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
 
 @router.get("/fight/{fight_id}/battle", response_class=HTMLResponse)
-async def fight_battle(fight_id: int, request: Request, fs: str = ""):
-    player_id, session_token = await _resolve_fight_session(request, fight_id)
+async def fight_battle(fight_id: int, request: Request):
+    player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
@@ -629,7 +628,6 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
     if not fight or fight.status not in ("active", "completed"):
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
-    effective_fs = session_token or fs
     opponent_id = fight.opponent_id if player_id == fight.challenger_id else fight.challenger_id
     opponent_name = await get_member_display_name(opponent_id) or opponent_id
 
@@ -644,7 +642,6 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
             "opponent_id": opponent_id,
             "opponent_name": opponent_name,
             "fight_mode": fight.mode,
-            "session_token": effective_fs,
             "attacks": ATTACKS,
             "items": items,
             "item_names": ITEM_NAMES,
@@ -665,12 +662,20 @@ async def _broadcast(fight_id: int, message: dict) -> None:
 
 
 @router.websocket("/ws/fight/{fight_id}")
-async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
-    info = await get_fight_session(fs) if fs else None
-    if not info or info["fight_id"] != fight_id:
+async def fight_ws(websocket: WebSocket, fight_id: int):
+    token = websocket.cookies.get(SESSION_COOKIE_NAME)
+    session = await get_web_session(token) if token else None
+    player_id: str | None = None
+    if session is not None:
+        if session.fight_id is not None:
+            player_id = session.user_id if session.fight_id == fight_id else None
+        else:
+            fight_row = await get_fight(fight_id)
+            if fight_row and session.user_id in (fight_row.challenger_id, fight_row.opponent_id):
+                player_id = session.user_id
+    if not player_id:
         await websocket.close(code=4003)
         return
-    player_id = info["player_id"]
 
     fight = await get_fight(fight_id)
     if not fight or fight.status not in ("active", "completed"):
@@ -706,9 +711,9 @@ async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
 
 
 @router.get("/api/fight/{fight_id}/state")
-async def fight_state_api(fight_id: int, request: Request, fs: str = ""):
+async def fight_state_api(fight_id: int, request: Request):
     """Lightweight fallback poll endpoint for the battle page."""
-    player_id, _ = await _resolve_fight_session(request, fight_id)
+    player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     fight = await get_fight(fight_id)
@@ -726,7 +731,7 @@ async def palymarket_list(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     balance = await palymarket_svc.get_palycoin_balance(session.user_id)
     markets = await palymarket_svc.list_markets()
     player_bets = await palymarket_svc.get_player_active_bets(session.user_id)
@@ -756,7 +761,7 @@ async def palymarket_pending(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    if session.link_type != "admin":
+    if not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     markets = await palymarket_svc.list_pending_markets()
     member = await _member_display(session.user_id)
@@ -788,7 +793,7 @@ async def palymarket_portfolio(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     portfolio = await palymarket_svc.get_player_portfolio(session.user_id)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     total_staked = sum(p["amount"] for p in portfolio["active"])
@@ -810,7 +815,7 @@ async def palymarket_activity(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     activity = await palymarket_svc.get_recent_activity(limit=50)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     member = await _member_display(session.user_id)
@@ -829,7 +834,7 @@ async def palymarket_propose_form(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_propose.html", {
@@ -905,7 +910,7 @@ async def palymarket_detail(request: Request, market_id: int):
     market = await palymarket_svc.get_market(market_id)
     if market is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     bets = await palymarket_svc.get_bets_for_market_with_names(market_id)
     player_bet = await palymarket_svc.get_player_bet(market_id, session.user_id)
     balance = await palymarket_svc.get_palycoin_balance(session.user_id)
@@ -962,7 +967,7 @@ async def palymarket_bet(
 @router.post("/palymarket/{market_id}/approve")
 async def palymarket_approve(request: Request, market_id: int):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     ok, reason = await palymarket_svc.approve_market(market_id, session.user_id)
     if not ok:
@@ -973,7 +978,7 @@ async def palymarket_approve(request: Request, market_id: int):
 @router.post("/palymarket/{market_id}/reject")
 async def palymarket_reject(request: Request, market_id: int):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     ok, reason = await palymarket_svc.reject_market(market_id, session.user_id)
     if not ok:
@@ -984,7 +989,7 @@ async def palymarket_reject(request: Request, market_id: int):
 @router.post("/palymarket/{market_id}/close")
 async def palymarket_close(request: Request, market_id: int):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     ok, reason = await palymarket_svc.close_market(market_id, session.user_id)
     if not ok:
@@ -997,7 +1002,7 @@ async def palymarket_resolve(
     request: Request, market_id: int, outcome: str = Form(...)
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     result = await palymarket_svc.resolve_market(market_id, outcome, session.user_id)
     if "error" in result:

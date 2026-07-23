@@ -6,6 +6,7 @@ from math import floor
 
 import aiosqlite
 
+import superpal.sessions as sessions
 from superpal.cards.db import DB_PATH
 from superpal.cards.models import Fight, FightCard, FightLogEntry
 
@@ -205,7 +206,7 @@ async def create_fight_token(fight_id: int, player_id: str, base_url: str) -> st
 
 async def use_fight_token(token: str) -> tuple[int, str, str] | None:
     """
-    Validate and consume a fight token; create a session.
+    Validate and consume a fight token; create a fight-scoped web session.
     Returns (fight_id, player_id, session_token) or None if invalid/expired.
     Idempotent: repeated calls (e.g. from Discord's link preview) return the same session.
     """
@@ -222,36 +223,18 @@ async def use_fight_token(token: str) -> tuple[int, str, str] | None:
             return None
         fight_id, player_id, _, existing_session = row[0], row[1], row[2], row[3]
 
-        if existing_session:
-            return fight_id, player_id, existing_session
+    if existing_session:
+        return fight_id, player_id, existing_session
 
-        session_token = str(uuid.uuid4())
-        expires = (datetime.now(timezone.utc) + timedelta(hours=FIGHT_SESSION_HOURS)).isoformat()
-        await db.execute(
-            "INSERT INTO fight_sessions (session_token, fight_id, player_id, expires_at) "
-            "VALUES (?, ?, ?, ?)",
-            (session_token, fight_id, player_id, expires),
-        )
+    session = await sessions.create_session(player_id, f"fight:{fight_id}")
+    async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE fight_tokens SET session_token = ? WHERE token = ?",
-            (session_token, token),
+            (session.token, token),
         )
         await db.commit()
 
-    return fight_id, player_id, session_token
-
-
-async def get_fight_session(session_token: str) -> dict | None:
-    """Validate a fight session token. Returns {fight_id, player_id} or None."""
-    now = datetime.now(timezone.utc).isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT fight_id, player_id FROM fight_sessions "
-            "WHERE session_token = ? AND expires_at > ?",
-            (session_token, now),
-        ) as cur:
-            row = await cur.fetchone()
-    return {"fight_id": row[0], "player_id": row[1]} if row else None
+    return fight_id, player_id, session.token
 
 
 async def set_fight_cards(
