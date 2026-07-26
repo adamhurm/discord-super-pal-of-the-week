@@ -297,7 +297,7 @@ class CardsCog(commands.Cog):
         if result_card is None:
             display_name = await get_member_display_name(card) or "Unknown"
             await interaction.followup.send(
-                f"You need at least 3× {rarity.upper()} {display_name} to trade in.",  # noqa: RUF001
+                f"You need at least 3× {rarity.upper()} {display_name} to trade in.",
                 ephemeral=True,
             )
             return
@@ -343,7 +343,7 @@ class CardsCog(commands.Cog):
         if result_card is None:
             display_name = await get_member_display_name(card) or "Unknown"
             await interaction.followup.send(
-                f"You need at least 5× {rarity.upper()} {display_name} to upgrade.",  # noqa: RUF001
+                f"You need at least 5× {rarity.upper()} {display_name} to upgrade.",
                 ephemeral=True,
             )
             return
@@ -445,9 +445,7 @@ class CardsCog(commands.Cog):
         subjects = await get_owned_card_subjects(str(interaction.user.id))
         labeled = _label_card_subjects(subjects)
         matches = [
-            (label, discord_id)
-            for label, discord_id in labeled
-            if current.lower() in label.lower()
+            (label, discord_id) for label, discord_id in labeled if current.lower() in label.lower()
         ]
         return [
             app_commands.Choice(name=label[:100], value=discord_id)

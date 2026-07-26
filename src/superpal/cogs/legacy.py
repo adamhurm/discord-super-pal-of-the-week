@@ -89,8 +89,7 @@ class LegacyCog(commands.Cog):
             # Check if anyone is in voice channels
             if not any(active_members):
                 log.info(
-                    f"{current_super_pal.name} used karate chop, "
-                    "but no one is in voice channels"
+                    f"{current_super_pal.name} used karate chop, but no one is in voice channels"
                 )
                 await channel.send(f"There is no one to karate chop, {current_super_pal.mention}!")
                 return

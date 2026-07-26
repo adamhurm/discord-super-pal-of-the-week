@@ -15,9 +15,7 @@ class PalymarketCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(
-        name="palymarket-propose", description="Propose a new prediction market"
-    )
+    @app_commands.command(name="palymarket-propose", description="Propose a new prediction market")
     @app_commands.describe(title="Short title for the market", description="Full description")
     async def palymarket_propose(
         self, interaction: discord.Interaction, title: str, description: str
@@ -33,9 +31,7 @@ class PalymarketCog(commands.Cog):
                 f"**{market.title}** (ID: {market.id}) — awaiting admin approval"
             )
 
-    @app_commands.command(
-        name="palymarket-bet", description="Place or update a bet on a market"
-    )
+    @app_commands.command(name="palymarket-bet", description="Place or update a bet on a market")
     @app_commands.describe(market_id="Market ID to bet on", amount="Amount of Palycoins to bet")
     @app_commands.choices(
         side=[
@@ -63,9 +59,7 @@ class PalymarketCog(commands.Cog):
         else:
             await interaction.followup.send(reason, ephemeral=True)
 
-    @app_commands.command(
-        name="palymarket-list", description="List all open prediction markets"
-    )
+    @app_commands.command(name="palymarket-list", description="List all open prediction markets")
     async def palymarket_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         markets = await palymarket_svc.list_markets(status="open")
@@ -100,30 +94,22 @@ class PalymarketCog(commands.Cog):
             embed.add_field(name="Active Bets", value="None", inline=False)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(
-        name="palymarket-approve", description="[Admin] Approve a pending market"
-    )
+    @app_commands.command(name="palymarket-approve", description="[Admin] Approve a pending market")
     @app_commands.describe(market_id="Market ID to approve")
     @app_commands.check(_is_clippy)
-    async def palymarket_approve(
-        self, interaction: discord.Interaction, market_id: int
-    ) -> None:
+    async def palymarket_approve(self, interaction: discord.Interaction, market_id: int) -> None:
         await interaction.response.defer(ephemeral=True)
         success, reason = await palymarket_svc.approve_market(market_id, str(interaction.user.id))
         if success:
             await interaction.followup.send(f"Market #{market_id} approved.", ephemeral=True)
             if isinstance(interaction.channel, discord.abc.Messageable):
-                await interaction.channel.send(
-                    f"📊 Market #{market_id} is now OPEN for betting!"
-                )
+                await interaction.channel.send(f"📊 Market #{market_id} is now OPEN for betting!")
         else:
             await interaction.followup.send(
                 f"Could not approve market #{market_id}: {reason}", ephemeral=True
             )
 
-    @app_commands.command(
-        name="palymarket-reject", description="[Admin] Reject a pending market"
-    )
+    @app_commands.command(name="palymarket-reject", description="[Admin] Reject a pending market")
     @app_commands.describe(market_id="Market ID to reject", reason="Reason for rejection")
     @app_commands.check(_is_clippy)
     async def palymarket_reject(
@@ -138,9 +124,7 @@ class PalymarketCog(commands.Cog):
                 f"Could not reject market #{market_id}.", ephemeral=True
             )
 
-    @app_commands.command(
-        name="palymarket-close", description="[Admin] Close a market to new bets"
-    )
+    @app_commands.command(name="palymarket-close", description="[Admin] Close a market to new bets")
     @app_commands.describe(market_id="Market ID to close")
     @app_commands.check(_is_clippy)
     async def palymarket_close(self, interaction: discord.Interaction, market_id: int) -> None:

@@ -1,5 +1,5 @@
-import pytest
 import aiosqlite
+import pytest
 
 from superpal.cards.models import CardRef
 
@@ -13,19 +13,23 @@ async def db(db_mods):
 
 async def _seed_two_players(svc):
     """Insert Alice (111) and Bob (222) as members."""
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
 
 
 async def _give_card(db_mod, owner_id: str, member_id: str, rarity: str, qty: int = 1):
     """Directly insert a user_card row."""
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(db_mod.DB_PATH) as db:
         await db.execute(
-            "INSERT INTO user_cards (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "INSERT INTO user_cards "
+            "(owner_id, card_member_id, rarity, quantity, first_acquired_at) "
             "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(owner_id, card_member_id, rarity) DO UPDATE SET quantity = ?",
             (owner_id, member_id, rarity, qty, now, qty),
@@ -147,16 +151,16 @@ async def test_accept_offer_swaps_cards_and_declines_siblings(db):
     # Bob now has COMMON of Bob; Alice now has UNCOMMON of Alice
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         async with conn.execute(
-            "SELECT quantity FROM user_cards WHERE owner_id='222' AND card_member_id='222' AND rarity='common'"
+            "SELECT quantity FROM user_cards "
+            "WHERE owner_id='222' AND card_member_id='222' AND rarity='common'"
         ) as cur:
             bob_common = (await cur.fetchone())[0]
         async with conn.execute(
-            "SELECT quantity FROM user_cards WHERE owner_id='111' AND card_member_id='111' AND rarity='uncommon'"
+            "SELECT quantity FROM user_cards "
+            "WHERE owner_id='111' AND card_member_id='111' AND rarity='uncommon'"
         ) as cur:
             alice_uncommon = (await cur.fetchone())[0]
-        async with conn.execute(
-            "SELECT status FROM trade_offers WHERE id=?", (offer2.id,)
-        ) as cur:
+        async with conn.execute("SELECT status FROM trade_offers WHERE id=?", (offer2.id,)) as cur:
             sibling_status = (await cur.fetchone())[0]
     assert bob_common == 1
     assert alice_uncommon == 1
@@ -176,7 +180,8 @@ async def test_accept_offer_fails_if_card_no_longer_held(db):
     # Remove Alice's listing card before she accepts
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         await conn.execute(
-            "UPDATE user_cards SET quantity = 0 WHERE owner_id='111' AND card_member_id='222' AND rarity='common'"
+            "UPDATE user_cards SET quantity = 0 "
+            "WHERE owner_id='111' AND card_member_id='222' AND rarity='common'"
         )
         await conn.commit()
     ok, err = await svc.accept_offer(offer.id, "111")

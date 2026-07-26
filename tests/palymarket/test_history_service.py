@@ -1,5 +1,6 @@
-import aiosqlite
 import importlib
+
+import aiosqlite
 import pytest
 
 
@@ -96,7 +97,7 @@ async def test_get_player_portfolio_active(db):
     assert pos["market"].id == market.id
     assert pos["side"] == "yes"
     assert pos["amount"] == 50
-    assert pos["yes_pct"] == 50          # 50 YES / 100 total = 50%
+    assert pos["yes_pct"] == 50  # 50 YES / 100 total = 50%
     assert pos["estimated_payout"] == 100  # floor(50/50 * 100) = 100
 
 

@@ -42,8 +42,7 @@ async def test_no_second_grant_after_bets(db):
     await _insert_member(db_mod.DB_PATH, "player1")
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
         cur = await conn.execute(
-            "INSERT INTO markets (title, created_by, status, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO markets (title, created_by, status, created_at) VALUES (?, ?, ?, ?)",
             ("Bet market", "admin", "open", _NOW),
         )
         market_id = cur.lastrowid
@@ -70,7 +69,7 @@ async def test_exchange_pringles_success(db):
             "SELECT pringle_balance, palycoin_balance FROM members WHERE discord_id = 'player1'"
         ) as cur:
             row = await cur.fetchone()
-    assert row[0] == 0    # 200 - 200
+    assert row[0] == 0  # 200 - 200
     assert row[1] == 100  # 0 + 100
 
 
@@ -283,7 +282,7 @@ async def test_resolve_market_pays_winners(db):
         ) as cur:
             row2 = await cur.fetchone()
     assert row1[0] == 150  # 50 remaining after bet + 100 payout
-    assert row2[0] == 50   # 50 remaining after bet, no payout
+    assert row2[0] == 50  # 50 remaining after bet, no payout
 
 
 @pytest.mark.asyncio

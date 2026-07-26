@@ -481,9 +481,7 @@ async def test_fight_token_redemption_sets_cookie_and_redirects(client):
             "superpal.webapp.routes.use_fight_token",
             new=AsyncMock(return_value=(1, "111", "fight_sess_tok")),
         ),
-        patch(
-            "superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)
-        ),
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)),
     ):
         response = await client.get("/fight/1/lobby?ft=onetime", follow_redirects=False)
     assert response.status_code == 303
@@ -912,8 +910,9 @@ def test_fight_ws_rejects_non_participant(app):
         ),
         patch(
             "superpal.webapp.routes.get_fight",
-            new=AsyncMock(return_value=_fight(status="active", challenger_id="888",
-                                              opponent_id="999")),
+            new=AsyncMock(
+                return_value=_fight(status="active", challenger_id="888", opponent_id="999")
+            ),
         ),
     ):
         client = TestClient(app, cookies={"bringus_session": "sess_abc"})

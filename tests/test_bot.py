@@ -37,9 +37,7 @@ class TestSuperPalPromotion:
         mock_guild.roles = [mock_super_pal_role]
 
         with patch("discord.utils.get", return_value=mock_super_pal_role):
-            ok = await promote_super_pal(
-                mock_guild, mock_channel, winner, promoted_by="TestUser"
-            )
+            ok = await promote_super_pal(mock_guild, mock_channel, winner, promoted_by="TestUser")
 
         assert ok is True
         current.remove_roles.assert_awaited_once_with(mock_super_pal_role)
@@ -383,9 +381,7 @@ class TestLabelCardSubjects:
     def test_custom_tag_for_synthetic_member(self, mock_env):
         from superpal.cogs.helpers import _label_card_subjects
 
-        subjects = [
-            {"discord_id": "111", "display_name": "Bringus Prime", "is_synthetic": True}
-        ]
+        subjects = [{"discord_id": "111", "display_name": "Bringus Prime", "is_synthetic": True}]
         assert _label_card_subjects(subjects) == [("Bringus Prime (Custom)", "111")]
 
     def test_no_suffix_when_no_collision(self, mock_env):

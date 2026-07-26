@@ -66,9 +66,7 @@ async def get_session(token: str) -> Session | None:
             row = await cur.fetchone()
         if not row:
             return None
-        await db.execute(
-            "UPDATE sessions SET expires_at = ? WHERE token = ?", (new_expiry, token)
-        )
+        await db.execute("UPDATE sessions SET expires_at = ? WHERE token = ?", (new_expiry, token))
         await db.commit()
     return Session(
         token=row[0], user_id=row[1], scope=row[2], created_at=row[3], expires_at=new_expiry
