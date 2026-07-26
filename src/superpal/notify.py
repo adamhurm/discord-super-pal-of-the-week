@@ -10,6 +10,8 @@ from discord.ext import commands
 
 import superpal.env as superpal_env
 from superpal.cards.fight_service import (
+    FIGHT_TOKEN_EXPIRY_MINUTES,
+    create_fight_token,
     fight_ended_by_escape,
     fight_ended_by_forfeit,
     get_fight,
@@ -79,6 +81,69 @@ async def notify_trade_offer(offer_id: int) -> None:
         dm = await member.send(content=content, view=view)
         view.message = dm
         await set_offer_discord_message_id(offer_id, str(dm.id))
+    except discord.Forbidden:
+        pass
+
+
+async def send_fight_lobby_dms(
+    fight_id: int, challenger_id: str, opponent_id: str, mode: str
+) -> None:
+    """DM both players their fight lobby magic links after a challenge is accepted."""
+    if _bot is None:
+        return
+    guild = _bot.get_guild(int(superpal_env.GUILD_ID))
+    if guild is None:
+        return
+    names = {
+        uid: await get_member_display_name(uid) or uid for uid in (challenger_id, opponent_id)
+    }
+    for uid, other_uid in ((challenger_id, opponent_id), (opponent_id, challenger_id)):
+        member = guild.get_member(int(uid))
+        if member is None:
+            continue
+        url = await create_fight_token(fight_id, uid, WEBAPP_BASE_URL)
+        try:
+            await member.send(
+                f"Your **{mode}** battle vs. **{names[other_uid]}** "
+                f"is ready!\n\nOpen the fight lobby: <{url}>",
+                suppress_embeds=True,
+            )
+        except discord.Forbidden:
+            pass
+
+
+async def notify_fight_challenge(fight_id: int) -> None:
+    """DM the opponent about a fight challenge created with no Discord channel (i.e. via web)."""
+    if _bot is None:
+        return
+    fight = await get_fight(fight_id)
+    if fight is None:
+        return
+    guild = _bot.get_guild(int(superpal_env.GUILD_ID))
+    if guild is None:
+        return
+    opponent = guild.get_member(int(fight.opponent_id))
+    if opponent is None:
+        return
+    challenger_name = await get_member_display_name(fight.challenger_id) or fight.challenger_id
+
+    from superpal.cogs.fights import FightChallengeView
+
+    view = FightChallengeView(
+        fight_id=fight.id,
+        challenger_id=fight.challenger_id,
+        opponent_id=fight.opponent_id,
+        mode=fight.mode,
+    )
+    try:
+        dm = await opponent.send(
+            content=(
+                f"**{challenger_name}** challenges you to a **{fight.mode.upper()} Battle**!\n\n"
+                f"You have {FIGHT_TOKEN_EXPIRY_MINUTES} minutes to respond."
+            ),
+            view=view,
+        )
+        view.message = dm
     except discord.Forbidden:
         pass
 

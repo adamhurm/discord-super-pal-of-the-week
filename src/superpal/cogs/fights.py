@@ -5,17 +5,17 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import superpal.env as superpal_env
+import superpal.notify as notify
 from superpal.cards.fight_service import (
     FIGHT_TOKEN_EXPIRY_MINUTES,
     accept_fight,
     auto_forfeit_idle_fights,
     create_fight,
-    create_fight_token,
+    decline_fight,
     expire_inactive_fights,
     expire_pending_challenges,
     get_fight_leaderboard,
 )
-from superpal.env import WEBAPP_BASE_URL
 
 log = superpal_env.log
 
@@ -28,14 +28,12 @@ class FightChallengeView(discord.ui.View):
         fight_id: int,
         challenger_id: str,
         opponent_id: str,
-        challenger_name: str,
         mode: str,
     ):
         super().__init__(timeout=FIGHT_CHALLENGE_TIMEOUT)
         self.fight_id = fight_id
         self.challenger_id = challenger_id
         self.opponent_id = opponent_id
-        self.challenger_name = challenger_name
         self.mode = mode
         self.message: discord.Message | None = None
 
@@ -59,29 +57,9 @@ class FightChallengeView(discord.ui.View):
         await interaction.response.edit_message(
             content="Challenge accepted! DMs are on their way.", view=None
         )
-
-        # DM both players their lobby magic links
-        challenger_url = await create_fight_token(
-            self.fight_id, self.challenger_id, WEBAPP_BASE_URL
+        await notify.send_fight_lobby_dms(
+            self.fight_id, self.challenger_id, self.opponent_id, self.mode
         )
-        opponent_url = await create_fight_token(self.fight_id, self.opponent_id, WEBAPP_BASE_URL)
-
-        for uid, url in ((self.challenger_id, challenger_url), (self.opponent_id, opponent_url)):
-            user = interaction.client.get_user(int(uid))
-            if user:
-                try:
-                    other_name = (
-                        self.challenger_name
-                        if uid == self.opponent_id
-                        else interaction.user.display_name
-                    )
-                    await user.send(
-                        f"Your **{self.mode}** battle vs. **{other_name}** "
-                        f"is ready!\n\nOpen the fight lobby: <{url}>",
-                        suppress_embeds=True,
-                    )
-                except discord.Forbidden:
-                    pass
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
     async def decline_button(
@@ -93,6 +71,12 @@ class FightChallengeView(discord.ui.View):
             )
             return
         self.stop()
+        fight = await decline_fight(self.fight_id)
+        if fight is None:
+            await interaction.response.edit_message(
+                content="This challenge has already expired or been resolved.", view=None
+            )
+            return
         await interaction.response.edit_message(content="Challenge declined.", view=None)
 
     async def on_timeout(self) -> None:
@@ -181,7 +165,6 @@ class FightsCog(commands.Cog):
             fight_id=fight.id,
             challenger_id=challenger_id,
             opponent_id=opponent_id,
-            challenger_name=interaction.user.display_name,
             mode=mode,
         )
         if not isinstance(interaction.channel, discord.abc.Messageable):

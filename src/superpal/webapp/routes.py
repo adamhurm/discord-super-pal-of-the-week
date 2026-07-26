@@ -17,9 +17,14 @@ from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
     RARITY_STATS,
+    accept_fight,
+    create_fight,
+    decline_fight,
     forfeit_fight,
+    get_active_fight_between,
     get_fight,
     get_fight_state,
+    get_pending_challenges,
     get_player_fights,
     mark_player_ready,
     process_action,
@@ -50,6 +55,7 @@ from superpal.cards.service import (
     get_all_members_for_admin,
     get_collection,
     get_draw_audit,
+    get_fight_opponents,
     get_member_card_context,
     get_member_display_name,
     get_my_offers,
@@ -156,6 +162,19 @@ async def _collection_context(user_id: str) -> dict:
         key = f"{card['member_id']}:{card['rarity']}"
         card["listing_id"] = listed_card_keys.get(key)
 
+    fight_opponents = await get_fight_opponents(user_id)
+
+    pending_challenges = [
+        {
+            "id": c.id,
+            "mode": c.mode,
+            "challenger_id": c.challenger_id,
+            "challenger_display_name": await get_member_display_name(c.challenger_id)
+            or c.challenger_id,
+        }
+        for c in await get_pending_challenges(user_id)
+    ]
+
     return {
         **member,
         "owned": data["owned"],
@@ -164,6 +183,8 @@ async def _collection_context(user_id: str) -> dict:
         "total_cards": sum(c["quantity"] for c in data["owned"]),
         "total_draws": total_draws,
         "unique_members": unique_members,
+        "fight_opponents": fight_opponents,
+        "pending_challenges": pending_challenges,
         "completion_pct": completion_pct,
     }
 
@@ -528,6 +549,70 @@ async def admin_set_bio_stats(
         json.dumps(stats_dict) if stats_dict else "",
     )
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ─── Fight challenge routes ──────────────────────────────────────────────────
+
+
+@router.post("/collection/fight/challenge")
+async def create_fight_challenge_route(
+    request: Request,
+    opponent_id: str = Form(...),
+    mode: str = Form(...),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+
+    if mode not in ("quick", "extended"):
+        return RedirectResponse(url="/collection", status_code=303)
+    if opponent_id == session.user_id:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    eligible = await get_fight_opponents(session.user_id)
+    if opponent_id not in {m["discord_id"] for m in eligible}:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    if await get_active_fight_between(session.user_id, opponent_id):
+        return RedirectResponse(url="/collection", status_code=303)
+
+    fight = await create_fight(session.user_id, opponent_id, mode, channel_id=None)
+    asyncio.create_task(notify.notify_fight_challenge(fight.id))  # noqa: RUF006
+    return RedirectResponse(url="/collection", status_code=303)
+
+
+@router.post("/collection/fight/{fight_id}/accept")
+async def accept_fight_challenge_route(fight_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+
+    fight = await get_fight(fight_id)
+    if fight is None or session.user_id != fight.opponent_id:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    accepted = await accept_fight(fight_id)
+    if accepted is not None:
+        asyncio.create_task(  # noqa: RUF006
+            notify.send_fight_lobby_dms(
+                fight_id, fight.challenger_id, fight.opponent_id, fight.mode
+            )
+        )
+    return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
+
+
+@router.post("/collection/fight/{fight_id}/decline")
+async def decline_fight_challenge_route(fight_id: int, request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+
+    fight = await get_fight(fight_id)
+    if fight is None or session.user_id != fight.opponent_id:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    await decline_fight(fight_id)
+    return RedirectResponse(url="/collection", status_code=303)
 
 
 # ─── Shop routes ─────────────────────────────────────────────────────────────

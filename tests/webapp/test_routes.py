@@ -82,6 +82,8 @@ async def test_link_redirect_on_valid_token(client):
             new=AsyncMock(return_value=_member()),
         ),
         patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/link/abc123", follow_redirects=False)
@@ -441,6 +443,8 @@ async def test_collection_shows_completion_pct(client):
             new=AsyncMock(return_value=_member("Alice")),
         ),
         patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/collection")
@@ -1180,6 +1184,8 @@ async def test_collection_page_embeds_parseable_json(client):
             new=AsyncMock(return_value=_member()),
         ),
         patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/collection")
