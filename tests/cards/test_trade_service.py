@@ -13,15 +13,18 @@ async def db(db_mods):
 
 async def _seed_two_players(svc):
     """Insert Alice (111) and Bob (222) as members."""
-    await svc.sync_members([
-        {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
-        {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
-    ])
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
 
 
 async def _give_card(db_mod, owner_id: str, member_id: str, rarity: str, qty: int = 1):
     """Directly insert a user_card row."""
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(db_mod.DB_PATH) as db:
         await db.execute(
@@ -157,9 +160,7 @@ async def test_accept_offer_swaps_cards_and_declines_siblings(db):
             "WHERE owner_id='111' AND card_member_id='111' AND rarity='uncommon'"
         ) as cur:
             alice_uncommon = (await cur.fetchone())[0]
-        async with conn.execute(
-            "SELECT status FROM trade_offers WHERE id=?", (offer2.id,)
-        ) as cur:
+        async with conn.execute("SELECT status FROM trade_offers WHERE id=?", (offer2.id,)) as cur:
             sibling_status = (await cur.fetchone())[0]
     assert bob_common == 1
     assert alice_uncommon == 1

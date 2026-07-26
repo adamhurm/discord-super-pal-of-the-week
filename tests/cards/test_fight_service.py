@@ -558,6 +558,7 @@ async def test_fight_leaderboard_excludes_excluded_members(db):
 @pytest.mark.asyncio
 async def test_get_fight_state_cards_include_avatar_url(db):
     import aiosqlite
+
     db_mod, _, fs_mod, _ = db
 
     # Give p1 a card member with a known avatar_url
@@ -682,9 +683,7 @@ async def _set_turn_age(db_mod, fight_id, minutes):
 
     stale = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE fights SET turn_started_at = ? WHERE id = ?", (stale, fight_id)
-        )
+        await conn.execute("UPDATE fights SET turn_started_at = ? WHERE id = ?", (stale, fight_id))
         await conn.commit()
 
 
@@ -693,9 +692,7 @@ async def _set_last_activity(db_mod, fight_id, minutes):
 
     stale = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     async with aiosqlite.connect(db_mod.DB_PATH) as conn:
-        await conn.execute(
-            "UPDATE fights SET last_activity_at = ? WHERE id = ?", (stale, fight_id)
-        )
+        await conn.execute("UPDATE fights SET last_activity_at = ? WHERE id = ?", (stale, fight_id))
         await conn.commit()
 
 
@@ -717,9 +714,9 @@ async def test_touch_fight_activity_refreshes_active_fight(db):
     await fs.touch_fight_activity(fight.id)
 
     refreshed = await fs.get_fight(fight.id)
-    assert refreshed.last_activity_at > (
-        datetime.now(timezone.utc) - timedelta(minutes=1)
-    ).isoformat()
+    assert (
+        refreshed.last_activity_at > (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    )
 
 
 @pytest.mark.asyncio
@@ -900,7 +897,9 @@ async def test_pending_swap_player_can_be_forfeited_against(db):
             break
         with patch("superpal.cards.fight_service.roll_d20", return_value=20):
             await fs.process_action(
-                fight.id, current.current_turn_player_id, "attack",
+                fight.id,
+                current.current_turn_player_id,
+                "attack",
                 {"attack_key": "super_bringus_beam"},
             )
     current = await fs.get_fight(fight.id)
@@ -943,7 +942,9 @@ async def test_knockout_also_announces_through_the_service(db):
                 break
             with patch("superpal.cards.fight_service.roll_d20", return_value=20):
                 await fs.process_action(
-                    fight.id, current.current_turn_player_id, "attack",
+                    fight.id,
+                    current.current_turn_player_id,
+                    "attack",
                     {"attack_key": "super_bringus_beam"},
                 )
 

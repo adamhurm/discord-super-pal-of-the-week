@@ -183,9 +183,7 @@ class FightsCog(commands.Cog):
         view.message = channel_msg
         await interaction.followup.send("Challenge sent!", ephemeral=True)
 
-    @app_commands.command(
-        name="card-fight-leaderboard", description="Show the top 10 fight stats"
-    )
+    @app_commands.command(name="card-fight-leaderboard", description="Show the top 10 fight stats")
     @app_commands.describe(sort_by="What to rank players by")
     @app_commands.choices(
         sort_by=[

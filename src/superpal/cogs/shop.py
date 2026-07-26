@@ -109,9 +109,7 @@ class ShopCog(commands.Cog):
         except Exception as e:
             log.error("Error in before_daily_boin_grant: %s", e)
 
-    @app_commands.command(
-        name="card-shop", description="Browse or buy items from the Pringle shop"
-    )
+    @app_commands.command(name="card-shop", description="Browse or buy items from the Pringle shop")
     @app_commands.describe(action="list: show items, buy: purchase an item")
     @app_commands.choices(
         action=[
@@ -358,9 +356,7 @@ class ShopCog(commands.Cog):
             app_commands.Choice(name="3rd Dozen 25–36 (3×)", value="3rd dozen"),  # noqa: RUF001
         ]
     )
-    async def pal_roulette(
-        self, interaction: discord.Interaction, bet_type: str, bet: int
-    ) -> None:
+    async def pal_roulette(self, interaction: discord.Interaction, bet_type: str, bet: int) -> None:
         await interaction.response.defer(ephemeral=True)
         result = await game_service.play_roulette(str(interaction.user.id), bet_type, bet)
         if "error" in result:

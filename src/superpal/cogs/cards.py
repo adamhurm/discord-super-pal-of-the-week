@@ -445,9 +445,7 @@ class CardsCog(commands.Cog):
         subjects = await get_owned_card_subjects(str(interaction.user.id))
         labeled = _label_card_subjects(subjects)
         matches = [
-            (label, discord_id)
-            for label, discord_id in labeled
-            if current.lower() in label.lower()
+            (label, discord_id) for label, discord_id in labeled if current.lower() in label.lower()
         ]
         return [
             app_commands.Choice(name=label[:100], value=discord_id)

@@ -106,8 +106,7 @@ class SuperPalCog(commands.Cog):
             eligible_members = [m for m in true_member_list if role not in m.roles]
             if not eligible_members:
                 log.error(
-                    "No eligible members for super pal selection "
-                    "(all members already have role)"
+                    "No eligible members for super pal selection (all members already have role)"
                 )
                 return
 

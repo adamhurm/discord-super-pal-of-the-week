@@ -855,8 +855,7 @@ async def create_offer(
             offer_id = (await cur.fetchone())[0]
         for item in items:
             await db.execute(
-                "INSERT INTO trade_offer_items (offer_id, card_member_id, rarity) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO trade_offer_items (offer_id, card_member_id, rarity) VALUES (?, ?, ?)",
                 (offer_id, item.member_id, item.rarity),
             )
         await db.commit()
@@ -942,9 +941,7 @@ async def accept_offer(offer_id: int, recipient_id: str) -> tuple[bool, str | No
                 "DO UPDATE SET quantity = quantity + 1",
                 (recipient_id, card_member_id, rarity, now_iso),
             )
-        await db.execute(
-            "UPDATE trade_offers SET status = 'accepted' WHERE id = ?", (offer_id,)
-        )
+        await db.execute("UPDATE trade_offers SET status = 'accepted' WHERE id = ?", (offer_id,))
         await db.execute(
             "UPDATE trade_listings SET status = 'completed' WHERE id = ?", (listing_id,)
         )
@@ -1124,9 +1121,7 @@ async def get_owned_card_subjects(owner_id: str) -> list[dict]:
             (owner_id,),
         ) as cur:
             rows = await cur.fetchall()
-    return [
-        {"discord_id": r[0], "display_name": r[1], "is_synthetic": bool(r[2])} for r in rows
-    ]
+    return [{"discord_id": r[0], "display_name": r[1], "is_synthetic": bool(r[2])} for r in rows]
 
 
 async def get_member_display_name(discord_id: str) -> str | None:

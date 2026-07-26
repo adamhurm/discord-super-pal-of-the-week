@@ -94,9 +94,7 @@ async def send_fight_lobby_dms(
     guild = _bot.get_guild(int(superpal_env.GUILD_ID))
     if guild is None:
         return
-    names = {
-        uid: await get_member_display_name(uid) or uid for uid in (challenger_id, opponent_id)
-    }
+    names = {uid: await get_member_display_name(uid) or uid for uid in (challenger_id, opponent_id)}
     for uid, other_uid in ((challenger_id, opponent_id), (opponent_id, challenger_id)):
         member = guild.get_member(int(uid))
         if member is None:
@@ -153,33 +151,22 @@ async def announce_fight_result(fight_id: int) -> None:
     if _bot is None:
         return
     fight = await get_fight(fight_id)
-    if (
-        fight is None
-        or fight.status != "completed"
-        or not fight.channel_id
-        or not fight.winner_id
-    ):
+    if fight is None or fight.status != "completed" or not fight.channel_id or not fight.winner_id:
         return
     channel = _bot.get_channel(int(fight.channel_id))
     if not isinstance(channel, discord.abc.Messageable):
         return
 
     winner_name = await get_member_display_name(fight.winner_id) or fight.winner_id
-    loser_id = (
-        fight.opponent_id if fight.winner_id == fight.challenger_id else fight.challenger_id
-    )
+    loser_id = fight.opponent_id if fight.winner_id == fight.challenger_id else fight.challenger_id
     loser_name = await get_member_display_name(loser_id) or loser_id
     escaped = await fight_ended_by_escape(fight_id)
     forfeited = await fight_ended_by_forfeit(fight_id)
 
     if forfeited:
-        headline = (
-            f"⏳ **{loser_name}** never made their move — **{winner_name}** wins by forfeit!"
-        )
+        headline = f"⏳ **{loser_name}** never made their move — **{winner_name}** wins by forfeit!"
     elif escaped:
-        headline = (
-            f"🏃 **{loser_name}** fled the battle — **{winner_name}** wins by default!"
-        )
+        headline = f"🏃 **{loser_name}** fled the battle — **{winner_name}** wins by default!"
     else:
         headline = f"🏆 **{winner_name}** defeated **{loser_name}**!"
 

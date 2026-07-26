@@ -498,8 +498,7 @@ async def get_fight_state(fight_id: int) -> dict:
                 card_member_ids,
             ) as cur:
                 card_info = {
-                    r[0]: {"display_name": r[1], "avatar_url": r[2]}
-                    for r in await cur.fetchall()
+                    r[0]: {"display_name": r[1], "avatar_url": r[2]} for r in await cur.fetchall()
                 }
         else:
             card_info = {}
@@ -746,7 +745,13 @@ async def _handle_attack(
     if damage == 0:
         narrative = f"<@{player_id}> used **{attack_name}** — rolled {roll}, missed!"
         await _log_action(
-            db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=0,
+            db,
+            fight.id,
+            player_id,
+            "attack",
+            narrative,
+            d20_roll=roll,
+            damage=0,
             detail={**detail, "tier": tier},
         )
         await _advance_turn(db, fight.id, opponent_id)
@@ -768,7 +773,13 @@ async def _handle_attack(
         narrative += f"\n<@{opponent_id}>'s card has fainted!"
 
     await _log_action(
-        db, fight.id, player_id, "attack", narrative, d20_roll=roll, damage=damage,
+        db,
+        fight.id,
+        player_id,
+        "attack",
+        narrative,
+        d20_roll=roll,
+        damage=damage,
         detail={**detail, "tier": tier},
     )
 
@@ -1020,9 +1031,7 @@ async def auto_forfeit_idle_fights() -> list[int]:
     The backstop for when the present player never clicks "claim win" — an abandoned
     fight resolves itself instead of sitting active forever. Returns resolved fight ids.
     """
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(minutes=AFK_AUTO_FORFEIT_MINUTES)
-    ).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=AFK_AUTO_FORFEIT_MINUTES)).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             f"{_FIGHT_SELECT} WHERE status = 'active' AND turn_started_at IS NOT NULL "

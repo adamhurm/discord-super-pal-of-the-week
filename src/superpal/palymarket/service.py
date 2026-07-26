@@ -42,10 +42,7 @@ async def get_probability_history(market_id: int) -> list[tuple[float, datetime]
             (market_id,),
         ) as cur:
             rows = await cur.fetchall()
-    return [
-        (row["yes_pct"], datetime.fromisoformat(row["recorded_at"]))
-        for row in rows
-    ]
+    return [(row["yes_pct"], datetime.fromisoformat(row["recorded_at"])) for row in rows]
 
 
 def _parse_market(row: aiosqlite.Row) -> Market:
@@ -59,9 +56,7 @@ def _parse_market(row: aiosqlite.Row) -> Market:
         yes_pool=row["yes_pool"],
         no_pool=row["no_pool"],
         created_at=datetime.fromisoformat(row["created_at"]),
-        resolved_at=(
-            datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
-        ),
+        resolved_at=(datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None),
         resolved_by=row["resolved_by"],
     )
 
@@ -110,8 +105,7 @@ async def get_palycoin_balance(player_id: str) -> int:
             await db.commit()
             return 0
         await db.execute(
-            "UPDATE members SET palycoin_balance = palycoin_balance + 100 "
-            "WHERE discord_id = ?",
+            "UPDATE members SET palycoin_balance = palycoin_balance + 100 WHERE discord_id = ?",
             (player_id,),
         )
         await db.commit()
@@ -131,9 +125,7 @@ async def exchange_pringles(player_id: str, pringle_amount: int) -> tuple[bool, 
             (player_id,),
         ) as cur:
             row = await cur.fetchone()
-        pringle_bal = (
-            row["pringle_balance"] if row and row["pringle_balance"] is not None else 0
-        )
+        pringle_bal = row["pringle_balance"] if row and row["pringle_balance"] is not None else 0
         if pringle_bal < pringle_amount:
             return False, "not_enough_pringles"
         await db.execute(
@@ -153,8 +145,7 @@ async def propose_market(title: str, description: str, created_by: str) -> Marke
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
-            "INSERT INTO markets (title, description, created_by, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO markets (title, description, created_by, created_at) VALUES (?, ?, ?, ?)",
             (title, description, created_by, now),
         )
         market_id = cur.lastrowid
@@ -286,8 +277,7 @@ async def place_or_update_bet(
         if market_row is None or market_row["status"] != "open":
             return False, "market_not_open"
         async with db.execute(
-            "SELECT id, side, amount FROM market_bets "
-            "WHERE market_id = ? AND player_id = ?",
+            "SELECT id, side, amount FROM market_bets WHERE market_id = ? AND player_id = ?",
             (market_id, player_id),
         ) as cur:
             existing = await cur.fetchone()
@@ -321,8 +311,7 @@ async def place_or_update_bet(
         net_change = old_amount - amount
         if net_change != 0:
             await db.execute(
-                "UPDATE members SET palycoin_balance = palycoin_balance + ? "
-                "WHERE discord_id = ?",
+                "UPDATE members SET palycoin_balance = palycoin_balance + ? WHERE discord_id = ?",
                 (net_change, player_id),
             )
         # Add new bet amount to the chosen pool
@@ -500,9 +489,7 @@ async def get_player_portfolio(player_id: str) -> dict:
 
         if market.status in ("open", "closed"):
             winning_pool = market.yes_pool if side == "yes" else market.no_pool
-            estimated_payout = (
-                math.floor(amount / winning_pool * total) if winning_pool > 0 else 0
-            )
+            estimated_payout = math.floor(amount / winning_pool * total) if winning_pool > 0 else 0
             active.append(
                 {
                     "market": market,

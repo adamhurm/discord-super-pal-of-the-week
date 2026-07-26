@@ -960,18 +960,22 @@ async def palymarket_list(request: Request):
         total = m.yes_pool + m.no_pool
         m._yes_pct = round(m.yes_pool / total * 100) if total > 0 else 50
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "palymarket_list.html", {
-        **member,
-        "balance": balance,
-        "markets": markets,
-        "bet_map": bet_map,
-        "is_admin": is_admin,
-        "pending_count": pending_count,
-        "proposed": request.query_params.get("proposed") == "1",
-        "error": request.query_params.get("error"),
-        "active_tab": "markets",
-        "active_page": "palymarket",
-    })
+    return templates.TemplateResponse(
+        request,
+        "palymarket_list.html",
+        {
+            **member,
+            "balance": balance,
+            "markets": markets,
+            "bet_map": bet_map,
+            "is_admin": is_admin,
+            "pending_count": pending_count,
+            "proposed": request.query_params.get("proposed") == "1",
+            "error": request.query_params.get("error"),
+            "active_tab": "markets",
+            "active_page": "palymarket",
+        },
+    )
 
 
 @router.get("/palymarket/pending", response_class=HTMLResponse)
@@ -983,14 +987,18 @@ async def palymarket_pending(request: Request):
         return templates.TemplateResponse(request, "expired.html")
     markets = await palymarket_svc.list_pending_markets()
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "palymarket_pending.html", {
-        **member,
-        "markets": markets,
-        "is_admin": True,
-        "pending_count": len(markets),
-        "active_tab": "pending",
-        "active_page": "palymarket",
-    })
+    return templates.TemplateResponse(
+        request,
+        "palymarket_pending.html",
+        {
+            **member,
+            "markets": markets,
+            "is_admin": True,
+            "pending_count": len(markets),
+            "active_tab": "pending",
+            "active_page": "palymarket",
+        },
+    )
 
 
 @router.post("/palymarket/exchange")
@@ -1016,16 +1024,20 @@ async def palymarket_portfolio(request: Request):
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     total_staked = sum(p["amount"] for p in portfolio["active"])
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "palymarket_portfolio.html", {
-        **member,
-        "active": portfolio["active"],
-        "resolved": portfolio["resolved"],
-        "total_staked": total_staked,
-        "is_admin": is_admin,
-        "pending_count": pending_count,
-        "active_tab": "portfolio",
-        "active_page": "palymarket",
-    })
+    return templates.TemplateResponse(
+        request,
+        "palymarket_portfolio.html",
+        {
+            **member,
+            "active": portfolio["active"],
+            "resolved": portfolio["resolved"],
+            "total_staked": total_staked,
+            "is_admin": is_admin,
+            "pending_count": pending_count,
+            "active_tab": "portfolio",
+            "active_page": "palymarket",
+        },
+    )
 
 
 @router.get("/palymarket/activity", response_class=HTMLResponse)
@@ -1037,14 +1049,18 @@ async def palymarket_activity(request: Request):
     activity = await palymarket_svc.get_recent_activity(limit=50)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "palymarket_activity.html", {
-        **member,
-        "activity": activity,
-        "is_admin": is_admin,
-        "pending_count": pending_count,
-        "active_tab": "activity",
-        "active_page": "palymarket",
-    })
+    return templates.TemplateResponse(
+        request,
+        "palymarket_activity.html",
+        {
+            **member,
+            "activity": activity,
+            "is_admin": is_admin,
+            "pending_count": pending_count,
+            "active_tab": "activity",
+            "active_page": "palymarket",
+        },
+    )
 
 
 @router.get("/palymarket/propose", response_class=HTMLResponse)
@@ -1055,14 +1071,18 @@ async def palymarket_propose_form(request: Request):
     is_admin = session.is_admin
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "palymarket_propose.html", {
-        **member,
-        "is_admin": is_admin,
-        "pending_count": pending_count,
-        "active_tab": "propose",
-        "active_page": "palymarket",
-        "error": request.query_params.get("error"),
-    })
+    return templates.TemplateResponse(
+        request,
+        "palymarket_propose.html",
+        {
+            **member,
+            "is_admin": is_admin,
+            "pending_count": pending_count,
+            "active_tab": "propose",
+            "active_page": "palymarket",
+            "error": request.query_params.get("error"),
+        },
+    )
 
 
 @router.post("/palymarket/propose")
@@ -1089,14 +1109,21 @@ async def economy(request: Request):
         return templates.TemplateResponse(request, "expired.html")
     boins = await boin_service.get_balance(session.user_id)
     from superpal.cards.pringle_service import get_balance as get_pringle_balance
+
     pringles = await get_pringle_balance(session.user_id)
     palycoins = await palymarket_svc.get_palycoin_balance(session.user_id)
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "economy.html", {
-        **member,
-        "boins": boins, "pringles": pringles, "palycoins": palycoins,
-        "active_page": "economy",
-    })
+    return templates.TemplateResponse(
+        request,
+        "economy.html",
+        {
+            **member,
+            "boins": boins,
+            "pringles": pringles,
+            "palycoins": palycoins,
+            "active_page": "economy",
+        },
+    )
 
 
 @router.post("/economy/exchange")
@@ -1152,21 +1179,25 @@ async def palymarket_detail(request: Request, market_id: int):
         svg_points = None
 
     member = await _member_display(session.user_id)
-    return templates.TemplateResponse(request, "palymarket_detail.html", {
-        **member,
-        "market": market,
-        "bets": bets,
-        "player_bet": player_bet,
-        "balance": balance,
-        "is_admin": is_admin,
-        "pending_count": pending_count,
-        "yes_pct": yes_pct,
-        "no_pct": no_pct,
-        "svg_points": svg_points,
-        "active_tab": None,
-        "active_page": "palymarket",
-        "error": request.query_params.get("error"),
-    })
+    return templates.TemplateResponse(
+        request,
+        "palymarket_detail.html",
+        {
+            **member,
+            "market": market,
+            "bets": bets,
+            "player_bet": player_bet,
+            "balance": balance,
+            "is_admin": is_admin,
+            "pending_count": pending_count,
+            "yes_pct": yes_pct,
+            "no_pct": no_pct,
+            "svg_points": svg_points,
+            "active_tab": None,
+            "active_page": "palymarket",
+            "error": request.query_params.get("error"),
+        },
+    )
 
 
 @router.post("/palymarket/{market_id}/bet")
@@ -1216,9 +1247,7 @@ async def palymarket_close(request: Request, market_id: int):
 
 
 @router.post("/palymarket/{market_id}/resolve")
-async def palymarket_resolve(
-    request: Request, market_id: int, outcome: str = Form(...)
-):
+async def palymarket_resolve(request: Request, market_id: int, outcome: str = Form(...)):
     session = await get_session_from_request(request)
     if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
