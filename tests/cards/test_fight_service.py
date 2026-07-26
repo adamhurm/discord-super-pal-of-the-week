@@ -699,6 +699,15 @@ async def _set_last_activity(db_mod, fight_id, minutes):
         await conn.commit()
 
 
+async def _set_expires_at(db_mod, fight_id, minutes_from_now):
+    import aiosqlite
+
+    when = (datetime.now(timezone.utc) + timedelta(minutes=minutes_from_now)).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE fights SET expires_at = ? WHERE id = ?", (when, fight_id))
+        await conn.commit()
+
+
 @pytest.mark.asyncio
 async def test_touch_fight_activity_refreshes_active_fight(db):
     db_mod, _, fs, _ = db
@@ -747,6 +756,46 @@ async def test_expire_inactive_still_expires_abandoned_lobby(db):
     await fs.expire_inactive_fights()
 
     assert (await fs.get_fight(fight.id)).status == "expired"
+
+
+@pytest.mark.asyncio
+async def test_accept_fight_stamps_the_lobby_deadline(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    challenge_deadline = fight.expires_at
+
+    lobby = await fs.accept_fight(fight.id)
+
+    assert lobby.expires_at > challenge_deadline
+
+
+@pytest.mark.asyncio
+async def test_camped_lobby_expires_once_past_its_deadline(db):
+    """A player waiting on an opponent who never shows keeps refreshing last_activity_at,
+    so only the wall-clock deadline can release them."""
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    await _set_expires_at(db_mod, fight.id, -1)
+    await fs.touch_fight_activity(fight.id)  # the camper's page, still refreshing
+
+    await fs.expire_inactive_fights()
+
+    assert (await fs.get_fight(fight.id)).status == "expired"
+
+
+@pytest.mark.asyncio
+async def test_camped_lobby_survives_until_its_deadline(db):
+    """Guards the other direction: presence must still hold a lobby open while players pick."""
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    await _set_last_activity(db_mod, fight.id, fs.INACTIVITY_EXPIRE_MINUTES + 5)
+    await fs.touch_fight_activity(fight.id)
+
+    await fs.expire_inactive_fights()
+
+    assert (await fs.get_fight(fight.id)).status == "lobby"
 
 
 @pytest.mark.asyncio

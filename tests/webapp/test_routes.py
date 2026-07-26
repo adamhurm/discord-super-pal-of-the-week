@@ -1,4 +1,8 @@
+import json
+import re
 from datetime import datetime, timedelta, timezone
+from html import unescape
+from html.parser import HTMLParser
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -1005,3 +1009,182 @@ def test_tojson_still_serializes_dataclasses():
     assert _tojson_dc([CardRef(member_id="1", rarity="rare")]) == (
         '[{"member_id": "1", "rarity": "rare"}]'
     )
+
+
+# ─── Rendered-page JSON embedding ────────────────────────────────────────────
+#
+# The filter unit tests above pass even when the real pages are broken: the bug that
+# shipped only appeared once autoescape and a `<script>` context were both in play. These
+# render the actual routes and check the embedded JSON survives to the browser.
+
+HOSTILE_NAME = 'Bob "B" <script> & O\'Brien'
+
+
+class _PageParser(HTMLParser):
+    """Collect inline `<script>` bodies and the attributes carrying embedded JSON."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.scripts: list[str] = []
+        self.attrs: list[tuple[str, str | None]] = []
+        self._in_inline_script = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script" and not dict(attrs).get("src"):
+            self._in_inline_script = True
+        self.attrs.extend(attrs)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self._in_inline_script = False
+
+    def handle_data(self, data):
+        if self._in_inline_script:
+            self.scripts.append(data)
+
+    def handle_entityref(self, name):
+        if self._in_inline_script:
+            self.scripts.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if self._in_inline_script:
+            self.scripts.append(f"&#{name};")
+
+
+def _parse_page(html: str) -> _PageParser:
+    parser = _PageParser()
+    parser.feed(html)
+    return parser
+
+
+def _script_const(html: str, name: str):
+    """Return the parsed value of a `const <name> = <json>;` the template interpolated.
+
+    A `<script>` body is not entity-decoded, so if autoescape turned the embedded JSON's
+    quotes into `&#34;` the value is a JS syntax error that kills the entire block — no
+    WebSocket, no rendering, no fight. Here that shows up as a JSONDecodeError.
+    """
+    body = "".join(_parse_page(html).scripts)
+    match = re.search(rf"^\s*const {name} = (.*);$", body, re.MULTILINE)
+    assert match, f"template did not emit `const {name}`"
+    return json.loads(match.group(1))
+
+
+def _attr_values(html: str, name: str) -> list[str]:
+    return [v for k, v in _parse_page(html).attrs if k == name and v is not None]
+
+
+@pytest.mark.asyncio
+async def test_battle_page_script_survives_autoescape(client):
+    """The exact production failure: the battle page rendered but its inline script was a
+    syntax error, so the WebSocket was never opened and the fight never started."""
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight", new=AsyncMock(return_value=_fight(status="active"))
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_display_name",
+            new=AsyncMock(return_value=HOSTILE_NAME),
+        ),
+        patch(
+            "superpal.webapp.routes.get_player_items",
+            new=AsyncMock(return_value={"heal_potion": 2}),
+        ),
+    ):
+        response = await client.get("/fight/1/battle")
+
+    assert response.status_code == 200
+    assert _script_const(response.text, "OPP_NAME") == HOSTILE_NAME
+    assert _script_const(response.text, "ITEM_NAMES")["heal_potion"] == "Heal Potion"
+    assert "new WebSocket(" in response.text
+
+
+@pytest.mark.asyncio
+async def test_marketplace_page_embeds_parseable_json(client):
+    listing = MagicMock()
+    listing.id = 1
+    listing.items = [{"display_name": HOSTILE_NAME, "rarity": "rare"}]
+    listing.ask_note = None
+    listing.offer_count = 0
+    listing.owner_id = "222"
+    listing.owner_display_name = HOSTILE_NAME
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_active_listings", new=AsyncMock(return_value=[listing])),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_my_offers", new=AsyncMock(return_value=[])),
+        patch(
+            "superpal.webapp.routes.get_collection",
+            new=AsyncMock(return_value={"owned": [{"display_name": HOSTILE_NAME}]}),
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+    ):
+        response = await client.get("/marketplace")
+
+    assert response.status_code == 200
+    assert _script_const(response.text, "MY_COLLECTION")[0]["display_name"] == HOSTILE_NAME
+    # The Make Offer modal does JSON.parse(btn.dataset.listingItems) — an attribute the
+    # browser terminates early yields garbage there.
+    embedded = _attr_values(response.text, "data-listing-items")
+    assert embedded, "listing did not render its data-listing-items attribute"
+    assert json.loads(unescape(embedded[0]))[0]["display_name"] == HOSTILE_NAME
+
+
+@pytest.mark.asyncio
+async def test_collection_page_embeds_parseable_json(client):
+    fake_collection = {
+        "owned": [
+            {
+                "member_id": "111",
+                "display_name": HOSTILE_NAME,
+                "avatar_url": None,
+                "rarity": "common",
+                "quantity": 1,
+                "bio": None,
+                "stats_pairs": [["Wins", HOSTILE_NAME]],
+            }
+        ],
+        "undiscovered": [],
+        "counts": {"common": 1, "uncommon": 0, "rare": 0, "legendary": 0},
+    }
+
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=(0,))
+
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
+        response = await client.get("/collection")
+
+    assert response.status_code == 200
+    embedded = _attr_values(response.text, "data-stats")
+    assert embedded, "card did not render its data-stats attribute"
+    assert json.loads(unescape(embedded[0])) == [["Wins", HOSTILE_NAME]]

@@ -14,6 +14,10 @@ FIGHT_TOKEN_EXPIRY_MINUTES = 5
 FIGHT_SESSION_HOURS = 24
 CHALLENGE_EXPIRY_MINUTES = 5
 INACTIVITY_EXPIRE_MINUTES = 10
+# A lobby also gets a wall-clock deadline. Inactivity alone cannot bound it: an open lobby
+# page refreshes last_activity_at every few seconds, so a player waiting on an opponent who
+# never arrives would keep their own lobby alive forever with no way out.
+LOBBY_EXPIRY_MINUTES = 20
 # How long the waiting player must sit on an unmoving turn before they may claim the win,
 # and how long before the server resolves it for them.
 AFK_CLAIM_MINUTES = 3
@@ -177,13 +181,19 @@ async def create_fight(
 
 
 async def accept_fight(fight_id: int) -> Fight | None:
-    """Set fight status to 'lobby'. Returns None if fight is not in pending state."""
-    now = datetime.now(timezone.utc).isoformat()
+    """Set fight status to 'lobby'. Returns None if fight is not in pending state.
+
+    `expires_at` is re-stamped with the lobby deadline, replacing the challenge deadline it
+    held while pending — same column, same meaning, next phase of the fight.
+    """
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    lobby_deadline = (now_dt + timedelta(minutes=LOBBY_EXPIRY_MINUTES)).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "UPDATE fights SET status = 'lobby', last_activity_at = ? "
+            "UPDATE fights SET status = 'lobby', last_activity_at = ?, expires_at = ? "
             "WHERE id = ? AND status = 'pending'",
-            (now, fight_id),
+            (now, lobby_deadline, fight_id),
         )
         await db.commit()
         if cur.rowcount == 0:
@@ -1103,17 +1113,25 @@ async def expire_pending_challenges() -> None:
 
 
 async def expire_inactive_fights() -> None:
-    """Expire abandoned lobbies — fights nobody has had a page open for in 10 minutes.
+    """Expire lobbies that nobody is watching, or that nobody finished in time.
+
+    Two bounds, because either alone leaves a player stuck. Inactivity clears lobbies both
+    players walked away from. The `expires_at` deadline clears the opposite case: one player
+    camped on the lobby page, refreshing `last_activity_at` every few seconds while waiting
+    on an opponent who never arrives. Their own presence would otherwise keep the lobby
+    alive indefinitely, and there is no way to cancel from the page.
 
     Active fights are deliberately excluded: nothing is at stake in a lobby, but expiring
     a battle in progress strands both players with no winner and no payout. Abandoned
     battles resolve through `auto_forfeit_idle_fights()` instead.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=INACTIVITY_EXPIRE_MINUTES)).isoformat()
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(minutes=INACTIVITY_EXPIRE_MINUTES)).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE fights SET status = 'expired' WHERE status = 'lobby' AND last_activity_at < ?",
-            (cutoff,),
+            "UPDATE fights SET status = 'expired' "
+            "WHERE status = 'lobby' AND (last_activity_at < ? OR expires_at < ?)",
+            (cutoff, now.isoformat()),
         )
         await db.commit()
 
