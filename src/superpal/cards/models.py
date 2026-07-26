@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from datetime import datetime
 
 RARITY_ORDER: list[str] = ["common", "uncommon", "rare", "legendary"]
 
@@ -31,7 +30,7 @@ class Member:
     display_name: str
     avatar_url: str | None
     is_excluded: bool
-    synced_at: datetime
+    synced_at: str
 
 
 @dataclass
