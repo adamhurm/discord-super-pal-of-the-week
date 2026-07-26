@@ -51,6 +51,9 @@ async def test_link_redirect_on_valid_token(client):
     with (
         patch("superpal.webapp.routes.use_magic_link", new=AsyncMock(return_value=link)),
         patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/link/abc123", follow_redirects=False)
@@ -412,6 +415,9 @@ async def test_collection_shows_completion_pct(client):
     with (
         patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
         patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
     ):
         response = await client.get("/collection")
