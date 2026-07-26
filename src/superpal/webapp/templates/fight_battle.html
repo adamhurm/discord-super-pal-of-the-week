@@ -69,6 +69,16 @@
     .result-banner.loss { background: #e74c3c; }
     .result-banner.draw { background: #72767d; }
     .spinner { color: #72767d; font-size: 12px; padding: 10px 0; }
+    .conn-pill { display: inline-block; padding: 4px 10px; border-radius: 999px;
+                 font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                 text-transform: uppercase; margin-bottom: 12px; }
+    .conn-live { background: #3ba55c20; color: #3ba55c; }
+    .conn-wait { background: #f39c1220; color: #f39c12; }
+    .conn-dead { background: #e74c3c20; color: #e74c3c; }
+    .claim-area { margin-bottom: 14px; text-align: center; }
+    .claim-hint { font-size: 12px; color: #72767d; }
+    .btn-claim { background: #f39c12; color: #7d4f00; }
+    .btn-claim:not(:disabled):hover { background: #d68910; }
     .card-row-common    { border-left-color: #95a5a6; }
     .card-row-uncommon  { border-left-color: #27ae60; }
     .card-row-rare      { border-left-color: #2980b9; }
@@ -152,9 +162,12 @@
     {{ fight_mode | capitalize }} Mode — vs. {{ opponent_name }}
   </div>
 
+  <div id="conn-pill" class="conn-pill conn-wait">Connecting…</div>
+
   <div id="result-area"></div>
   <div id="turn-banner" class="turn-banner their-turn">Connecting…</div>
   <div id="swap-prompt" style="display:none" class="swap-prompt"></div>
+  <div id="claim-area" class="claim-area" style="display:none"></div>
 
   <!-- anime.js v3.2.2 — to upgrade: replace /static/anime.min.js with new release -->
   <script src="/static/anime.min.js"></script>
@@ -245,9 +258,14 @@
   <script>
     const MY_PLAYER_ID = "{{ player_id }}";
     const OPP_PLAYER_ID = "{{ opponent_id }}";
+    const OPP_NAME = {{ opponent_name | tojson }};
     const FIGHT_ID = {{ fight_id }};
     const MODE = "{{ fight_mode }}";
     const ITEM_NAMES = {{ item_names | tojson }};
+
+    const HEARTBEAT_MS      = 30000;
+    const MAX_BACKOFF_MS    = 15000;
+    const TERMINAL_STATUSES = new Set(["completed", "expired"]);
 
     let ws;
     let prevState         = null;
@@ -255,6 +273,15 @@
     let animating         = false;
     let animatingStartedAt = 0;
     let pendingState      = null;
+
+    let lastState         = null;
+    let lastStateAt       = 0;
+    let mustSwap          = false;
+    let connectionUsable  = false;
+    let reconnectAttempts = 0;
+    let reconnectTimer    = null;
+    let heartbeatTimer    = null;
+    let givenUp           = false;
 
     const MELEE_ATTACKS = new Set(['body_slam', 'hype_strike']);
     const PROJECTILES   = { vibe_check: '🌊', super_bringus_beam: '✨' };
@@ -270,18 +297,113 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
+    function setConnStatus(state) {
+      const pill = document.getElementById("conn-pill");
+      const label = {
+        connecting:   ["conn-wait", "Connecting…"],
+        live:         ["conn-live", "Live"],
+        reconnecting: ["conn-wait", `Reconnecting… (${reconnectAttempts})`],
+        ended:        ["conn-live", "Fight over"],
+        dead:         ["conn-dead", "Disconnected"],
+      }[state] || ["conn-wait", "Connecting…"];
+      pill.className = `conn-pill ${label[0]}`;
+      pill.textContent = label[1];
+      connectionUsable = state === "live";
+      syncButtons();
+    }
+
     function connect() {
+      if (givenUp) return;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+
+      setConnStatus(reconnectAttempts === 0 ? "connecting" : "reconnecting");
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/ws/fight/${FIGHT_ID}`);
-      ws.onopen = () => {};
+
+      ws.onopen = () => {
+        reconnectAttempts = 0;
+        setConnStatus("live");
+        startHeartbeat();
+      };
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === "state") renderState(msg.data);
         else if (msg.type === "error") showError(msg.message);
       };
-      ws.onclose = () => {
-        setTimeout(connect, 2000);
+      ws.onclose = (e) => {
+        stopHeartbeat();
+        // 4003 = not authorized for this fight, 4004 = fight not joinable. Retrying can
+        // never succeed, so stop rather than hammering the server forever.
+        if (e.code === 4003 || e.code === 4004) {
+          givenUp = true;
+          setConnStatus("dead");
+          showUnjoinable();
+          return;
+        }
+        if (lastState && TERMINAL_STATUSES.has(lastState.status)) {
+          setConnStatus("ended");
+          return;
+        }
+        scheduleReconnect();
       };
+    }
+
+    function scheduleReconnect() {
+      if (givenUp || reconnectTimer) return;
+      reconnectAttempts += 1;
+      const backoff = Math.min(MAX_BACKOFF_MS, 1000 * Math.pow(2, reconnectAttempts - 1));
+      const jittered = backoff * (0.7 + Math.random() * 0.6);
+      setConnStatus("reconnecting");
+      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, jittered);
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      // Tells the server someone is still watching, and keeps the socket from being
+      // culled by an idle proxy timeout partway through a battle.
+      heartbeatTimer = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          try { ws.send(JSON.stringify({ action: "ping" })); } catch (_) {}
+        }
+      }, HEARTBEAT_MS);
+    }
+
+    function stopHeartbeat() {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+
+    function showUnjoinable() {
+      document.getElementById("result-area").innerHTML =
+        `<div class="result-banner draw">This fight is no longer joinable. ` +
+        `<a href="/fights" style="color:#fff;text-decoration:underline">View your fights</a></div>`;
+      document.getElementById("actions").style.display = "none";
+      document.getElementById("turn-banner").style.display = "none";
+      document.getElementById("claim-area").style.display = "none";
+    }
+
+    function send(payload) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showError("reconnecting — try again in a moment");
+        connect();
+        return;
+      }
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch (_) {
+        showError("send failed — reconnecting");
+        scheduleReconnect();
+      }
+    }
+
+    function syncButtons() {
+      const blocked = !connectionUsable || mustSwap;
+      document.querySelectorAll(".btn-attack, .btn-item, .btn-run")
+        .forEach(b => b.disabled = blocked);
+      document.querySelectorAll(".btn-swap, .btn-claim")
+        .forEach(b => b.disabled = !connectionUsable);
     }
 
     function hpColor(cur, max) {
@@ -321,6 +443,8 @@
     function applyState(state, me, opp) {
       state.log.forEach(e => prevLogIds.add(e.id));
       prevState = state;
+      lastState = state;
+      lastStateAt = Date.now();
 
       updateSprites(me, opp);
       renderCards(me.cards, "my-cards", true);
@@ -330,12 +454,17 @@
 
       // Result
       const resultArea = document.getElementById("result-area");
-      if (state.status === "completed") {
-        const won = state.winner_id === MY_PLAYER_ID;
-        const cls = won ? "" : " loss";
-        resultArea.innerHTML = `<div class="result-banner${cls}">${won ? "🏆 You Win! +50 Pringles (or more)" : "💀 You Lost. -50 Pringles"}</div>`;
+      if (TERMINAL_STATUSES.has(state.status)) {
+        if (state.status === "expired") {
+          resultArea.innerHTML = `<div class="result-banner draw">This fight expired before it finished.</div>`;
+        } else {
+          const won = state.winner_id === MY_PLAYER_ID;
+          const cls = won ? "" : " loss";
+          resultArea.innerHTML = `<div class="result-banner${cls}">${won ? "🏆 You Win! +50 Pringles (or more)" : "💀 You Lost. -50 Pringles"}</div>`;
+        }
         document.getElementById("actions").style.display = "none";
         document.getElementById("turn-banner").style.display = "none";
+        document.getElementById("claim-area").style.display = "none";
         return;
       }
 
@@ -343,17 +472,17 @@
       const actionsEl  = document.getElementById("actions");
       const turnBanner = document.getElementById("turn-banner");
 
-      if (state.pending_swap_player_id === MY_PLAYER_ID) {
+      mustSwap = state.pending_swap_player_id === MY_PLAYER_ID;
+
+      if (mustSwap) {
         swapPrompt.style.display = "block";
         swapPrompt.textContent = "Your card fainted! Choose your next fighter:";
         actionsEl.style.display = "block";
         turnBanner.style.display = "none";
         buildSwapButtons(me.cards, true);
         document.getElementById("swap-group").style.display = "block";
-        document.querySelectorAll(".btn-attack, .btn-item, .btn-run").forEach(b => b.disabled = true);
       } else {
         swapPrompt.style.display = "none";
-        document.querySelectorAll(".btn-attack, .btn-item, .btn-run").forEach(b => b.disabled = false);
 
         const isMyTurn = state.current_turn_player_id === MY_PLAYER_ID;
         turnBanner.style.display = "block";
@@ -367,6 +496,45 @@
           document.getElementById("swap-group").style.display = hasNonActive ? "block" : "none";
         }
       }
+
+      syncButtons();
+      updateClaimUI();
+    }
+
+    let claimUiMode = "hidden";
+
+    function updateClaimUI() {
+      const area = document.getElementById("claim-area");
+      const waitingOn = lastState && lastState.waiting_on_player_id;
+      if (!lastState || lastState.status !== "active" || !waitingOn || waitingOn === MY_PLAYER_ID) {
+        area.style.display = "none";
+        claimUiMode = "hidden";
+        return;
+      }
+
+      // Extrapolate from the server's turn age so the countdown ticks between updates.
+      const elapsed = (lastState.turn_age_seconds || 0) + (Date.now() - lastStateAt) / 1000;
+      const needed  = lastState.claim_win_after_seconds || 180;
+
+      area.style.display = "block";
+      if (elapsed >= needed) {
+        // Rendered once — rewriting it every tick would swallow a click landing mid-render.
+        if (claimUiMode === "ready") return;
+        claimUiMode = "ready";
+        area.innerHTML =
+          `<button class="btn btn-claim" onclick="claimWin()">Claim win — opponent is AFK</button>`;
+        syncButtons();
+      } else {
+        claimUiMode = "countdown";
+        area.innerHTML =
+          `<div class="claim-hint">If ${escapeHtml(OPP_NAME)} doesn't move, ` +
+          `you can claim the win in ${Math.ceil(needed - elapsed)}s</div>`;
+      }
+    }
+
+    function claimWin() {
+      if (!confirm("Claim the win? Your opponent hasn't made their move.")) return;
+      send({ action: "claim_win" });
     }
 
     function spriteEl(side)   { return document.getElementById(`avatar-${side}`); }
@@ -713,20 +881,20 @@
     }
 
     function sendAttack(attackKey) {
-      ws.send(JSON.stringify({ action: "attack", detail: { attack_key: attackKey } }));
+      send({ action: "attack", detail: { attack_key: attackKey } });
     }
 
     function useItem(itemType) {
-      ws.send(JSON.stringify({ action: "item", detail: { item_type: itemType } }));
+      send({ action: "item", detail: { item_type: itemType } });
     }
 
     function sendSwap(slot) {
-      ws.send(JSON.stringify({ action: "swap", detail: { slot: slot } }));
+      send({ action: "swap", detail: { slot: slot } });
     }
 
     function sendRun() {
       if (!confirm("Attempt to flee? (D20 roll determines outcome)")) return;
-      ws.send(JSON.stringify({ action: "run", detail: {} }));
+      send({ action: "run", detail: {} });
     }
 
     function updateSprites(me, opp) {
@@ -792,9 +960,20 @@
       }
     }
 
+    // Waking from a locked phone or a closed laptop lid drops the socket silently —
+    // reconnect on any signal that the page is live again rather than waiting out the backoff.
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) connect();
+      if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        reconnectAttempts = 0;
+        connect();
+      }
     });
+    window.addEventListener("online", () => {
+      reconnectAttempts = 0;
+      connect();
+    });
+
+    setInterval(updateClaimUI, 1000);
 
     // Watchdog: if an animation callback is never fired (anime.js edge case), unblock after 3s.
     setInterval(() => {
@@ -809,18 +988,17 @@
       }
     }, 1000);
 
-    // Fallback HTTP poll: re-syncs state every 8s in case a WS message was silently dropped.
+    // Fallback HTTP poll: re-syncs state every 8s in case a WS message was silently dropped,
+    // and is the only way a client with a dead socket learns the fight ended.
     // renderState deduplicates via prevLogIds so already-animated entries never replay.
     const _pollInterval = setInterval(async () => {
       try {
         const resp = await fetch(`/api/fight/${FIGHT_ID}/state`);
-        if (resp.ok) {
-          const state = await resp.json();
-          if (!state.error) {
-            renderState(state);
-            if (state.status === 'completed') clearInterval(_pollInterval);
-          }
-        }
+        if (!resp.ok) return;
+        const state = await resp.json();
+        if (state.error) return;
+        renderState(state);
+        if (TERMINAL_STATUSES.has(state.status)) clearInterval(_pollInterval);
       } catch (_) {}
     }, 8000);
 

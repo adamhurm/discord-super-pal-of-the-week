@@ -96,6 +96,7 @@ class Fight:
     completed_at: str | None
     expires_at: str | None
     last_activity_at: str | None
+    turn_started_at: str | None = None
 
 
 @dataclass

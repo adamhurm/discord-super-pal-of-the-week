@@ -524,6 +524,7 @@ async def test_fight_lobby_with_fight_scoped_cookie(client):
             "superpal.webapp.routes.get_collection",
             new=AsyncMock(return_value={"owned": []}),
         ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
     ):
         response = await client.get("/fight/1/lobby")
     assert response.status_code == 200
@@ -531,13 +532,42 @@ async def test_fight_lobby_with_fight_scoped_cookie(client):
 
 
 @pytest.mark.asyncio
-async def test_fight_lobby_wrong_fight_scope_shows_expired(client):
+async def test_fight_scoped_session_can_enter_another_of_its_own_fights(client):
+    """Redeeming a second fight's DM link must not lock the player out of the first.
+
+    There is one session cookie, so the scope names whichever fight was opened last.
+    Authorization is by participation, not by which fight the scope happens to name.
+    """
     with (
         patch(
             "superpal.webapp.routes.get_session_from_request",
             new=AsyncMock(return_value=_session("fight:2")),
         ),
         patch("superpal.webapp.routes.get_fight", new=AsyncMock(return_value=_fight())),
+        patch(
+            "superpal.webapp.routes.get_member_display_name",
+            new=AsyncMock(return_value="Opponent Bob"),
+        ),
+        patch(
+            "superpal.webapp.routes.get_collection",
+            new=AsyncMock(return_value={"owned": []}),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+    ):
+        response = await client.get("/fight/1/lobby")
+    assert response.status_code == 200
+    assert "Opponent Bob" in response.text
+
+
+@pytest.mark.asyncio
+async def test_fight_scoped_session_still_blocked_from_others_fights(client):
+    fight = _fight(challenger_id="888", opponent_id="999")
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session("fight:2")),
+        ),
+        patch("superpal.webapp.routes.get_fight", new=AsyncMock(return_value=fight)),
     ):
         response = await client.get("/fight/1/lobby")
     assert response.status_code == 200
@@ -560,6 +590,7 @@ async def test_fight_lobby_participant_collection_session_fallback(client):
             "superpal.webapp.routes.get_collection",
             new=AsyncMock(return_value={"owned": []}),
         ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
     ):
         response = await client.get("/fight/1/lobby")
     assert response.status_code == 200
@@ -710,3 +741,267 @@ async def test_fights_page_renders_rows(client):
     assert "/fight/7/battle" in response.text
     assert "Carol" in response.text
     assert "you won" in response.text
+
+
+# ─── Fight WebSocket connection registry ─────────────────────────────────────
+
+
+class _FakeWS:
+    def __init__(self, fail=False):
+        self.sent = []
+        self.fail = fail
+
+    async def send_json(self, message):
+        if self.fail:
+            raise RuntimeError("socket is gone")
+        self.sent.append(message)
+
+
+@pytest.fixture
+def clean_registry():
+    from superpal.webapp import routes
+
+    routes._fight_connections.clear()
+    yield routes
+    routes._fight_connections.clear()
+
+
+@pytest.mark.asyncio
+async def test_broadcast_reaches_every_socket_of_both_players(clean_registry):
+    routes = clean_registry
+    a1, a2, b1 = _FakeWS(), _FakeWS(), _FakeWS()
+    routes._register_connection(1, "111", "conn-a1", a1)
+    routes._register_connection(1, "111", "conn-a2", a2)
+    routes._register_connection(1, "222", "conn-b1", b1)
+
+    await routes._broadcast(1, {"type": "state"})
+
+    assert a1.sent == a2.sent == b1.sent == [{"type": "state"}]
+
+
+@pytest.mark.asyncio
+async def test_stale_socket_cleanup_leaves_the_live_one_connected(clean_registry):
+    """A reconnect briefly holds two sockets; the old one's cleanup must not unhook the new."""
+    routes = clean_registry
+    stale, live = _FakeWS(), _FakeWS()
+    routes._register_connection(1, "111", "conn-old", stale)
+    routes._register_connection(1, "111", "conn-new", live)
+
+    routes._drop_connection(1, "111", "conn-old")
+    await routes._broadcast(1, {"type": "state"})
+
+    assert live.sent == [{"type": "state"}]
+    assert stale.sent == []
+
+
+@pytest.mark.asyncio
+async def test_broadcast_prunes_only_the_failing_socket(clean_registry):
+    routes = clean_registry
+    dead, live = _FakeWS(fail=True), _FakeWS()
+    routes._register_connection(1, "111", "conn-dead", dead)
+    routes._register_connection(1, "222", "conn-live", live)
+
+    await routes._broadcast(1, {"type": "state"})
+
+    assert live.sent == [{"type": "state"}]
+    assert routes._fight_connections[1] == {"222": {"conn-live": live}}
+
+
+@pytest.mark.asyncio
+async def test_drop_connection_prunes_empty_fight_entry(clean_registry):
+    routes = clean_registry
+    routes._register_connection(7, "111", "conn-1", _FakeWS())
+
+    routes._drop_connection(7, "111", "conn-1")
+
+    assert 7 not in routes._fight_connections
+
+
+# ─── Fight state API ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_fight_state_api_returns_terminal_fight(client):
+    """A client whose socket died must be able to learn the fight is over."""
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="completed")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(return_value={"status": "completed", "winner_id": "111"}),
+        ),
+    ):
+        response = await client.get("/api/fight/1/state")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_fight_state_api_rejects_missing_fight(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_fight", new=AsyncMock(return_value=None)),
+    ):
+        response = await client.get("/api/fight/1/state")
+
+    assert response.status_code == 401
+
+
+# ─── Fight WebSocket ─────────────────────────────────────────────────────────
+
+
+def test_fight_ws_sends_state_on_connect_and_answers_heartbeat(app):
+    """Reconnecting must resync immediately, and a ping must keep the fight alive."""
+    from fastapi.testclient import TestClient
+
+    touch = AsyncMock()
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=touch),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(return_value={"status": "active", "fight_id": 1}),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/fight/1") as ws:
+            assert ws.receive_json() == {
+                "type": "state",
+                "data": {"status": "active", "fight_id": 1},
+            }
+            ws.send_json({"action": "ping"})
+            assert ws.receive_json() == {"type": "pong"}
+
+    assert touch.await_count >= 2  # once on connect, once per heartbeat
+
+
+def test_fight_ws_rejects_non_participant(app):
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active", challenger_id="888",
+                                              opponent_id="999")),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with pytest.raises(StarletteWSDisconnect) as exc:
+            with client.websocket_connect("/ws/fight/1"):
+                pass
+
+    assert exc.value.code == 4003
+
+
+def test_fight_ws_claim_win_broadcasts_and_closes(app):
+    from fastapi.testclient import TestClient
+
+    final_state = {"status": "completed", "winner_id": "111"}
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+        patch("superpal.webapp.routes.forfeit_fight", new=AsyncMock(return_value=(True, ""))),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(side_effect=[{"status": "active"}, final_state]),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/fight/1") as ws:
+            ws.receive_json()
+            ws.send_json({"action": "claim_win"})
+            assert ws.receive_json() == {"type": "state", "data": final_state}
+
+
+def test_fight_ws_reports_a_rejected_claim_without_closing(app):
+    from fastapi.testclient import TestClient
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+        patch(
+            "superpal.webapp.routes.forfeit_fight",
+            new=AsyncMock(return_value=(False, "opponent_not_afk_yet")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(return_value={"status": "active"}),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/fight/1") as ws:
+            ws.receive_json()
+            ws.send_json({"action": "claim_win"})
+            assert ws.receive_json() == {
+                "type": "error",
+                "message": "opponent_not_afk_yet",
+            }
+            ws.send_json({"action": "ping"})
+            assert ws.receive_json() == {"type": "pong"}
+
+
+# ─── tojson filter ───────────────────────────────────────────────────────────
+
+
+def test_tojson_is_safe_to_embed_in_a_script_block():
+    """A plain str return gets autoescaped, and `<script>` does not decode entities —
+    `&#34;` would reach the JS parser verbatim and kill the entire inline script."""
+    from superpal.webapp.routes import _tojson_dc, templates
+
+    rendered = templates.env.from_string("const X = {{ v | tojson }};").render(
+        v={"name": 'Bob "B" <script> & co'}
+    )
+
+    assert "&#34;" not in rendered
+    assert "&amp;" not in rendered
+    assert rendered.startswith('const X = {"name": ')
+    # The chars that could break out of a <script> are unicode-escaped, not HTML-escaped.
+    assert "\\u003cscript\\u003e" in rendered
+    assert "\\u0026" in rendered
+    assert _tojson_dc({"a": 1}) == '{"a": 1}'
+
+
+def test_tojson_still_serializes_dataclasses():
+    from superpal.cards.models import CardRef
+    from superpal.webapp.routes import _tojson_dc
+
+    assert _tojson_dc([CardRef(member_id="1", rarity="rare")]) == (
+        '[{"member_id": "1", "rarity": "rare"}]'
+    )

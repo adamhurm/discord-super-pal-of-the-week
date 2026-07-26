@@ -8,6 +8,7 @@ import superpal.env as superpal_env
 from superpal.cards.fight_service import (
     FIGHT_TOKEN_EXPIRY_MINUTES,
     accept_fight,
+    auto_forfeit_idle_fights,
     create_fight,
     create_fight_token,
     expire_inactive_fights,
@@ -116,7 +117,7 @@ class FightsCog(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def fight_expiry(self) -> None:
-        """Expire stale challenges and inactive fights.
+        """Expire stale challenges and abandoned lobbies, and resolve ghosted battles.
 
         The challenge View also expires on its timeout, but that timer is
         lost on process restart — this loop is the durable fallback.
@@ -124,6 +125,9 @@ class FightsCog(commands.Cog):
         try:
             await expire_pending_challenges()
             await expire_inactive_fights()
+            resolved = await auto_forfeit_idle_fights()
+            if resolved:
+                log.info("Auto-forfeited %d abandoned fight(s): %s", len(resolved), resolved)
         except Exception as e:
             log.error("Error in fight_expiry task: %s", e)
 

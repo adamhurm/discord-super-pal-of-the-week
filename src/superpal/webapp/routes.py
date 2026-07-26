@@ -9,6 +9,7 @@ import aiosqlite
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 import superpal.notify as notify
 import superpal.palymarket.service as palymarket_svc
@@ -16,12 +17,14 @@ from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
     RARITY_STATS,
+    forfeit_fight,
     get_fight,
     get_fight_state,
     get_player_fights,
     mark_player_ready,
     process_action,
     set_fight_cards,
+    touch_fight_activity,
     use_fight_token,
 )
 from superpal.cards.models import CardRef
@@ -64,6 +67,7 @@ from superpal.cards.service import (
     sync_members as _sync_members,
 )
 from superpal.economy import boin_service, exchange_service
+from superpal.sessions import Session
 from superpal.sessions import get_session as get_web_session
 from superpal.webapp.auth import (
     SESSION_COOKIE_NAME,
@@ -71,8 +75,11 @@ from superpal.webapp.auth import (
     set_session_cookie,
 )
 
-# fight_id -> {player_id: WebSocket}
-_fight_connections: dict[int, dict[str, WebSocket]] = {}
+# fight_id -> player_id -> connection_id -> WebSocket.
+# Keyed per connection, not per player: a reconnecting client (or a second tab) briefly
+# holds two sockets, and keying by player alone means the older one's cleanup unhooks the
+# live one — the player then sits on an open socket that never receives another update.
+_fight_connections: dict[int, dict[str, dict[str, WebSocket]]] = {}
 
 IMAGES_DIR = Path(DB_PATH).parent / "images"
 
@@ -80,12 +87,25 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def _tojson_dc(value: object) -> str:
+def _tojson_dc(value: object) -> Markup:
+    """Dataclass-aware `tojson`, safe to embed in both attributes and `<script>` blocks.
+
+    Must return Markup: a plain str gets HTML-escaped by autoescape, and character
+    references are not decoded inside `<script>`, so `&#34;` reaches the JS parser
+    verbatim and kills the whole script. The `<`, `>`, `&`, `'` escapes below are what
+    make the already-safe output safe to emit unescaped — same set Jinja's own
+    `htmlsafe_json_dumps` uses.
+    """
+
     def _default(o: object) -> object:
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
             return dataclasses.asdict(o)
         raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-    return json.dumps(value, default=_default)
+
+    encoded = json.dumps(value, default=_default)
+    for char, escape in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"), ("'", "\\u0027")):
+        encoded = encoded.replace(char, escape)
+    return Markup(encoded)
 
 
 templates.env.filters["tojson"] = _tojson_dc
@@ -571,21 +591,26 @@ async def fights_view(request: Request):
     )
 
 
-async def _resolve_fight_player(request: Request, fight_id: int) -> str | None:
+async def _fight_player_from_session(session: Session | None, fight_id: int) -> str | None:
+    """Authorize a session for one fight. Any session works if its user is a participant.
+
+    Deliberately ignores which fight a fight-scoped session names. There is a single
+    session cookie, so redeeming the DM link for a second fight used to overwrite the
+    first and lock the player out of a battle they were mid-way through. Scope grants no
+    isolation here anyway — the session is already bound to a user_id, participation is
+    still checked, and every other player-facing route accepts a fight-scoped session.
     """
-    Determine the player_id for a fight request from the session cookie.
-    A fight-scoped session must match this fight; any other session works
-    if the logged-in user is a participant.
-    """
-    session = await get_session_from_request(request)
     if session is None:
         return None
-    if session.fight_id is not None:
-        return session.user_id if session.fight_id == fight_id else None
     fight = await get_fight(fight_id)
     if fight and session.user_id in (fight.challenger_id, fight.opponent_id):
         return session.user_id
     return None
+
+
+async def _resolve_fight_player(request: Request, fight_id: int) -> str | None:
+    """Determine the player_id for a fight request from the session cookie."""
+    return await _fight_player_from_session(await get_session_from_request(request), fight_id)
 
 
 @router.get("/fight/{fight_id}/lobby", response_class=HTMLResponse)
@@ -614,6 +639,9 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = ""):
 
     if fight.status == "active":
         return RedirectResponse(url=f"/fight/{fight_id}/battle", status_code=303)
+
+    # An open lobby page is proof someone is still here — don't expire under them.
+    await touch_fight_activity(fight_id)
 
     # Determine which player is ready
     is_challenger = player_id == fight.challenger_id
@@ -676,9 +704,7 @@ async def fight_ready(
     both_ready, _ = await mark_player_ready(fight_id, player_id)
 
     if both_ready:
-        # Notify the other connected WS client (if any) that the fight started
-        state = await get_fight_state(fight_id)
-        await _broadcast(fight_id, {"type": "state", "data": state})
+        # The other player's lobby page polls and follows its own redirect to the battle.
         return RedirectResponse(url=f"/fight/{fight_id}/battle", status_code=303)
 
     return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
@@ -715,43 +741,63 @@ async def fight_battle(fight_id: int, request: Request):
     )
 
 
+def _register_connection(fight_id: int, player_id: str, conn_id: str, ws: WebSocket) -> None:
+    _fight_connections.setdefault(fight_id, {}).setdefault(player_id, {})[conn_id] = ws
+
+
+def _drop_connection(fight_id: int, player_id: str, conn_id: str) -> None:
+    """Remove one connection, leaving any other socket for the same player intact."""
+    players = _fight_connections.get(fight_id)
+    if players is None:
+        return
+    conns = players.get(player_id)
+    if conns is None:
+        return
+    conns.pop(conn_id, None)
+    if not conns:
+        players.pop(player_id, None)
+    if not players:
+        _fight_connections.pop(fight_id, None)
+
+
 async def _broadcast(fight_id: int, message: dict) -> None:
-    conns = _fight_connections.get(fight_id, {})
-    dead = []
-    for pid, ws in conns.items():
+    """Send to every live socket for both players. Iterates a snapshot — a disconnect
+    handler may mutate the registry while we are awaiting a send."""
+    players = _fight_connections.get(fight_id, {})
+    targets = [
+        (pid, conn_id, ws)
+        for pid, conns in list(players.items())
+        for conn_id, ws in list(conns.items())
+    ]
+    for pid, conn_id, ws in targets:
         try:
             await ws.send_json(message)
         except Exception:
-            dead.append(pid)
-    for pid in dead:
-        conns.pop(pid, None)
+            _drop_connection(fight_id, pid, conn_id)
 
 
 @router.websocket("/ws/fight/{fight_id}")
 async def fight_ws(websocket: WebSocket, fight_id: int):
     token = websocket.cookies.get(SESSION_COOKIE_NAME)
     session = await get_web_session(token) if token else None
-    player_id: str | None = None
-    if session is not None:
-        if session.fight_id is not None:
-            player_id = session.user_id if session.fight_id == fight_id else None
-        else:
-            fight_row = await get_fight(fight_id)
-            if fight_row and session.user_id in (fight_row.challenger_id, fight_row.opponent_id):
-                player_id = session.user_id
+    player_id = await _fight_player_from_session(session, fight_id)
     if not player_id:
         await websocket.close(code=4003)
         return
 
+    # An expired fight is refused so the client stops retrying and shows a terminal
+    # message instead of reconnecting forever against a fight it can never rejoin.
     fight = await get_fight(fight_id)
     if not fight or fight.status not in ("active", "completed"):
         await websocket.close(code=4004)
         return
 
     await websocket.accept()
-    _fight_connections.setdefault(fight_id, {})[player_id] = websocket
+    conn_id = uuid.uuid4().hex
+    _register_connection(fight_id, player_id, conn_id, websocket)
 
     try:
+        await touch_fight_activity(fight_id)
         state = await get_fight_state(fight_id)
         await websocket.send_json({"type": "state", "data": state})
 
@@ -759,6 +805,23 @@ async def fight_ws(websocket: WebSocket, fight_id: int):
             data = await websocket.receive_json()
             action = data.get("action")
             detail = data.get("detail", {})
+
+            # Heartbeat: proves someone is still watching, and keeps the socket from
+            # being culled by an idle proxy timeout mid-battle.
+            if action == "ping":
+                await touch_fight_activity(fight_id)
+                await websocket.send_json({"type": "pong"})
+                continue
+
+            if action == "claim_win":
+                ok, err = await forfeit_fight(fight_id, player_id)
+                if not ok:
+                    await websocket.send_json({"type": "error", "message": err})
+                    continue
+                await _broadcast(
+                    fight_id, {"type": "state", "data": await get_fight_state(fight_id)}
+                )
+                break
 
             success, err, new_state = await process_action(fight_id, player_id, action, detail)
             if not success:
@@ -768,24 +831,27 @@ async def fight_ws(websocket: WebSocket, fight_id: int):
             await _broadcast(fight_id, {"type": "state", "data": new_state})
 
             if new_state.get("status") == "completed":
-                asyncio.create_task(notify.announce_fight_result(fight_id))  # noqa: RUF006
                 break
 
     except WebSocketDisconnect:
         pass
     finally:
-        _fight_connections.get(fight_id, {}).pop(player_id, None)
+        _drop_connection(fight_id, player_id, conn_id)
 
 
 @router.get("/api/fight/{fight_id}/state")
 async def fight_state_api(fight_id: int, request: Request):
-    """Lightweight fallback poll endpoint for the battle page."""
+    """Lightweight fallback poll endpoint for the battle page.
+
+    Terminal fights return 200 with their state rather than 404 — a client whose
+    WebSocket died needs to be able to learn the fight is over instead of hanging on
+    "waiting for opponent" forever. A fight that does not exist is answered by the
+    authorization check, which cannot resolve a player for it.
+    """
     player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
-    fight = await get_fight(fight_id)
-    if not fight or fight.status not in ("active", "completed"):
-        return JSONResponse({"error": "fight_not_found"}, status_code=404)
+    await touch_fight_activity(fight_id)
     state = await get_fight_state(fight_id)
     return JSONResponse(state)
 
