@@ -1,4 +1,8 @@
+import json
+import re
 from datetime import datetime, timedelta, timezone
+from html import unescape
+from html.parser import HTMLParser
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -524,6 +528,7 @@ async def test_fight_lobby_with_fight_scoped_cookie(client):
             "superpal.webapp.routes.get_collection",
             new=AsyncMock(return_value={"owned": []}),
         ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
     ):
         response = await client.get("/fight/1/lobby")
     assert response.status_code == 200
@@ -531,13 +536,42 @@ async def test_fight_lobby_with_fight_scoped_cookie(client):
 
 
 @pytest.mark.asyncio
-async def test_fight_lobby_wrong_fight_scope_shows_expired(client):
+async def test_fight_scoped_session_can_enter_another_of_its_own_fights(client):
+    """Redeeming a second fight's DM link must not lock the player out of the first.
+
+    There is one session cookie, so the scope names whichever fight was opened last.
+    Authorization is by participation, not by which fight the scope happens to name.
+    """
     with (
         patch(
             "superpal.webapp.routes.get_session_from_request",
             new=AsyncMock(return_value=_session("fight:2")),
         ),
         patch("superpal.webapp.routes.get_fight", new=AsyncMock(return_value=_fight())),
+        patch(
+            "superpal.webapp.routes.get_member_display_name",
+            new=AsyncMock(return_value="Opponent Bob"),
+        ),
+        patch(
+            "superpal.webapp.routes.get_collection",
+            new=AsyncMock(return_value={"owned": []}),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+    ):
+        response = await client.get("/fight/1/lobby")
+    assert response.status_code == 200
+    assert "Opponent Bob" in response.text
+
+
+@pytest.mark.asyncio
+async def test_fight_scoped_session_still_blocked_from_others_fights(client):
+    fight = _fight(challenger_id="888", opponent_id="999")
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session("fight:2")),
+        ),
+        patch("superpal.webapp.routes.get_fight", new=AsyncMock(return_value=fight)),
     ):
         response = await client.get("/fight/1/lobby")
     assert response.status_code == 200
@@ -560,6 +594,7 @@ async def test_fight_lobby_participant_collection_session_fallback(client):
             "superpal.webapp.routes.get_collection",
             new=AsyncMock(return_value={"owned": []}),
         ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
     ):
         response = await client.get("/fight/1/lobby")
     assert response.status_code == 200
@@ -710,3 +745,446 @@ async def test_fights_page_renders_rows(client):
     assert "/fight/7/battle" in response.text
     assert "Carol" in response.text
     assert "you won" in response.text
+
+
+# ─── Fight WebSocket connection registry ─────────────────────────────────────
+
+
+class _FakeWS:
+    def __init__(self, fail=False):
+        self.sent = []
+        self.fail = fail
+
+    async def send_json(self, message):
+        if self.fail:
+            raise RuntimeError("socket is gone")
+        self.sent.append(message)
+
+
+@pytest.fixture
+def clean_registry():
+    from superpal.webapp import routes
+
+    routes._fight_connections.clear()
+    yield routes
+    routes._fight_connections.clear()
+
+
+@pytest.mark.asyncio
+async def test_broadcast_reaches_every_socket_of_both_players(clean_registry):
+    routes = clean_registry
+    a1, a2, b1 = _FakeWS(), _FakeWS(), _FakeWS()
+    routes._register_connection(1, "111", "conn-a1", a1)
+    routes._register_connection(1, "111", "conn-a2", a2)
+    routes._register_connection(1, "222", "conn-b1", b1)
+
+    await routes._broadcast(1, {"type": "state"})
+
+    assert a1.sent == a2.sent == b1.sent == [{"type": "state"}]
+
+
+@pytest.mark.asyncio
+async def test_stale_socket_cleanup_leaves_the_live_one_connected(clean_registry):
+    """A reconnect briefly holds two sockets; the old one's cleanup must not unhook the new."""
+    routes = clean_registry
+    stale, live = _FakeWS(), _FakeWS()
+    routes._register_connection(1, "111", "conn-old", stale)
+    routes._register_connection(1, "111", "conn-new", live)
+
+    routes._drop_connection(1, "111", "conn-old")
+    await routes._broadcast(1, {"type": "state"})
+
+    assert live.sent == [{"type": "state"}]
+    assert stale.sent == []
+
+
+@pytest.mark.asyncio
+async def test_broadcast_prunes_only_the_failing_socket(clean_registry):
+    routes = clean_registry
+    dead, live = _FakeWS(fail=True), _FakeWS()
+    routes._register_connection(1, "111", "conn-dead", dead)
+    routes._register_connection(1, "222", "conn-live", live)
+
+    await routes._broadcast(1, {"type": "state"})
+
+    assert live.sent == [{"type": "state"}]
+    assert routes._fight_connections[1] == {"222": {"conn-live": live}}
+
+
+@pytest.mark.asyncio
+async def test_drop_connection_prunes_empty_fight_entry(clean_registry):
+    routes = clean_registry
+    routes._register_connection(7, "111", "conn-1", _FakeWS())
+
+    routes._drop_connection(7, "111", "conn-1")
+
+    assert 7 not in routes._fight_connections
+
+
+# ─── Fight state API ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_fight_state_api_returns_terminal_fight(client):
+    """A client whose socket died must be able to learn the fight is over."""
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="completed")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(return_value={"status": "completed", "winner_id": "111"}),
+        ),
+    ):
+        response = await client.get("/api/fight/1/state")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_fight_state_api_rejects_missing_fight(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_fight", new=AsyncMock(return_value=None)),
+    ):
+        response = await client.get("/api/fight/1/state")
+
+    assert response.status_code == 401
+
+
+# ─── Fight WebSocket ─────────────────────────────────────────────────────────
+
+
+def test_fight_ws_sends_state_on_connect_and_answers_heartbeat(app):
+    """Reconnecting must resync immediately, and a ping must keep the fight alive."""
+    from fastapi.testclient import TestClient
+
+    touch = AsyncMock()
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=touch),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(return_value={"status": "active", "fight_id": 1}),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/fight/1") as ws:
+            assert ws.receive_json() == {
+                "type": "state",
+                "data": {"status": "active", "fight_id": 1},
+            }
+            ws.send_json({"action": "ping"})
+            assert ws.receive_json() == {"type": "pong"}
+
+    assert touch.await_count >= 2  # once on connect, once per heartbeat
+
+
+def test_fight_ws_rejects_non_participant(app):
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active", challenger_id="888",
+                                              opponent_id="999")),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with pytest.raises(StarletteWSDisconnect) as exc:
+            with client.websocket_connect("/ws/fight/1"):
+                pass
+
+    assert exc.value.code == 4003
+
+
+def test_fight_ws_claim_win_broadcasts_and_closes(app):
+    from fastapi.testclient import TestClient
+
+    final_state = {"status": "completed", "winner_id": "111"}
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+        patch("superpal.webapp.routes.forfeit_fight", new=AsyncMock(return_value=(True, ""))),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(side_effect=[{"status": "active"}, final_state]),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/fight/1") as ws:
+            ws.receive_json()
+            ws.send_json({"action": "claim_win"})
+            assert ws.receive_json() == {"type": "state", "data": final_state}
+
+
+def test_fight_ws_reports_a_rejected_claim_without_closing(app):
+    from fastapi.testclient import TestClient
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_web_session",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight",
+            new=AsyncMock(return_value=_fight(status="active")),
+        ),
+        patch("superpal.webapp.routes.touch_fight_activity", new=AsyncMock()),
+        patch(
+            "superpal.webapp.routes.forfeit_fight",
+            new=AsyncMock(return_value=(False, "opponent_not_afk_yet")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight_state",
+            new=AsyncMock(return_value={"status": "active"}),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/fight/1") as ws:
+            ws.receive_json()
+            ws.send_json({"action": "claim_win"})
+            assert ws.receive_json() == {
+                "type": "error",
+                "message": "opponent_not_afk_yet",
+            }
+            ws.send_json({"action": "ping"})
+            assert ws.receive_json() == {"type": "pong"}
+
+
+# ─── tojson filter ───────────────────────────────────────────────────────────
+
+
+def test_tojson_is_safe_to_embed_in_a_script_block():
+    """A plain str return gets autoescaped, and `<script>` does not decode entities —
+    `&#34;` would reach the JS parser verbatim and kill the entire inline script."""
+    from superpal.webapp.routes import _tojson_dc, templates
+
+    rendered = templates.env.from_string("const X = {{ v | tojson }};").render(
+        v={"name": 'Bob "B" <script> & co'}
+    )
+
+    assert "&#34;" not in rendered
+    assert "&amp;" not in rendered
+    assert rendered.startswith('const X = {"name": ')
+    # The chars that could break out of a <script> are unicode-escaped, not HTML-escaped.
+    assert "\\u003cscript\\u003e" in rendered
+    assert "\\u0026" in rendered
+    assert _tojson_dc({"a": 1}) == '{"a": 1}'
+
+
+def test_tojson_still_serializes_dataclasses():
+    from superpal.cards.models import CardRef
+    from superpal.webapp.routes import _tojson_dc
+
+    assert _tojson_dc([CardRef(member_id="1", rarity="rare")]) == (
+        '[{"member_id": "1", "rarity": "rare"}]'
+    )
+
+
+# ─── Rendered-page JSON embedding ────────────────────────────────────────────
+#
+# The filter unit tests above pass even when the real pages are broken: the bug that
+# shipped only appeared once autoescape and a `<script>` context were both in play. These
+# render the actual routes and check the embedded JSON survives to the browser.
+
+HOSTILE_NAME = 'Bob "B" <script> & O\'Brien'
+
+
+class _PageParser(HTMLParser):
+    """Collect inline `<script>` bodies and the attributes carrying embedded JSON."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.scripts: list[str] = []
+        self.attrs: list[tuple[str, str | None]] = []
+        self._in_inline_script = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script" and not dict(attrs).get("src"):
+            self._in_inline_script = True
+        self.attrs.extend(attrs)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self._in_inline_script = False
+
+    def handle_data(self, data):
+        if self._in_inline_script:
+            self.scripts.append(data)
+
+    def handle_entityref(self, name):
+        if self._in_inline_script:
+            self.scripts.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if self._in_inline_script:
+            self.scripts.append(f"&#{name};")
+
+
+def _parse_page(html: str) -> _PageParser:
+    parser = _PageParser()
+    parser.feed(html)
+    return parser
+
+
+def _script_const(html: str, name: str):
+    """Return the parsed value of a `const <name> = <json>;` the template interpolated.
+
+    A `<script>` body is not entity-decoded, so if autoescape turned the embedded JSON's
+    quotes into `&#34;` the value is a JS syntax error that kills the entire block — no
+    WebSocket, no rendering, no fight. Here that shows up as a JSONDecodeError.
+    """
+    body = "".join(_parse_page(html).scripts)
+    match = re.search(rf"^\s*const {name} = (.*);$", body, re.MULTILINE)
+    assert match, f"template did not emit `const {name}`"
+    return json.loads(match.group(1))
+
+
+def _attr_values(html: str, name: str) -> list[str]:
+    return [v for k, v in _parse_page(html).attrs if k == name and v is not None]
+
+
+@pytest.mark.asyncio
+async def test_battle_page_script_survives_autoescape(client):
+    """The exact production failure: the battle page rendered but its inline script was a
+    syntax error, so the WebSocket was never opened and the fight never started."""
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session("fight:1")),
+        ),
+        patch(
+            "superpal.webapp.routes.get_fight", new=AsyncMock(return_value=_fight(status="active"))
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_display_name",
+            new=AsyncMock(return_value=HOSTILE_NAME),
+        ),
+        patch(
+            "superpal.webapp.routes.get_player_items",
+            new=AsyncMock(return_value={"heal_potion": 2}),
+        ),
+    ):
+        response = await client.get("/fight/1/battle")
+
+    assert response.status_code == 200
+    assert _script_const(response.text, "OPP_NAME") == HOSTILE_NAME
+    assert _script_const(response.text, "ITEM_NAMES")["heal_potion"] == "Heal Potion"
+    assert "new WebSocket(" in response.text
+
+
+@pytest.mark.asyncio
+async def test_marketplace_page_embeds_parseable_json(client):
+    listing = MagicMock()
+    listing.id = 1
+    listing.items = [{"display_name": HOSTILE_NAME, "rarity": "rare"}]
+    listing.ask_note = None
+    listing.offer_count = 0
+    listing.owner_id = "222"
+    listing.owner_display_name = HOSTILE_NAME
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_active_listings", new=AsyncMock(return_value=[listing])),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_my_offers", new=AsyncMock(return_value=[])),
+        patch(
+            "superpal.webapp.routes.get_collection",
+            new=AsyncMock(return_value={"owned": [{"display_name": HOSTILE_NAME}]}),
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+    ):
+        response = await client.get("/marketplace")
+
+    assert response.status_code == 200
+    assert _script_const(response.text, "MY_COLLECTION")[0]["display_name"] == HOSTILE_NAME
+    # The Make Offer modal does JSON.parse(btn.dataset.listingItems) — an attribute the
+    # browser terminates early yields garbage there.
+    embedded = _attr_values(response.text, "data-listing-items")
+    assert embedded, "listing did not render its data-listing-items attribute"
+    assert json.loads(unescape(embedded[0]))[0]["display_name"] == HOSTILE_NAME
+
+
+@pytest.mark.asyncio
+async def test_collection_page_embeds_parseable_json(client):
+    fake_collection = {
+        "owned": [
+            {
+                "member_id": "111",
+                "display_name": HOSTILE_NAME,
+                "avatar_url": None,
+                "rarity": "common",
+                "quantity": 1,
+                "bio": None,
+                "stats_pairs": [["Wins", HOSTILE_NAME]],
+            }
+        ],
+        "undiscovered": [],
+        "counts": {"common": 1, "uncommon": 0, "rare": 0, "legendary": 0},
+    }
+
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=(0,))
+
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
+        response = await client.get("/collection")
+
+    assert response.status_code == 200
+    embedded = _attr_values(response.text, "data-stats")
+    assert embedded, "card did not render its data-stats attribute"
+    assert json.loads(unescape(embedded[0])) == [["Wins", HOSTILE_NAME]]

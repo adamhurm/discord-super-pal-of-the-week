@@ -9,7 +9,11 @@ import discord
 from discord.ext import commands
 
 import superpal.env as superpal_env
-from superpal.cards.fight_service import fight_ended_by_escape, get_fight
+from superpal.cards.fight_service import (
+    fight_ended_by_escape,
+    fight_ended_by_forfeit,
+    get_fight,
+)
 from superpal.cards.models import RARITY_LABELS
 from superpal.cards.service import (
     get_member_display_name,
@@ -101,8 +105,13 @@ async def announce_fight_result(fight_id: int) -> None:
     )
     loser_name = await get_member_display_name(loser_id) or loser_id
     escaped = await fight_ended_by_escape(fight_id)
+    forfeited = await fight_ended_by_forfeit(fight_id)
 
-    if escaped:
+    if forfeited:
+        headline = (
+            f"⏳ **{loser_name}** never made their move — **{winner_name}** wins by forfeit!"
+        )
+    elif escaped:
         headline = (
             f"🏃 **{loser_name}** fled the battle — **{winner_name}** wins by default!"
         )

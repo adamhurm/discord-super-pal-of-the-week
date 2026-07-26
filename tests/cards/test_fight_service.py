@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import aiosqlite
 import pytest
@@ -670,3 +671,281 @@ async def test_fight_ended_by_escape_false_without_run(db):
     _db_mod, _, fs, _ = db
     fight = await fs.create_fight("p1", "p2", "quick")
     assert await fs.fight_ended_by_escape(fight.id) is False
+
+
+# ─── Presence, expiry, and forfeit tests ─────────────────────────────────────
+
+
+async def _set_turn_age(db_mod, fight_id, minutes):
+    """Backdate the turn clock so the fight looks like it has been waiting."""
+    import aiosqlite
+
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE fights SET turn_started_at = ? WHERE id = ?", (stale, fight_id)
+        )
+        await conn.commit()
+
+
+async def _set_last_activity(db_mod, fight_id, minutes):
+    import aiosqlite
+
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE fights SET last_activity_at = ? WHERE id = ?", (stale, fight_id)
+        )
+        await conn.commit()
+
+
+async def _set_expires_at(db_mod, fight_id, minutes_from_now):
+    import aiosqlite
+
+    when = (datetime.now(timezone.utc) + timedelta(minutes=minutes_from_now)).isoformat()
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE fights SET expires_at = ? WHERE id = ?", (when, fight_id))
+        await conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_touch_fight_activity_refreshes_active_fight(db):
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    await _set_last_activity(db_mod, fight.id, 30)
+
+    await fs.touch_fight_activity(fight.id)
+
+    refreshed = await fs.get_fight(fight.id)
+    assert refreshed.last_activity_at > (
+        datetime.now(timezone.utc) - timedelta(minutes=1)
+    ).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_touch_fight_activity_ignores_finished_fight(db):
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await _set_last_activity(db_mod, fight.id, 30)
+    stale = (await fs.get_fight(fight.id)).last_activity_at
+
+    await fs.touch_fight_activity(fight.id)  # still 'pending', not lobby/active
+
+    assert (await fs.get_fight(fight.id)).last_activity_at == stale
+
+
+@pytest.mark.asyncio
+async def test_expire_inactive_leaves_active_fight_alone(db):
+    """The original lockout: an idle battle used to be destroyed with no winner."""
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    await _set_last_activity(db_mod, fight.id, fs.INACTIVITY_EXPIRE_MINUTES + 5)
+
+    await fs.expire_inactive_fights()
+
+    assert (await fs.get_fight(fight.id)).status == "active"
+
+
+@pytest.mark.asyncio
+async def test_expire_inactive_still_expires_abandoned_lobby(db):
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    await _set_last_activity(db_mod, fight.id, fs.INACTIVITY_EXPIRE_MINUTES + 5)
+
+    await fs.expire_inactive_fights()
+
+    assert (await fs.get_fight(fight.id)).status == "expired"
+
+
+@pytest.mark.asyncio
+async def test_accept_fight_stamps_the_lobby_deadline(db):
+    _, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    challenge_deadline = fight.expires_at
+
+    lobby = await fs.accept_fight(fight.id)
+
+    assert lobby.expires_at > challenge_deadline
+
+
+@pytest.mark.asyncio
+async def test_camped_lobby_expires_once_past_its_deadline(db):
+    """A player waiting on an opponent who never shows keeps refreshing last_activity_at,
+    so only the wall-clock deadline can release them."""
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    await _set_expires_at(db_mod, fight.id, -1)
+    await fs.touch_fight_activity(fight.id)  # the camper's page, still refreshing
+
+    await fs.expire_inactive_fights()
+
+    assert (await fs.get_fight(fight.id)).status == "expired"
+
+
+@pytest.mark.asyncio
+async def test_camped_lobby_survives_until_its_deadline(db):
+    """Guards the other direction: presence must still hold a lobby open while players pick."""
+    db_mod, _, fs, _ = db
+    fight = await fs.create_fight("p1", "p2", "quick")
+    await fs.accept_fight(fight.id)
+    await _set_last_activity(db_mod, fight.id, fs.INACTIVITY_EXPIRE_MINUTES + 5)
+    await fs.touch_fight_activity(fight.id)
+
+    await fs.expire_inactive_fights()
+
+    assert (await fs.get_fight(fight.id)).status == "lobby"
+
+
+@pytest.mark.asyncio
+async def test_forfeit_rejected_before_afk_threshold(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    waiter = "p2" if fight.current_turn_player_id == "p1" else "p1"
+
+    ok, err = await fs.forfeit_fight(fight.id, waiter)
+
+    assert ok is False
+    assert err == "opponent_not_afk_yet"
+
+
+@pytest.mark.asyncio
+async def test_forfeit_rejected_for_the_afk_player_themselves(db):
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    await _set_turn_age(db_mod, fight.id, fs.AFK_CLAIM_MINUTES + 1)
+
+    ok, err = await fs.forfeit_fight(fight.id, fight.current_turn_player_id)
+
+    assert ok is False
+    assert err == "not_waiting_on_opponent"
+
+
+@pytest.mark.asyncio
+async def test_forfeit_rejected_for_non_participant(db):
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    await _set_turn_age(db_mod, fight.id, fs.AFK_CLAIM_MINUTES + 1)
+
+    ok, err = await fs.forfeit_fight(fight.id, "p3")
+
+    assert ok is False
+    assert err == "not_a_participant"
+
+
+@pytest.mark.asyncio
+async def test_forfeit_rejected_once_fight_is_over(db):
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    await _set_turn_age(db_mod, fight.id, fs.AFK_CLAIM_MINUTES + 1)
+    waiter = "p2" if fight.current_turn_player_id == "p1" else "p1"
+    assert (await fs.forfeit_fight(fight.id, waiter))[0] is True
+
+    ok, err = await fs.forfeit_fight(fight.id, waiter)
+
+    assert ok is False
+    assert err == "fight_not_active"
+
+
+@pytest.mark.asyncio
+async def test_forfeit_awards_win_and_pringles(db):
+    db_mod, _, fs, ps = db
+    fight = await _setup_active_fight(fs)
+    afk = fight.current_turn_player_id
+    waiter = "p2" if afk == "p1" else "p1"
+    await ps.add_pringles(afk, 100)
+    await ps.add_pringles(waiter, 100)
+    await _set_turn_age(db_mod, fight.id, fs.AFK_CLAIM_MINUTES + 1)
+
+    ok, err = await fs.forfeit_fight(fight.id, waiter)
+
+    assert (ok, err) == (True, "")
+    finished = await fs.get_fight(fight.id)
+    assert finished.status == "completed"
+    assert finished.winner_id == waiter
+    assert await ps.get_balance(waiter) == 150
+    assert await ps.get_balance(afk) == 50
+    assert await fs.fight_ended_by_forfeit(fight.id) is True
+
+
+@pytest.mark.asyncio
+async def test_auto_forfeit_resolves_only_long_abandoned_fights(db):
+    db_mod, _, fs, _ = db
+    fresh = await _setup_active_fight(fs)
+    abandoned = await _setup_active_fight(fs)
+    await _set_turn_age(db_mod, abandoned.id, fs.AFK_AUTO_FORFEIT_MINUTES + 1)
+
+    resolved = await fs.auto_forfeit_idle_fights()
+
+    assert resolved == [abandoned.id]
+    done = await fs.get_fight(abandoned.id)
+    assert done.status == "completed"
+    assert done.winner_id != done.current_turn_player_id
+    assert (await fs.get_fight(fresh.id)).status == "active"
+
+
+@pytest.mark.asyncio
+async def test_pending_swap_player_can_be_forfeited_against(db):
+    """A player who vanishes mid-swap must not deadlock the fight forever."""
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs, mode="extended")
+    attacker = fight.current_turn_player_id
+    defender = "p2" if attacker == "p1" else "p1"
+
+    # Beat the defender's active card down until it faints and a swap is owed.
+    for _ in range(20):
+        current = await fs.get_fight(fight.id)
+        if current.pending_swap_player_id:
+            break
+        with patch("superpal.cards.fight_service.roll_d20", return_value=20):
+            await fs.process_action(
+                fight.id, current.current_turn_player_id, "attack",
+                {"attack_key": "super_bringus_beam"},
+            )
+    current = await fs.get_fight(fight.id)
+    assert current.pending_swap_player_id == defender
+    assert current.turn_started_at is not None
+
+    await _set_turn_age(db_mod, fight.id, fs.AFK_CLAIM_MINUTES + 1)
+    ok, err = await fs.forfeit_fight(fight.id, attacker)
+
+    assert (ok, err) == (True, "")
+    assert (await fs.get_fight(fight.id)).winner_id == attacker
+
+
+@pytest.mark.asyncio
+async def test_finished_fight_announces_without_a_live_socket(db):
+    """The Discord announcement must not depend on the winner's WebSocket surviving."""
+    db_mod, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+    afk = fight.current_turn_player_id
+    waiter = "p2" if afk == "p1" else "p1"
+    await _set_turn_age(db_mod, fight.id, fs.AFK_CLAIM_MINUTES + 1)
+
+    announce = AsyncMock()
+    with patch("superpal.notify.announce_fight_result", new=announce):
+        await fs.forfeit_fight(fight.id, waiter)
+
+    announce.assert_awaited_once_with(fight.id)
+
+
+@pytest.mark.asyncio
+async def test_knockout_also_announces_through_the_service(db):
+    _, _, fs, _ = db
+    fight = await _setup_active_fight(fs)
+
+    announce = AsyncMock()
+    with patch("superpal.notify.announce_fight_result", new=announce):
+        for _ in range(30):
+            current = await fs.get_fight(fight.id)
+            if current.status == "completed":
+                break
+            with patch("superpal.cards.fight_service.roll_d20", return_value=20):
+                await fs.process_action(
+                    fight.id, current.current_turn_player_id, "attack",
+                    {"attack_key": "super_bringus_beam"},
+                )
+
+    assert (await fs.get_fight(fight.id)).status == "completed"
+    announce.assert_awaited_once_with(fight.id)

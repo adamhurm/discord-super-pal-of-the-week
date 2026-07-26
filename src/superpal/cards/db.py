@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS fights (
     started_at             TIMESTAMP,
     completed_at           TIMESTAMP,
     expires_at             TIMESTAMP,
-    last_activity_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_activity_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    turn_started_at        TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS fight_cards (
@@ -218,6 +219,11 @@ async def init_db() -> None:
             pass  # column already exists
         try:
             await db.execute("ALTER TABLE members ADD COLUMN boin_balance INTEGER DEFAULT 0")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE fights ADD COLUMN turn_started_at TIMESTAMP")
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists
