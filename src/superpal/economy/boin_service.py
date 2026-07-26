@@ -75,5 +75,10 @@ async def import_initial_balances(data: dict[str, int]) -> None:
                 "UPDATE members SET boin_balance = ? WHERE discord_id = ?",
                 (amount, discord_id),
             )
-            log.info("import_initial_balances: set %d boins for %s (%s)", amount, display_name, discord_id)
+            log.info(
+                "import_initial_balances: set %d boins for %s (%s)",
+                amount,
+                display_name,
+                discord_id,
+            )
         await db.commit()

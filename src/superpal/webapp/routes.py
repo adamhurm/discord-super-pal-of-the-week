@@ -759,7 +759,7 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = ""):
 async def fight_ready(
     fight_id: int,
     request: Request,
-    slots: list[str] = Form(default=[]),  # noqa: B008 — FastAPI sentinel pattern
+    slots: list[str] = Form(default=[]),
 ):
     """Mark the player as ready with chosen cards."""
     player_id = await _resolve_fight_player(request, fight_id)
@@ -1224,5 +1224,7 @@ async def palymarket_resolve(
         return templates.TemplateResponse(request, "expired.html")
     result = await palymarket_svc.resolve_market(market_id, outcome, session.user_id)
     if "error" in result:
-        return RedirectResponse(url=f"/palymarket/{market_id}?error={result['error']}", status_code=303)
+        return RedirectResponse(
+            url=f"/palymarket/{market_id}?error={result['error']}", status_code=303
+        )
     return RedirectResponse(url=f"/palymarket/{market_id}", status_code=303)

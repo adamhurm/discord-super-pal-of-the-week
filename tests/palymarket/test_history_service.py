@@ -1,5 +1,6 @@
-import aiosqlite
 import importlib
+
+import aiosqlite
 import pytest
 
 

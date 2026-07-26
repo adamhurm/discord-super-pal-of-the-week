@@ -350,9 +350,9 @@ class ShopCog(commands.Cog):
     @app_commands.describe(bet_type="What to bet on", bet="Boins to wager (minimum 10)")
     @app_commands.choices(
         bet_type=[
-            app_commands.Choice(name="Red (2×)", value="red"),  # noqa: RUF001
-            app_commands.Choice(name="Black (2×)", value="black"),  # noqa: RUF001
-            app_commands.Choice(name="Green / 0 (14×)", value="green"),  # noqa: RUF001
+            app_commands.Choice(name="Red (2×)", value="red"),
+            app_commands.Choice(name="Black (2×)", value="black"),
+            app_commands.Choice(name="Green / 0 (14×)", value="green"),
             app_commands.Choice(name="1st Dozen 1–12 (3×)", value="1st dozen"),  # noqa: RUF001
             app_commands.Choice(name="2nd Dozen 13–24 (3×)", value="2nd dozen"),  # noqa: RUF001
             app_commands.Choice(name="3rd Dozen 25–36 (3×)", value="3rd dozen"),  # noqa: RUF001
