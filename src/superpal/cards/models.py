@@ -136,6 +136,8 @@ class PlayerItem:
 class CardRef:
     member_id: str
     rarity: str
+    display_name: str | None = None
+    avatar_url: str | None = None
 
 
 @dataclass

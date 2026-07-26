@@ -38,9 +38,16 @@
     .listing-card:hover { border-color: #5865f2; }
     .listing-owner { font-size: 11px; color: #72767d; margin-bottom: 8px; }
     .listing-items { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-    .listing-item { display: flex; align-items: center; gap: 5px; background: #313338;
-                    border-radius: 4px; padding: 4px 8px; }
-    .listing-item-name { font-size: 11px; color: #dcddde; }
+    .listing-item { display: flex; align-items: center; gap: 6px; background: #313338;
+                    border-radius: 4px; padding: 4px 8px; max-width: 100%; }
+    .listing-item-avatar { width: 24px; height: 24px; border-radius: 50%;
+                           background: #555; object-fit: cover; flex-shrink: 0; }
+    .listing-item-avatar-placeholder { width: 24px; height: 24px; border-radius: 50%;
+                                       background: #555; flex-shrink: 0; }
+    .listing-item-text { min-width: 0; }
+    .listing-item-name { font-size: 12px; color: #dcddde; font-weight: 600;
+                         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .listing-item-rarity { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; }
     .rarity-common { color: #95a5a6; }
     .rarity-uncommon { color: #27ae60; }
     .rarity-rare { color: #2980b9; }
@@ -134,7 +141,15 @@
             <div class="listing-items">
               {% for item in listing.items %}
               <div class="listing-item">
-                <span class="listing-item-name rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>
+                {% if item.avatar_url %}
+                <img class="listing-item-avatar" src="{{ item.avatar_url }}" alt="">
+                {% else %}
+                <div class="listing-item-avatar-placeholder"></div>
+                {% endif %}
+                <div class="listing-item-text">
+                  <div class="listing-item-name">{{ item.display_name or item.member_id }}</div>
+                  <div class="listing-item-rarity rarity-{{ item.rarity }}">{{ item.rarity | upper }}</div>
+                </div>
               </div>
               {% endfor %}
             </div>
@@ -170,9 +185,9 @@
           <div class="offer-row">
             <div>
               Offering
-              {% for item in offer.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              {% for item in offer.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span> <strong>{{ item.display_name or item.member_id }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
               for
-              {% for item in offer.listing.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              {% for item in offer.listing.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span> <strong>{{ item.display_name or item.member_id }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
               (listed by <strong>{{ offer.listing.owner_display_name }}</strong>)
             </div>
             <div class="offer-meta">
@@ -199,7 +214,7 @@
           {% for listing in my_listings %}
           <div class="my-listing">
             <div class="my-listing-items">
-              {% for item in listing.items %}{{ item.rarity | upper }}{% if not loop.last %}, {% endif %}{% endfor %}
+              {% for item in listing.items %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span> {{ item.display_name or item.member_id }}{% if not loop.last %}, {% endif %}{% endfor %}
             </div>
             {% if listing.ask_note %}
             <div style="font-size:11px;color:#72767d;margin-bottom:4px;">{{ listing.ask_note }}</div>
@@ -256,6 +271,10 @@
     common: '#95a5a6', uncommon: '#27ae60', rare: '#2980b9', legendary: '#f39c12'
   };
 
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
   function showTab(name, event) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
@@ -278,7 +297,13 @@
     const itemsEl = document.getElementById('modal-listing-items');
     itemsEl.innerHTML = listingItems.map(item =>
       `<div class="listing-item">
-        <span class="listing-item-name" style="color:${RARITY_COLORS[item.rarity]}">${item.rarity.toUpperCase()}</span>
+        ${item.avatar_url
+          ? `<img class="listing-item-avatar" src="${escapeHtml(item.avatar_url)}" alt="">`
+          : `<div class="listing-item-avatar-placeholder"></div>`}
+        <div class="listing-item-text">
+          <div class="listing-item-name">${escapeHtml(item.display_name || item.member_id)}</div>
+          <div class="listing-item-rarity" style="color:${RARITY_COLORS[item.rarity]}">${escapeHtml(item.rarity).toUpperCase()}</div>
+        </div>
       </div>`
     ).join('');
 
@@ -293,12 +318,12 @@
     const grid = document.getElementById('pick-grid');
     grid.innerHTML = MY_COLLECTION.map((card, i) =>
       `<div class="pick-card" data-index="${i}" onclick="togglePickCard(this, ${i})"
-            data-member-id="${card.member_id}" data-rarity="${card.rarity}">
+            data-member-id="${escapeHtml(card.member_id)}" data-rarity="${escapeHtml(card.rarity)}">
         ${card.avatar_url
-          ? `<img class="pick-card-avatar" src="${card.avatar_url}" alt="">`
+          ? `<img class="pick-card-avatar" src="${escapeHtml(card.avatar_url)}" alt="">`
           : `<div class="pick-card-avatar-placeholder"></div>`}
-        <div class="pick-card-name">${card.display_name}</div>
-        <div class="pick-card-rarity" style="color:${RARITY_COLORS[card.rarity]}">${card.rarity.toUpperCase()}</div>
+        <div class="pick-card-name">${escapeHtml(card.display_name)}</div>
+        <div class="pick-card-rarity" style="color:${RARITY_COLORS[card.rarity]}">${escapeHtml(card.rarity).toUpperCase()}</div>
         ${card.quantity > 1 ? `<div style="font-size:9px;color:#72767d;">×${card.quantity}</div>` : ''}
       </div>`
     ).join('');

@@ -1010,9 +1010,9 @@ def test_tojson_still_serializes_dataclasses():
     from superpal.cards.models import CardRef
     from superpal.webapp.routes import _tojson_dc
 
-    assert _tojson_dc([CardRef(member_id="1", rarity="rare")]) == (
-        '[{"member_id": "1", "rarity": "rare"}]'
-    )
+    assert _tojson_dc(
+        [CardRef(member_id="1", rarity="rare", display_name="Alice", avatar_url="/a.png")]
+    ) == ('[{"member_id": "1", "rarity": "rare", "display_name": "Alice", "avatar_url": "/a.png"}]')
 
 
 # ─── Rendered-page JSON embedding ────────────────────────────────────────────
@@ -1143,6 +1143,98 @@ async def test_marketplace_page_embeds_parseable_json(client):
     embedded = _attr_values(response.text, "data-listing-items")
     assert embedded, "listing did not render its data-listing-items attribute"
     assert json.loads(unescape(embedded[0]))[0]["display_name"] == HOSTILE_NAME
+
+
+# Values that reach the browser as free text an attacker can pick: Discord display names,
+# avatar URLs, and the admin-editable bio/stats pairs. Every template below builds markup
+# with innerHTML, so each of these must be wrapped in escapeHtml() at the interpolation.
+UNSAFE_INTERPOLATIONS = {
+    "marketplace.html": r"\$\{\s*(?:card|item)\.(display_name|avatar_url|member_id|rarity)\b",
+    "collection.html": r"\$\{\s*(avatar|name|bio|k|v)\s*\}",
+    "fight_lobby.html": r"\$\{\s*(v)\s*\}",
+    "fight_battle.html": r"\$\{\s*c\.(display_name)\b",
+}
+
+
+@pytest.mark.parametrize(("template", "pattern"), sorted(UNSAFE_INTERPOLATIONS.items()))
+def test_template_scripts_escape_user_values_before_innerhtml(template, pattern):
+    """There is no JS runtime here to exercise the escaping, so this guards the call sites.
+
+    `(?!\\s*\\?)` skips `${avatar ? ...}` forms: a truthiness test, never rendered.
+    """
+    from superpal.webapp.routes import TEMPLATES_DIR
+
+    source = (TEMPLATES_DIR / template).read_text()
+    unescaped = re.findall(pattern + r"(?!\s*\?)", source)
+    assert not unescaped, (
+        f"{template} interpolates into innerHTML without escapeHtml(): {sorted(set(unescaped))}"
+    )
+
+
+def test_every_template_that_builds_markup_defines_escapehtml():
+    """A template gaining an innerHTML site should not silently lack the helper."""
+    from superpal.webapp.routes import TEMPLATES_DIR
+
+    for template in UNSAFE_INTERPOLATIONS:
+        source = (TEMPLATES_DIR / template).read_text()
+        assert "function escapeHtml(s)" in source, f"{template} has no escapeHtml helper"
+
+
+@pytest.mark.asyncio
+async def test_marketplace_listings_show_card_names_not_just_rarity(client):
+    """A trader has to see which card is on offer, not only that it is RARE."""
+    listing = MagicMock()
+    listing.id = 1
+    listing.items = [
+        {"member_id": "222", "display_name": "Bringus", "rarity": "rare", "avatar_url": None}
+    ]
+    listing.ask_note = None
+    listing.offer_count = 0
+    listing.owner_id = "222"
+    listing.owner_display_name = "Bob"
+
+    my_listing = MagicMock()
+    my_listing.id = 2
+    my_listing.items = [
+        {"member_id": "333", "display_name": "Palbert", "rarity": "common", "avatar_url": None}
+    ]
+    my_listing.ask_note = None
+
+    offer = MagicMock()
+    offer.id = 3
+    offer.items = [
+        {"member_id": "444", "display_name": "Chadwick", "rarity": "uncommon", "avatar_url": None}
+    ]
+    offer.status = "pending"
+    offer.expires_at = "2026-01-01T00:00:00+00:00"
+    offer.listing = listing
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_active_listings", new=AsyncMock(return_value=[listing])),
+        patch(
+            "superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[my_listing])
+        ),
+        patch("superpal.webapp.routes.get_my_offers", new=AsyncMock(return_value=[offer])),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value={"owned": []})),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+    ):
+        response = await client.get("/marketplace")
+
+    assert response.status_code == 200
+    # Listing grid, my-listings sidebar, and the sent-offers tab all name the card.
+    assert "Bringus" in response.text
+    assert "Palbert" in response.text
+    assert "Chadwick" in response.text
+    # The modal reads names out of this attribute.
+    embedded = _attr_values(response.text, "data-listing-items")
+    assert json.loads(unescape(embedded[0]))[0]["display_name"] == "Bringus"
 
 
 @pytest.mark.asyncio

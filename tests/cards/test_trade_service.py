@@ -66,6 +66,49 @@ async def test_create_listing_success(db):
 
 
 @pytest.mark.asyncio
+async def test_listing_items_carry_card_identity(db):
+    """Listing items must name the card, not just its rarity — the marketplace UI shows it."""
+    db_mod, svc = db
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": "/static/bob.png"},
+        ]
+    )
+    await _give_card(db_mod, "111", "222", "common")
+    listing = await svc.create_listing("111", [CardRef("222", "common")], None)
+    assert not isinstance(listing, str)
+    assert listing.items[0].display_name == "Bob"
+    assert listing.items[0].avatar_url == "/static/bob.png"
+
+
+@pytest.mark.asyncio
+async def test_offer_items_carry_card_identity(db):
+    db_mod, svc = db
+    await _seed_two_players(svc)
+    await _give_card(db_mod, "111", "222", "common")
+    listing = await svc.create_listing("111", [CardRef("222", "common")], None)
+    assert not isinstance(listing, str)
+    await _give_card(db_mod, "222", "111", "rare")
+    offer = await svc.create_offer(listing.id, "222", [CardRef("111", "rare")])
+    assert not isinstance(offer, str)
+    assert offer.items[0].display_name == "Alice"
+    assert offer.listing.items[0].display_name == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_listing_items_survive_unknown_card_member(db):
+    """A card whose member row is gone still loads, with a null display name."""
+    db_mod, svc = db
+    await _seed_two_players(svc)
+    await _give_card(db_mod, "111", "999", "common")
+    listing = await svc.create_listing("111", [CardRef("999", "common")], None)
+    assert not isinstance(listing, str)
+    assert listing.items[0].member_id == "999"
+    assert listing.items[0].display_name is None
+
+
+@pytest.mark.asyncio
 async def test_cancel_listing_owner_only(db):
     db_mod, svc = db
     await _seed_two_players(svc)

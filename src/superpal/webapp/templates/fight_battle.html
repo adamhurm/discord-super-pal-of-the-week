@@ -294,7 +294,7 @@
     };
 
     function escapeHtml(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
     function setConnStatus(state) {
@@ -842,7 +842,7 @@
       }
       group.style.display = "";
       row.innerHTML = Object.entries(items).map(([itemType, qty]) =>
-        `<button class="btn btn-item" onclick="useItem('${itemType}')">${ITEM_NAMES[itemType] || itemType} ×${qty}</button>`
+        `<button class="btn btn-item" onclick="useItem('${itemType}')">${escapeHtml(ITEM_NAMES[itemType] || itemType)} ×${qty}</button>`
       ).join("");
     }
 
@@ -866,10 +866,13 @@
       el.scrollTop = el.scrollHeight;
     }
 
+    // Narratives carry card display names straight from Discord (see the swap log in
+    // fight_service), so escape first and match the escaped `&lt;@id&gt;` form — the only
+    // markup in the result is the <strong> this adds back.
     function formatNarrative(text) {
-      return text.replace(/<@(\w+)>/g, (_, id) => {
+      return escapeHtml(text).replace(/&lt;@(\w+)&gt;/g, (_, id) => {
         if (id === MY_PLAYER_ID) return "<strong>You</strong>";
-        return `<strong>${document.querySelector("#opp-panel .panel-name").textContent}</strong>`;
+        return `<strong>${escapeHtml(document.querySelector("#opp-panel .panel-name").textContent)}</strong>`;
       });
     }
 

@@ -661,10 +661,16 @@ async def _load_listing_full(db: aiosqlite.Connection, listing_id: int) -> Trade
         return None
     listing_id_, owner_id, owner_name, status, ask_note, created_at, offer_count = row
     async with db.execute(
-        "SELECT card_member_id, rarity FROM trade_listing_items WHERE listing_id = ?",
+        "SELECT tli.card_member_id, tli.rarity, cm.display_name, cm.avatar_url "
+        "FROM trade_listing_items tli "
+        "LEFT JOIN members cm ON tli.card_member_id = cm.discord_id "
+        "WHERE tli.listing_id = ?",
         (listing_id,),
     ) as cur:
-        items = [CardRef(member_id=r[0], rarity=r[1]) for r in await cur.fetchall()]
+        items = [
+            CardRef(member_id=r[0], rarity=r[1], display_name=r[2], avatar_url=r[3])
+            for r in await cur.fetchall()
+        ]
     return TradeListingFull(
         id=listing_id_,
         owner_id=owner_id,
@@ -786,10 +792,16 @@ async def _load_offer_full(db: aiosqlite.Connection, offer_id: int) -> TradeOffe
         return None
     offer_id_, listing_id, proposer_id, proposer_name, status, created_at, expires_at = row
     async with db.execute(
-        "SELECT card_member_id, rarity FROM trade_offer_items WHERE offer_id = ?",
+        "SELECT toi.card_member_id, toi.rarity, cm.display_name, cm.avatar_url "
+        "FROM trade_offer_items toi "
+        "LEFT JOIN members cm ON toi.card_member_id = cm.discord_id "
+        "WHERE toi.offer_id = ?",
         (offer_id,),
     ) as cur:
-        items = [CardRef(member_id=r[0], rarity=r[1]) for r in await cur.fetchall()]
+        items = [
+            CardRef(member_id=r[0], rarity=r[1], display_name=r[2], avatar_url=r[3])
+            for r in await cur.fetchall()
+        ]
     listing = await _load_listing_full(db, listing_id)
     if listing is None:
         return None

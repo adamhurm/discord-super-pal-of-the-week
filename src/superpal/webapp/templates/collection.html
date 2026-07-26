@@ -345,6 +345,10 @@
     const RARITY_COLORS = {
       common: '#95a5a6', uncommon: '#27ae60', rare: '#2980b9', legendary: '#f39c12'
     };
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
     function openCardDetail(el) {
       const name = el.dataset.name;
       const rarity = el.dataset.rarity;
@@ -355,7 +359,7 @@
 
       const avatarWrap = document.getElementById('card-modal-avatar-wrap');
       avatarWrap.innerHTML = avatar
-        ? `<img class="card-detail-avatar" src="${avatar}" alt="">`
+        ? `<img class="card-detail-avatar" src="${escapeHtml(avatar)}" alt="">`
         : `<div class="card-detail-avatar-placeholder"></div>`;
 
       document.getElementById('card-modal-name').textContent = name;
@@ -372,7 +376,7 @@
 
       const statsEl = document.getElementById('card-modal-stats');
       statsEl.innerHTML = stats.map(([k, v]) =>
-        `<div class="card-detail-stat"><span class="card-detail-stat-key">${k}</span><span>${v}</span></div>`
+        `<div class="card-detail-stat"><span class="card-detail-stat-key">${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`
       ).join('');
 
       document.getElementById('card-modal').style.display = 'flex';
