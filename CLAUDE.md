@@ -54,24 +54,24 @@ The webapp's `lifespan` handler in `src/superpal/webapp/app.py` calls `init_db()
 
 ### Fight system
 
-Two fight modes: **basic** (attacks only) and **extended** (attacks + voluntary swap + items + run).
+Two fight modes: **quick** (1v1 — attacks and items) and **extended** (3v3 — adds voluntary swap and run).
 
-Fight lifecycle: `pending` → `lobby` (both players accept) → `active` (both ready, coin-toss first turn) → `completed` or `expired`. Challenges expire after 5 min; inactive fights expire after 10 min.
+Fight lifecycle: `pending` → `lobby` (both players accept) → `active` (both ready, coin-toss first turn) → `completed` or `expired`. Challenges expire after 5 min; lobbies expire after 10 min of inactivity or a 20-min wall-clock deadline. Active fights are never expired — an idle turn can be claimed as a win after 3 min and auto-forfeits at 15 min.
 
 Card stats are derived from rarity at fight start (HP: common 80, uncommon 100, rare 130, legendary 170; ATK bonus: 0/5/10/20). Each turn a player rolls d20 for damage scaling (miss/glancing/direct/critical/nat20). Attacks: `vibe_check`, `body_slam`, `hype_strike`, `super_bringus_beam` (escalating base damage + min-roll requirement).
 
 Items in `player_items` (bought with Pringles): `heal_potion`, `super_potion`, `bringus_boost`, `smoke_screen`. After a card faints, the owning player must swap before the turn advances (`pending_swap_player_id` on the fight row).
 
-Fight auth is separate from collection auth: Discord bot DMs a `fight_token` URL → `use_fight_token()` validates and issues a `fight_session` cookie → WebSocket at `/ws/fight/{id}` handles real-time state updates. Fight connections are tracked in `routes.py:_fight_connections` (a `dict[fight_id, dict[player_id, WebSocket]]`).
+Fight auth rides the same session as collection auth: Discord bot DMs a one-time `fight_token` URL → `use_fight_token()` validates it and creates a `fight:{id}`-scoped row in the unified `sessions` table, issued as the usual `bringus_session` cookie → WebSocket at `/ws/fight/{id}` handles real-time state updates. Fight connections are tracked in `routes.py:_fight_connections` (a `dict[fight_id, dict[player_id, dict[conn_id, WebSocket]]]`, so one player can have several tabs open).
 
 ### Pringle economy
 
-Players have `pringle_balance` and `bank_debt` columns on `members`. Fight outcomes transfer 50 Pringles winner←loser; extended mode adds a 25 bonus for both sides. If the loser can't pay, the Bank of Bringus covers half the shortfall (tracked in `bank_debt`). Escape penalty (run roll 11–15) deducts an extra 25 from the escapee. Items are purchased via `pringle_service.buy_item()` at fixed Pringle costs.
+Players have `pringle_balance` and `bank_debt` columns on `members`. Fight outcomes debit the loser 50 Pringles (floored at 0) and credit the winner whatever was actually paid; extended mode adds a 25 bonus for both sides. If the loser can't cover the 50, the Bank of Bringus tops the winner up by half the shortfall, while the loser's `bank_debt` grows by the full shortfall. Escape penalty (run roll 11–15) deducts an extra 25 from the escapee. Items are purchased via `pringle_service.buy_item()` at fixed Pringle costs.
 
 ### Webapp (`src/superpal/webapp/`)
 
 - **`app.py`** — `create_app()` factory, mounts `/static/avatars` from the persistent volume and `/static` from the package directory
-- **`routes.py`** — all FastAPI routes; admin routes are guarded by `session.link_type == "admin"`
+- **`routes.py`** — all FastAPI routes; admin routes are guarded by `session.is_admin` (session `scope == "admin"`)
 - **`auth.py`** — session cookie `bringus_session` (24h, httponly, secure); `get_session_from_request` is the auth check used on every protected route
 - **`templates/`** — Jinja2 HTML templates (Discord dark theme)
 
