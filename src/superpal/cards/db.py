@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS fights (
     started_at             TIMESTAMP,
     completed_at           TIMESTAMP,
     expires_at             TIMESTAMP,
-    last_activity_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_activity_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    turn_started_at        TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS fight_cards (
@@ -78,11 +79,12 @@ CREATE TABLE IF NOT EXISTS fight_tokens (
     session_token TEXT
 );
 
-CREATE TABLE IF NOT EXISTS fight_sessions (
-    session_token TEXT PRIMARY KEY,
-    fight_id      INTEGER NOT NULL REFERENCES fights(id),
-    player_id     TEXT NOT NULL REFERENCES members(discord_id),
-    expires_at    TIMESTAMP NOT NULL
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    scope      TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS user_cards (
@@ -111,21 +113,6 @@ CREATE TABLE IF NOT EXISTS magic_links (
     consumed_at        TIMESTAMP,
     session_token      TEXT,
     session_expires_at TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS pending_trades (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    proposer_id       TEXT NOT NULL REFERENCES members(discord_id),
-    recipient_id      TEXT NOT NULL REFERENCES members(discord_id),
-    offer_member_id   TEXT NOT NULL REFERENCES members(discord_id),
-    offer_rarity      TEXT NOT NULL CHECK(offer_rarity IN ('common','uncommon','rare','legendary')),
-    request_member_id TEXT NOT NULL REFERENCES members(discord_id),
-    request_rarity    TEXT NOT NULL
-                      CHECK(request_rarity IN ('common','uncommon','rare','legendary')),
-    status            TEXT NOT NULL DEFAULT 'pending'
-                      CHECK(status IN ('pending','accepted','declined','expired')),
-    created_at        TIMESTAMP NOT NULL,
-    expires_at        TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS trade_listings (
@@ -167,7 +154,18 @@ CREATE TABLE IF NOT EXISTS trade_offer_items (
 async def init_db() -> None:
     """Create all tables if they don't already exist."""
     async with aiosqlite.connect(DB_PATH) as db:
+        # WAL lets reads and writes proceed concurrently instead of serializing
+        # on one exclusive lock per write — without it, concurrent card draws
+        # and admin bulk-awards contend for the same lock and can time out.
+        await db.execute("PRAGMA journal_mode=WAL")
         await db.executescript(_SCHEMA)
+        await db.commit()
+        # The DM-based pending_trades flow was replaced by the marketplace
+        # (trade_listings/trade_offers); drop the orphaned table.
+        await db.execute("DROP TABLE IF EXISTS pending_trades")
+        await db.commit()
+        # fight_sessions was folded into the unified sessions table.
+        await db.execute("DROP TABLE IF EXISTS fight_sessions")
         await db.commit()
         try:
             await db.execute(
@@ -221,6 +219,11 @@ async def init_db() -> None:
             pass  # column already exists
         try:
             await db.execute("ALTER TABLE members ADD COLUMN boin_balance INTEGER DEFAULT 0")
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE fights ADD COLUMN turn_started_at TIMESTAMP")
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists

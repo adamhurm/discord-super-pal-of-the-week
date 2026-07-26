@@ -148,7 +148,7 @@
             {% endif %}
             <button class="btn btn-primary"
               data-listing-id="{{ listing.id }}"
-              data-listing-items="{{ listing.items | tojson | e }}"
+              data-listing-items='{{ listing.items | tojson }}'
               data-ask-note="{{ listing.ask_note or '' | e }}"
               data-owner="{{ listing.owner_display_name | e }}"
               onclick="openOfferModal(this)">

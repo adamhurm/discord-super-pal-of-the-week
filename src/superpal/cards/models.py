@@ -35,6 +35,17 @@ class Member:
 
 
 @dataclass
+class MemberCardContext:
+    """Member fields needed to render a card embed or page header."""
+
+    discord_id: str
+    display_name: str
+    avatar_url: str | None
+    bio: str | None
+    stats_pairs: list[tuple[str, str]]
+
+
+@dataclass
 class UserCard:
     id: int
     owner_id: str
@@ -85,6 +96,7 @@ class Fight:
     completed_at: str | None
     expires_at: str | None
     last_activity_at: str | None
+    turn_started_at: str | None = None
 
 
 @dataclass
@@ -119,20 +131,6 @@ class PlayerItem:
     player_id: str
     item_type: str
     quantity: int
-
-
-@dataclass
-class PendingTrade:
-    id: int
-    proposer_id: str
-    recipient_id: str
-    offer_member_id: str
-    offer_rarity: str
-    request_member_id: str
-    request_rarity: str
-    status: str
-    created_at: str
-    expires_at: str
 
 
 @dataclass

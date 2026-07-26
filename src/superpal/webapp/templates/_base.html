@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Bringus Card Game{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
+    .page { padding: 24px; }
+    .section { background: #2b2d31; border-radius: 8px; padding: 20px;
+               margin-bottom: 16px; border: 1px solid #3f4147; }
+    .section-title { font-size: 11px; font-weight: 700; color: #72767d;
+                     letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+    .btn { display: inline-block; padding: 8px 18px; border-radius: 4px; font-size: 13px;
+           font-weight: 600; cursor: pointer; border: none; text-decoration: none; }
+    .btn-primary { background: #5865f2; color: #fff; }
+    .btn-primary:hover { background: #4752c4; }
+    .banner { border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; font-size: 13px; }
+    .banner-success { background: #3ba55c20; border: 1px solid #3ba55c40; color: #3ba55c; }
+    .banner-error { background: #ed424520; border: 1px solid #ed424540; color: #ed4245; }
+    {% block style %}{% endblock %}
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <div class="page">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

@@ -1,0 +1,68 @@
+{% extends "_base.html" %}
+{% block title %}Shop — Bringus Card Game{% endblock %}
+{% block style %}
+    .balance-banner { display: flex; align-items: center; gap: 10px; background: #2b2d31;
+                      border: 1px solid #3ba55c40; border-radius: 8px; padding: 14px 20px;
+                      margin-bottom: 20px; }
+    .balance-banner .amount { font-size: 1.5rem; font-weight: 700; color: #fff; }
+    .balance-banner .label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+                             text-transform: uppercase; color: #3ba55c; }
+    .item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+                 gap: 16px; }
+    .item-card { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+                 padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .item-name { font-weight: 700; font-size: 15px; color: #fff; }
+    .item-desc { font-size: 13px; color: #b9bbbe; flex-grow: 1; }
+    .item-meta { font-size: 12px; color: #72767d; }
+    .item-cost { font-weight: 700; color: #3ba55c; }
+{% endblock %}
+{% block content %}
+  {% if request.query_params.get('bought') %}
+  <div class="banner banner-success">
+    Purchased {{ request.query_params.get('bought') | replace('_', ' ') | title }}!
+  </div>
+  {% endif %}
+  {% if request.query_params.get('error') %}
+  <div class="banner banner-error">
+    {% if request.query_params.get('error') == 'insufficient_pringles' %}
+      Not enough Pringles.
+    {% else %}
+      Purchase failed: {{ request.query_params.get('error') | replace('_', ' ') }}.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h1>Item Shop</h1>
+
+  <div class="balance-banner">
+    <span>🥫</span>
+    <div>
+      <div class="label">Pringle Balance</div>
+      <div class="amount">{{ balance }}</div>
+    </div>
+  </div>
+
+  <div class="item-grid">
+    {% for item in items %}
+    <div class="item-card">
+      <div class="item-name">{{ item.name }}</div>
+      <div class="item-desc">{{ item.description }}</div>
+      <div class="item-meta">
+        <span class="item-cost">{{ item.cost }} Pringles</span>
+        · you have {{ item.owned }}
+      </div>
+      <form method="post" action="/shop/buy">
+        <input type="hidden" name="item_type" value="{{ item.type }}">
+        <button class="btn btn-primary" type="submit"
+                {% if balance < item.cost %}disabled style="opacity:.5;cursor:not-allowed"{% endif %}>
+          Buy
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p style="margin-top: 20px; font-size: 12px; color: #72767d;">
+    Items are used during card fights. Earn Pringles by winning fights or via /pal-exchange.
+  </p>
+{% endblock %}

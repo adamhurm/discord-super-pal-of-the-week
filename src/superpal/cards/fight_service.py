@@ -6,6 +6,7 @@ from math import floor
 
 import aiosqlite
 
+import superpal.sessions as sessions
 from superpal.cards.db import DB_PATH
 from superpal.cards.models import Fight, FightCard, FightLogEntry
 
@@ -13,7 +14,14 @@ FIGHT_TOKEN_EXPIRY_MINUTES = 5
 FIGHT_SESSION_HOURS = 24
 CHALLENGE_EXPIRY_MINUTES = 5
 INACTIVITY_EXPIRE_MINUTES = 10
-AUTO_PASS_MINUTES = 3
+# A lobby also gets a wall-clock deadline. Inactivity alone cannot bound it: an open lobby
+# page refreshes last_activity_at every few seconds, so a player waiting on an opponent who
+# never arrives would keep their own lobby alive forever with no way out.
+LOBBY_EXPIRY_MINUTES = 20
+# How long the waiting player must sit on an unmoving turn before they may claim the win,
+# and how long before the server resolves it for them.
+AFK_CLAIM_MINUTES = 3
+AFK_AUTO_FORFEIT_MINUTES = 15
 
 RARITY_STATS: dict[str, dict] = {
     "common": {"hp": 80, "atk_bonus": 0},
@@ -80,6 +88,7 @@ def _row_to_fight(row: aiosqlite.Row) -> Fight:
         completed_at=row[17],
         expires_at=row[18],
         last_activity_at=row[19],
+        turn_started_at=row[20],
     )
 
 
@@ -88,7 +97,7 @@ _FIGHT_SELECT = (
     "current_turn_player_id, pending_swap_player_id, channel_id, "
     "challenger_ready, opponent_ready, challenger_atk_boost, opponent_atk_boost, "
     "challenger_smoked, opponent_smoked, created_at, started_at, completed_at, "
-    "expires_at, last_activity_at FROM fights"
+    "expires_at, last_activity_at, turn_started_at FROM fights"
 )
 
 
@@ -172,13 +181,19 @@ async def create_fight(
 
 
 async def accept_fight(fight_id: int) -> Fight | None:
-    """Set fight status to 'lobby'. Returns None if fight is not in pending state."""
-    now = datetime.now(timezone.utc).isoformat()
+    """Set fight status to 'lobby'. Returns None if fight is not in pending state.
+
+    `expires_at` is re-stamped with the lobby deadline, replacing the challenge deadline it
+    held while pending — same column, same meaning, next phase of the fight.
+    """
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    lobby_deadline = (now_dt + timedelta(minutes=LOBBY_EXPIRY_MINUTES)).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "UPDATE fights SET status = 'lobby', last_activity_at = ? "
+            "UPDATE fights SET status = 'lobby', last_activity_at = ?, expires_at = ? "
             "WHERE id = ? AND status = 'pending'",
-            (now, fight_id),
+            (now, lobby_deadline, fight_id),
         )
         await db.commit()
         if cur.rowcount == 0:
@@ -230,6 +245,91 @@ async def get_active_fight_between(player_a: str, player_b: str) -> Fight | None
     return _row_to_fight(row) if row else None
 
 
+async def touch_fight_activity(fight_id: int) -> None:
+    """Mark a fight as still being watched.
+
+    `last_activity_at` is a presence signal, not an action signal — an open battle page
+    keeps its fight alive even while a player sits and thinks. Only the turn clock
+    (`turn_started_at`) decides whether someone has gone AFK.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE fights SET last_activity_at = ? WHERE id = ? AND status IN ('lobby', 'active')",
+            (now, fight_id),
+        )
+        await db.commit()
+
+
+async def get_player_fights(player_id: str, limit: int = 15) -> list[dict]:
+    """Return a player's fights, active first, then most recent.
+
+    Each row: {id, mode, status, opponent_id, opponent_display_name,
+    is_your_turn, winner_id, you_won, created_at}.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """
+            SELECT f.id, f.mode, f.status, f.winner_id, f.current_turn_player_id, f.created_at,
+                   CASE WHEN f.challenger_id = :pid THEN f.opponent_id
+                        ELSE f.challenger_id END AS opponent_id,
+                   m.display_name
+            FROM fights f
+            LEFT JOIN members m ON m.discord_id =
+                 CASE WHEN f.challenger_id = :pid THEN f.opponent_id ELSE f.challenger_id END
+            WHERE (f.challenger_id = :pid OR f.opponent_id = :pid)
+            ORDER BY CASE f.status
+                         WHEN 'active' THEN 0 WHEN 'lobby' THEN 1
+                         WHEN 'pending' THEN 2 ELSE 3 END,
+                     f.created_at DESC
+            LIMIT :limit
+            """,
+            {"pid": player_id, "limit": limit},
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "id": r[0],
+            "mode": r[1],
+            "status": r[2],
+            "winner_id": r[3],
+            "is_your_turn": r[2] == "active" and r[4] == player_id,
+            "created_at": r[5],
+            "opponent_id": r[6],
+            "opponent_display_name": r[7] or r[6],
+            "you_won": (r[3] == player_id) if r[3] else None,
+        }
+        for r in rows
+    ]
+
+
+async def fight_ended_by_escape(fight_id: int) -> bool:
+    """True if the fight's most recent run attempt succeeded (loser escaped)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT action_detail FROM fight_log "
+            "WHERE fight_id = ? AND action_type = 'run' ORDER BY id DESC LIMIT 1",
+            (fight_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if not row or not row[0]:
+        return False
+    try:
+        return bool(json.loads(row[0]).get("escaped"))
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
+async def fight_ended_by_forfeit(fight_id: int) -> bool:
+    """True if the fight was resolved by an AFK forfeit rather than a knockout."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT 1 FROM fight_log WHERE fight_id = ? AND action_type = 'forfeit' LIMIT 1",
+            (fight_id,),
+        ) as cur:
+            return await cur.fetchone() is not None
+
+
 async def create_fight_token(fight_id: int, player_id: str, base_url: str) -> str:
     """Create a one-time fight lobby token. Returns the full lobby URL."""
     token = str(uuid.uuid4())
@@ -247,7 +347,7 @@ async def create_fight_token(fight_id: int, player_id: str, base_url: str) -> st
 
 async def use_fight_token(token: str) -> tuple[int, str, str] | None:
     """
-    Validate and consume a fight token; create a session.
+    Validate and consume a fight token; create a fight-scoped web session.
     Returns (fight_id, player_id, session_token) or None if invalid/expired.
     Idempotent: repeated calls (e.g. from Discord's link preview) return the same session.
     """
@@ -264,36 +364,18 @@ async def use_fight_token(token: str) -> tuple[int, str, str] | None:
             return None
         fight_id, player_id, _, existing_session = row[0], row[1], row[2], row[3]
 
-        if existing_session:
-            return fight_id, player_id, existing_session
+    if existing_session:
+        return fight_id, player_id, existing_session
 
-        session_token = str(uuid.uuid4())
-        expires = (datetime.now(timezone.utc) + timedelta(hours=FIGHT_SESSION_HOURS)).isoformat()
-        await db.execute(
-            "INSERT INTO fight_sessions (session_token, fight_id, player_id, expires_at) "
-            "VALUES (?, ?, ?, ?)",
-            (session_token, fight_id, player_id, expires),
-        )
+    session = await sessions.create_session(player_id, f"fight:{fight_id}")
+    async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE fight_tokens SET session_token = ? WHERE token = ?",
-            (session_token, token),
+            (session.token, token),
         )
         await db.commit()
 
-    return fight_id, player_id, session_token
-
-
-async def get_fight_session(session_token: str) -> dict | None:
-    """Validate a fight session token. Returns {fight_id, player_id} or None."""
-    now = datetime.now(timezone.utc).isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT fight_id, player_id FROM fight_sessions "
-            "WHERE session_token = ? AND expires_at > ?",
-            (session_token, now),
-        ) as cur:
-            row = await cur.fetchone()
-    return {"fight_id": row[0], "player_id": row[1]} if row else None
+    return fight_id, player_id, session.token
 
 
 async def set_fight_cards(
@@ -376,8 +458,8 @@ async def mark_player_ready(fight_id: int, player_id: str) -> tuple[bool, str | 
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
             "UPDATE fights SET status = 'active', current_turn_player_id = ?, "
-            "started_at = ?, last_activity_at = ? WHERE id = ?",
-            (first_turn, now, now, fight_id),
+            "started_at = ?, last_activity_at = ?, turn_started_at = ? WHERE id = ?",
+            (first_turn, now, now, now, fight_id),
         )
         await db.execute(
             "INSERT INTO fight_log (fight_id, action_type, narrative_text) VALUES (?, 'system', ?)",
@@ -468,6 +550,9 @@ async def get_fight_state(fight_id: int) -> dict:
         "status": fight.status,
         "current_turn_player_id": fight.current_turn_player_id,
         "pending_swap_player_id": fight.pending_swap_player_id,
+        "waiting_on_player_id": _waiting_on(fight) if fight.status == "active" else None,
+        "turn_age_seconds": _turn_age_seconds(fight) if fight.status == "active" else None,
+        "claim_win_after_seconds": AFK_CLAIM_MINUTES * 60,
         "winner_id": fight.winner_id,
         "challenger": player_state(fight.challenger_id),
         "opponent": player_state(fight.opponent_id),
@@ -489,6 +574,24 @@ async def get_fight_state(fight_id: int) -> dict:
 
 def _other_player(fight: Fight, player_id: str) -> str:
     return fight.opponent_id if player_id == fight.challenger_id else fight.challenger_id
+
+
+def _waiting_on(fight: Fight) -> str | None:
+    """The player whose inaction is currently blocking the fight."""
+    return fight.pending_swap_player_id or fight.current_turn_player_id
+
+
+def _turn_age_seconds(fight: Fight) -> float | None:
+    """Seconds since the current turn was handed to its player, or None if unknown."""
+    if not fight.turn_started_at:
+        return None
+    try:
+        started = datetime.fromisoformat(fight.turn_started_at)
+    except ValueError:
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - started).total_seconds()
 
 
 def _is_challenger(fight: Fight, player_id: str) -> bool:
@@ -577,8 +680,9 @@ async def _finish_fight(db: aiosqlite.Connection, fight_id: int, winner_id: str)
 async def _advance_turn(db: aiosqlite.Connection, fight_id: int, next_player_id: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE fights SET current_turn_player_id = ?, last_activity_at = ? WHERE id = ?",
-        (next_player_id, now, fight_id),
+        "UPDATE fights SET current_turn_player_id = ?, last_activity_at = ?, "
+        "turn_started_at = ? WHERE id = ?",
+        (next_player_id, now, now, fight_id),
     )
 
 
@@ -678,8 +782,9 @@ async def _handle_attack(
         if has_reserve:
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
-                "UPDATE fights SET pending_swap_player_id = ?, last_activity_at = ? WHERE id = ?",
-                (opponent_id, now, fight.id),
+                "UPDATE fights SET pending_swap_player_id = ?, last_activity_at = ?, "
+                "turn_started_at = ? WHERE id = ?",
+                (opponent_id, now, now, fight.id),
             )
         else:
             await _finish_fight(db, fight.id, player_id)
@@ -786,9 +891,9 @@ async def _handle_swap(
         # Post-faint swap: clear pending_swap, give turn to the swapping player (defender)
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
-            "UPDATE fights SET pending_swap_player_id = NULL, "
-            "current_turn_player_id = ?, last_activity_at = ? WHERE id = ?",
-            (player_id, now, fight.id),
+            "UPDATE fights SET pending_swap_player_id = NULL, current_turn_player_id = ?, "
+            "last_activity_at = ?, turn_started_at = ? WHERE id = ?",
+            (player_id, now, now, fight.id),
         )
     else:
         # Voluntary swap costs the turn
@@ -843,6 +948,102 @@ async def _handle_run(
         return False, False, roll, narrative
 
 
+async def _settle_finished_fight(
+    fight_id: int,
+    mode: str,
+    winner_id: str,
+    loser_id: str,
+    escape_penalty: bool = False,
+) -> None:
+    """Pay out a finished fight and announce it in Discord.
+
+    Every terminal path funnels through here so the announcement survives a dead
+    WebSocket — it must not depend on the acting player's connection still being open.
+    Imports are function-local because `notify` imports this module at import time.
+    """
+    from superpal import notify
+    from superpal.cards.pringle_service import award_fight_pringles
+
+    await award_fight_pringles(
+        winner_id=winner_id,
+        loser_id=loser_id,
+        mode=mode,
+        escape_penalty=escape_penalty,
+    )
+    await notify.announce_fight_result(fight_id)
+
+
+async def forfeit_fight(fight_id: int, claimant_id: str) -> tuple[bool, str]:
+    """Award an active fight to `claimant_id` because the other player went AFK.
+
+    Only the player being waited on can be forfeited against, and only once their turn
+    has sat untouched for AFK_CLAIM_MINUTES. Returns (success, error_msg).
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(f"{_FIGHT_SELECT} WHERE id = ?", (fight_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return False, "fight_not_found"
+        fight = _row_to_fight(row)
+
+        if fight.status != "active":
+            return False, "fight_not_active"
+        if claimant_id not in (fight.challenger_id, fight.opponent_id):
+            return False, "not_a_participant"
+
+        afk_id = _waiting_on(fight)
+        if afk_id is None or afk_id == claimant_id:
+            return False, "not_waiting_on_opponent"
+
+        age = _turn_age_seconds(fight)
+        if age is None or age < AFK_CLAIM_MINUTES * 60:
+            return False, "opponent_not_afk_yet"
+
+        await _log_action(
+            db,
+            fight_id,
+            claimant_id,
+            "forfeit",
+            f"<@{afk_id}> never made their move — <@{claimant_id}> wins by forfeit!",
+            detail={"forfeited": True, "afk_player_id": afk_id},
+        )
+        await _finish_fight(db, fight_id, claimant_id)
+        await db.commit()
+
+    await _settle_finished_fight(fight_id, fight.mode, claimant_id, afk_id)
+    return True, ""
+
+
+async def auto_forfeit_idle_fights() -> list[int]:
+    """Resolve active fights whose turn holder has been gone far too long.
+
+    The backstop for when the present player never clicks "claim win" — an abandoned
+    fight resolves itself instead of sitting active forever. Returns resolved fight ids.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(minutes=AFK_AUTO_FORFEIT_MINUTES)
+    ).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"{_FIGHT_SELECT} WHERE status = 'active' AND turn_started_at IS NOT NULL "
+            "AND turn_started_at < ?",
+            (cutoff,),
+        ) as cur:
+            rows = await cur.fetchall()
+
+    resolved: list[int] = []
+    for row in rows:
+        fight = _row_to_fight(row)
+        afk_id = _waiting_on(fight)
+        if afk_id is None:
+            continue
+        winner_id = _other_player(fight, afk_id)
+        ok, _err = await forfeit_fight(fight.id, winner_id)
+        if ok:
+            resolved.append(fight.id)
+    return resolved
+
+
 async def process_action(
     fight_id: int,
     player_id: str,
@@ -853,8 +1054,6 @@ async def process_action(
     Process a player action. Returns (success, error_msg, new_state_dict).
     Pringles for run escape are handled here via pringle_service.
     """
-    from superpal.cards.pringle_service import award_fight_pringles
-
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(f"{_FIGHT_SELECT} WHERE id = ?", (fight_id,)) as cur:
             row = await cur.fetchone()
@@ -932,11 +1131,11 @@ async def process_action(
         updated_fight = await get_fight(fight_id)
         if updated_fight and updated_fight.winner_id:
             winner_id = updated_fight.winner_id
-            loser_id = _other_player(fight, winner_id)
-            await award_fight_pringles(
-                winner_id=winner_id,
-                loser_id=loser_id,
-                mode=fight.mode,
+            await _settle_finished_fight(
+                fight_id,
+                fight.mode,
+                winner_id,
+                _other_player(fight, winner_id),
                 escape_penalty=escape_penalty,
             )
 
@@ -956,13 +1155,25 @@ async def expire_pending_challenges() -> None:
 
 
 async def expire_inactive_fights() -> None:
-    """Expire active/lobby fights with no activity for 10 minutes."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=INACTIVITY_EXPIRE_MINUTES)).isoformat()
+    """Expire lobbies that nobody is watching, or that nobody finished in time.
+
+    Two bounds, because either alone leaves a player stuck. Inactivity clears lobbies both
+    players walked away from. The `expires_at` deadline clears the opposite case: one player
+    camped on the lobby page, refreshing `last_activity_at` every few seconds while waiting
+    on an opponent who never arrives. Their own presence would otherwise keep the lobby
+    alive indefinitely, and there is no way to cancel from the page.
+
+    Active fights are deliberately excluded: nothing is at stake in a lobby, but expiring
+    a battle in progress strands both players with no winner and no payout. Abandoned
+    battles resolve through `auto_forfeit_idle_fights()` instead.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(minutes=INACTIVITY_EXPIRE_MINUTES)).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE fights SET status = 'expired' "
-            "WHERE status IN ('active', 'lobby') AND last_activity_at < ?",
-            (cutoff,),
+            "WHERE status = 'lobby' AND (last_activity_at < ? OR expires_at < ?)",
+            (cutoff, now.isoformat()),
         )
         await db.commit()
 

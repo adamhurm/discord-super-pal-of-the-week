@@ -30,13 +30,24 @@ Two processes run concurrently inside a single container via `asyncio.gather` in
 1. **Discord bot** (`discord.py`) — handles slash commands, weekly role rotation, card game commands
 2. **FastAPI webapp** (uvicorn) — serves the card collection UI at `WEBAPP_BASE_URL` (production: `cards.bring-us.com`)
 
+`src/bot.py` is a slim entrypoint (bot subclass, events, `_main`). All commands live in cogs under `src/superpal/cogs/`, loaded from `EXTENSIONS` in `setup_hook`:
+
+- **`superpal.py`** — weekly rotation task, `/superpal`, `!spotw`, `!spinthewheel`, wheel-winner listener; all promotion paths delegate to `promote_super_pal()`
+- **`cards.py`** — the nine card commands plus `TradeOfferView`/`GiftConfirmView`
+- **`fights.py`** — `/card-fight`, fight leaderboard, `FightChallengeView`, 5-min fight-expiry loop
+- **`shop.py`** — Pringle shop, `/card-pringles`, wallet/exchange, casino games, heal-potion and daily-boin loops
+- **`palymarket.py`**, **`admin.py`**, **`legacy.py`** — prediction markets, Clippy-gated admin commands, legacy prefix fun commands
+- **`helpers.py`** — shared helpers (`_member_card_embed`, `_label_card_subjects`, `_is_clippy`, role/member lookups)
+
+`src/superpal/notify.py` is the webapp→Discord seam: bot.py registers the bot instance at startup, and webapp routes call `notify.notify_trade_offer()` / `notify.edit_offer_dm()` / `notify.get_guild_members_cache()`. Every notify function no-ops when no bot is registered (standalone webapp, tests).
+
 The webapp's `lifespan` handler in `src/superpal/webapp/app.py` calls `init_db()` before the first request, ensuring all SQLite schema migrations run before any HTTP handler touches the DB. The bot's `on_ready` event also calls `init_db()` — both are safe because all migrations are idempotent `ALTER TABLE ... ADD COLUMN` wrapped in `try/except OperationalError`.
 
 ### Card game data layer (`src/superpal/cards/`)
 
 - **`db.py`** — `DB_PATH` (env `CARDS_DB_PATH`, default `cards.db`), schema definition, `init_db()` with inline migrations
-- **`service.py`** — all async business logic: draw, trade-in, upgrade, peer trades, magic links, admin ops
-- **`models.py`** — dataclasses (`Member`, `UserCard`, `MagicLink`, `PendingTrade`, `Fight`, `FightCard`, `FightLogEntry`, `PlayerItem`) and rarity constants
+- **`service.py`** — all async business logic: draw, trade-in, upgrade, marketplace trades, magic links, admin ops
+- **`models.py`** — dataclasses (`Member`, `UserCard`, `MemberCardContext`, `MagicLink`, `Fight`, `FightCard`, `FightLogEntry`, `PlayerItem`) and rarity constants
 - **`embeds.py`** — Discord embed builders for card draw results
 - **`fight_service.py`** — turn-based card fight system (see below)
 - **`pringle_service.py`** — Pringle economy: balances, item shop, fight payouts
@@ -78,6 +89,6 @@ Players have `pringle_balance` and `bank_debt` columns on `members`. Fight outco
 ### Environment variables
 
 Required: `SUPERPAL_TOKEN`, `GUILD_ID`, `CHANNEL_ID`
-Optional: `EMOJI_GUILD_ID`, `ART_CHANNEL_ID`, `OPENAI_API_KEY`, `GPT_ASSISTANT_ID`, `GPT_ASSISTANT_THREAD_ID`, `WEBAPP_PORT` (default 8080), `WEBAPP_BASE_URL`, `CARDS_DB_PATH`
+Optional: `EMOJI_GUILD_ID`, `CLIPPY_ROLE_ID` (admin-gate role), `WEBAPP_PORT` (default 8080), `WEBAPP_BASE_URL`, `CARDS_DB_PATH`
 
 All loaded via `python-dotenv` in `src/superpal/env.py`; missing required vars log an error but don't hard-crash at import time.

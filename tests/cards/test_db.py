@@ -14,7 +14,15 @@ async def test_init_db_creates_tables(tmp_db):
     async with aiosqlite.connect(tmp_db.DB_PATH) as db:
         async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
             tables = {row[0] for row in await cur.fetchall()}
-    assert {"members", "user_cards", "draw_log", "magic_links", "pending_trades"}.issubset(tables)
+    expected = {
+        "members",
+        "user_cards",
+        "draw_log",
+        "magic_links",
+        "trade_listings",
+        "trade_offers",
+    }
+    assert expected.issubset(tables)
 
 
 @pytest.mark.asyncio

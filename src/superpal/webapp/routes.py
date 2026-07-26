@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -8,9 +9,10 @@ import aiosqlite
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
+import superpal.notify as notify
 import superpal.palymarket.service as palymarket_svc
-from superpal.economy import boin_service, exchange_service
 from superpal.cards.db import DB_PATH
 from superpal.cards.fight_service import (
     ATTACKS,
@@ -18,18 +20,27 @@ from superpal.cards.fight_service import (
     accept_fight,
     create_fight,
     decline_fight,
+    forfeit_fight,
     get_active_fight_between,
     get_fight,
-    get_fight_session,
     get_fight_state,
     get_pending_challenges,
+    get_player_fights,
     mark_player_ready,
     process_action,
     set_fight_cards,
+    touch_fight_activity,
     use_fight_token,
 )
 from superpal.cards.models import CardRef
-from superpal.cards.pringle_service import ITEM_NAMES, get_player_items
+from superpal.cards.pringle_service import (
+    ITEM_COSTS,
+    ITEM_DESCRIPTIONS,
+    ITEM_NAMES,
+    buy_item,
+    get_balance,
+    get_player_items,
+)
 from superpal.cards.service import (
     accept_offer,
     add_draws,
@@ -45,6 +56,8 @@ from superpal.cards.service import (
     get_collection,
     get_draw_audit,
     get_fight_opponents,
+    get_member_card_context,
+    get_member_display_name,
     get_my_offers,
     get_player_listings,
     get_pool_stats,
@@ -59,10 +72,20 @@ from superpal.cards.service import (
 from superpal.cards.service import (
     sync_members as _sync_members,
 )
-from superpal.webapp.auth import get_session_from_request, set_session_cookie
+from superpal.economy import boin_service, exchange_service
+from superpal.sessions import Session
+from superpal.sessions import get_session as get_web_session
+from superpal.webapp.auth import (
+    SESSION_COOKIE_NAME,
+    get_session_from_request,
+    set_session_cookie,
+)
 
-# fight_id -> {player_id: WebSocket}
-_fight_connections: dict[int, dict[str, WebSocket]] = {}
+# fight_id -> player_id -> connection_id -> WebSocket.
+# Keyed per connection, not per player: a reconnecting client (or a second tab) briefly
+# holds two sockets, and keying by player alone means the older one's cleanup unhooks the
+# live one — the player then sits on an open socket that never receives another update.
+_fight_connections: dict[int, dict[str, dict[str, WebSocket]]] = {}
 
 IMAGES_DIR = Path(DB_PATH).parent / "images"
 
@@ -70,15 +93,30 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def _tojson_dc(value: object) -> str:
+def _tojson_dc(value: object) -> Markup:
+    """Dataclass-aware `tojson`, safe to embed in both attributes and `<script>` blocks.
+
+    Must return Markup: a plain str gets HTML-escaped by autoescape, and character
+    references are not decoded inside `<script>`, so `&#34;` reaches the JS parser
+    verbatim and kills the whole script. The `<`, `>`, `&`, `'` escapes below are what
+    make the already-safe output safe to emit unescaped — same set Jinja's own
+    `htmlsafe_json_dumps` uses.
+    """
+
     def _default(o: object) -> object:
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
             return dataclasses.asdict(o)
         raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-    return json.dumps(value, default=_default)
+
+    encoded = json.dumps(value, default=_default)
+    for char, escape in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"), ("'", "\\u0027")):
+        encoded = encoded.replace(char, escape)
+    return Markup(encoded)
 
 
 templates.env.filters["tojson"] = _tojson_dc
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -101,12 +139,8 @@ async def landing(request: Request):
 
 async def _collection_context(user_id: str) -> dict:
     data = await get_collection(user_id)
+    member = await _member_display(user_id)
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (user_id,),
-        ) as cur:
-            row = await cur.fetchone()
         async with db.execute(
             "SELECT COALESCE(SUM(draws_used), 0) FROM draw_log WHERE user_id = ?",
             (user_id,),
@@ -130,31 +164,19 @@ async def _collection_context(user_id: str) -> dict:
 
     fight_opponents = await get_fight_opponents(user_id)
 
-    pending = await get_pending_challenges(user_id)
-    challenger_ids = {c.challenger_id for c in pending}
-    challenger_names: dict[str, str] = {}
-    if challenger_ids:
-        placeholders = ",".join("?" for _ in challenger_ids)
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT discord_id, display_name FROM members "
-                f"WHERE discord_id IN ({placeholders})",
-                tuple(challenger_ids),
-            ) as cur:
-                challenger_names = {r[0]: r[1] for r in await cur.fetchall()}
     pending_challenges = [
         {
             "id": c.id,
             "mode": c.mode,
             "challenger_id": c.challenger_id,
-            "challenger_display_name": challenger_names.get(c.challenger_id, c.challenger_id),
+            "challenger_display_name": await get_member_display_name(c.challenger_id)
+            or c.challenger_id,
         }
-        for c in pending
+        for c in await get_pending_challenges(user_id)
     ]
 
     return {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
+        **member,
         "owned": data["owned"],
         "undiscovered": data["undiscovered"],
         "counts": data["counts"],
@@ -182,15 +204,8 @@ async def _marketplace_context(user_id: str) -> dict:
         trader_counts[oid]["count"] += 1
     active_traders = sorted(trader_counts.values(), key=lambda x: -x["count"])
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?", (user_id,)
-        ) as cur:
-            row = await cur.fetchone()
-
     return {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
+        **(await _member_display(user_id)),
         "listings": listings,
         "my_listings": my_listings,
         "my_offers": my_offers,
@@ -201,15 +216,10 @@ async def _marketplace_context(user_id: str) -> dict:
 
 
 async def _member_display(user_id: str) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (user_id,),
-        ) as cur:
-            row = await cur.fetchone()
+    member = await get_member_card_context(user_id)
     return {
-        "display_name": row[0] if row else "Unknown",
-        "avatar_url": row[1] if row else None,
+        "display_name": member.display_name if member else "Unknown",
+        "avatar_url": member.avatar_url if member else None,
     }
 
 
@@ -266,11 +276,7 @@ async def create_offer_route(
     ]
     offer = await create_offer(listing_id, session.user_id, items)
     if not isinstance(offer, str):
-        try:
-            from bot import notify_trade_offer as _notify
-            asyncio.create_task(_notify(offer.id))  # noqa: RUF006
-        except ImportError:
-            pass
+        asyncio.create_task(notify.notify_trade_offer(offer.id))  # noqa: RUF006
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -281,11 +287,9 @@ async def accept_offer_route(offer_id: int, request: Request):
         return templates.TemplateResponse(request, "expired.html")
     ok, _err = await accept_offer(offer_id, session.user_id)
     if ok:
-        try:
-            from bot import edit_offer_dm as _edit
-            asyncio.create_task(_edit(offer_id, "Trade accepted! Cards have been exchanged."))  # noqa: RUF006
-        except ImportError:
-            pass
+        asyncio.create_task(  # noqa: RUF006
+            notify.edit_offer_dm(offer_id, "Trade accepted! Cards have been exchanged.")
+        )
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -295,11 +299,7 @@ async def decline_offer_route(offer_id: int, request: Request):
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
     await decline_offer(offer_id, session.user_id)
-    try:
-        from bot import edit_offer_dm as _edit
-        asyncio.create_task(_edit(offer_id, "Offer declined."))  # noqa: RUF006
-    except ImportError:
-        pass
+    asyncio.create_task(notify.edit_offer_dm(offer_id, "Offer declined."))  # noqa: RUF006
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -366,18 +366,11 @@ async def collection_trade_in(
     card = await trade_in(owner_id=session.user_id, card_member_id=member_id, rarity=rarity)
     if card is None:
         return RedirectResponse(url="/collection", status_code=303)
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name, avatar_url FROM members WHERE discord_id = ?",
-            (card.card_member_id,),
-        ) as cur:
-            row = await cur.fetchone()
     return templates.TemplateResponse(
         request,
         "trade_result.html",
         {
-            "display_name": row[0] if row else "Unknown",
-            "avatar_url": row[1] if row else None,
+            **(await _member_display(card.card_member_id)),
             "rarity": card.rarity,
             "quantity": card.quantity,
         },
@@ -387,7 +380,7 @@ async def collection_trade_in(
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_view(request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     ctx = await _admin_context()
     return templates.TemplateResponse(request, "admin.html", ctx)
@@ -396,7 +389,7 @@ async def admin_view(request: Request):
 @router.post("/admin/exclude/{member_id}")
 async def toggle_exclude(member_id: str, request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     members = await get_all_members_for_admin()
     current = next((m for m in members if m["discord_id"] == member_id), None)
@@ -408,22 +401,18 @@ async def toggle_exclude(member_id: str, request: Request):
 @router.post("/admin/sync")
 async def admin_sync(request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
-    try:
-        from bot import _guild_members_cache
-
-        if _guild_members_cache:
-            await _sync_members(_guild_members_cache)
-    except ImportError:
-        pass  # running in isolation — sync skipped
+    members = notify.get_guild_members_cache()
+    if members:
+        await _sync_members(members)
     return RedirectResponse(url="/admin", status_code=303)
 
 
 @router.post("/admin/reset-draws")
 async def admin_reset_draws(request: Request):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await reset_draw_log()
     return RedirectResponse(url="/admin", status_code=303)
@@ -436,7 +425,7 @@ async def admin_add_member(
     display_name: str = Form(...),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     if not discord_id.strip():
         discord_id = str(uuid.uuid4())
@@ -451,7 +440,7 @@ async def admin_set_member_avatar(
     image: UploadFile = File(...),  # noqa: B008 — FastAPI sentinel pattern
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     suffix = Path(image.filename or "upload.png").suffix.lower()
     if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
@@ -470,7 +459,7 @@ async def admin_set_forced_rarity(
     rarity: str = Form(...),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     await set_forced_rarity(member_id, rarity or None)
     return RedirectResponse(url="/admin", status_code=303)
@@ -485,14 +474,17 @@ async def admin_award_card(
     quantity: int = Form(1),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     quantity = max(1, quantity)
     if owner_id == "everyone":
         members = await get_all_members_for_admin()
         for m in members:
             if not m["is_excluded"]:
-                await award_card(m["discord_id"], card_member_id, rarity, quantity)
+                try:
+                    await award_card(m["discord_id"], card_member_id, rarity, quantity)
+                except aiosqlite.OperationalError:
+                    log.exception("award_card failed for member %s", m["discord_id"])
     else:
         await award_card(owner_id, card_member_id, rarity, quantity)
     return RedirectResponse(url="/admin", status_code=303)
@@ -501,7 +493,7 @@ async def admin_award_card(
 @router.get("/admin/audit", response_class=HTMLResponse)
 async def admin_audit(request: Request, user_id: str = ""):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     ctx = await _admin_context()
     audit_result = await get_draw_audit(user_id) if user_id else None
@@ -519,14 +511,17 @@ async def admin_add_draws(
     quantity: int = Form(1),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     quantity = max(1, quantity)
     if user_id == "everyone":
         members = await get_all_members_for_admin()
         for m in members:
             if not m["is_excluded"]:
-                await add_draws(m["discord_id"], quantity)
+                try:
+                    await add_draws(m["discord_id"], quantity)
+                except aiosqlite.OperationalError:
+                    log.exception("add_draws failed for member %s", m["discord_id"])
     else:
         await add_draws(user_id, quantity)
     return RedirectResponse(url="/admin", status_code=303)
@@ -540,7 +535,7 @@ async def admin_set_bio_stats(
     stats_text: str = Form(""),
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html", {"command": "/admin-link"})
     stats_dict: dict[str, str] = {}
     for line in stats_text.splitlines():
@@ -582,11 +577,7 @@ async def create_fight_challenge_route(
         return RedirectResponse(url="/collection", status_code=303)
 
     fight = await create_fight(session.user_id, opponent_id, mode, channel_id=None)
-    try:
-        from bot import notify_fight_challenge as _notify
-        asyncio.create_task(_notify(fight.id))  # noqa: RUF006
-    except ImportError:
-        pass
+    asyncio.create_task(notify.notify_fight_challenge(fight.id))  # noqa: RUF006
     return RedirectResponse(url="/collection", status_code=303)
 
 
@@ -602,13 +593,11 @@ async def accept_fight_challenge_route(fight_id: int, request: Request):
 
     accepted = await accept_fight(fight_id)
     if accepted is not None:
-        try:
-            from bot import send_fight_lobby_dms as _dm
-            asyncio.create_task(  # noqa: RUF006
-                _dm(fight_id, fight.challenger_id, fight.opponent_id, fight.mode)
+        asyncio.create_task(  # noqa: RUF006
+            notify.send_fight_lobby_dms(
+                fight_id, fight.challenger_id, fight.opponent_id, fight.mode
             )
-        except ImportError:
-            pass
+        )
     return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
 
@@ -626,45 +615,106 @@ async def decline_fight_challenge_route(fight_id: int, request: Request):
     return RedirectResponse(url="/collection", status_code=303)
 
 
+# ─── Shop routes ─────────────────────────────────────────────────────────────
+
+
+@router.get("/shop", response_class=HTMLResponse)
+async def shop_view(request: Request):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    items_owned = await get_player_items(session.user_id)
+    return templates.TemplateResponse(
+        request,
+        "shop.html",
+        {
+            **(await _member_display(session.user_id)),
+            "balance": await get_balance(session.user_id),
+            "items": [
+                {
+                    "type": item_type,
+                    "name": ITEM_NAMES[item_type],
+                    "cost": cost,
+                    "description": ITEM_DESCRIPTIONS[item_type],
+                    "owned": items_owned.get(item_type, 0),
+                }
+                for item_type, cost in ITEM_COSTS.items()
+            ],
+            "active_page": "shop",
+        },
+    )
+
+
+@router.post("/shop/buy")
+async def shop_buy(request: Request, item_type: str = Form(...)):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    ok, reason = await buy_item(session.user_id, item_type)
+    if ok:
+        return RedirectResponse(url=f"/shop?bought={item_type}", status_code=303)
+    return RedirectResponse(url=f"/shop?error={reason}", status_code=303)
+
+
 # ─── Fight routes ────────────────────────────────────────────────────────────
 
 
-async def _resolve_fight_session(request: Request, fight_id: int) -> tuple[str | None, str | None]:
-    """
-    Determine the player_id for a fight request.
-    Returns (player_id, session_token) or (None, None) if unauthenticated.
-    Checks the `fs` query param first, then falls back to bringus_session.
-    """
-    fs = request.query_params.get("fs")
-    if fs:
-        info = await get_fight_session(fs)
-        if info and info["fight_id"] == fight_id:
-            return info["player_id"], fs
-
-    # Fallback: regular bringus_session (e.g., player is already logged in)
+@router.get("/fights", response_class=HTMLResponse)
+async def fights_view(request: Request):
     session = await get_session_from_request(request)
-    if session:
-        fight = await get_fight(fight_id)
-        if fight and session.user_id in (fight.challenger_id, fight.opponent_id):
-            return session.user_id, None
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    fights = await get_player_fights(session.user_id)
+    return templates.TemplateResponse(
+        request,
+        "fights.html",
+        {
+            **(await _member_display(session.user_id)),
+            "fights": fights,
+            "active_page": "fights",
+        },
+    )
 
-    return None, None
+
+async def _fight_player_from_session(session: Session | None, fight_id: int) -> str | None:
+    """Authorize a session for one fight. Any session works if its user is a participant.
+
+    Deliberately ignores which fight a fight-scoped session names. There is a single
+    session cookie, so redeeming the DM link for a second fight used to overwrite the
+    first and lock the player out of a battle they were mid-way through. Scope grants no
+    isolation here anyway — the session is already bound to a user_id, participation is
+    still checked, and every other player-facing route accepts a fight-scoped session.
+    """
+    if session is None:
+        return None
+    fight = await get_fight(fight_id)
+    if fight and session.user_id in (fight.challenger_id, fight.opponent_id):
+        return session.user_id
+    return None
+
+
+async def _resolve_fight_player(request: Request, fight_id: int) -> str | None:
+    """Determine the player_id for a fight request from the session cookie."""
+    return await _fight_player_from_session(await get_session_from_request(request), fight_id)
 
 
 @router.get("/fight/{fight_id}/lobby", response_class=HTMLResponse)
-async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = ""):
+async def fight_lobby(fight_id: int, request: Request, ft: str = ""):
     """Fight lobby: pick cards and click Ready."""
-    session_token = fs
-
-    # Consume a one-time fight token if present
+    # Consume a one-time fight token if present: set the session cookie and
+    # redirect to the plain lobby URL.
     if ft:
         result = await use_fight_token(ft)
         if result is None:
             return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
         _, player_id, session_token = result
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={session_token}", status_code=303)
+        resp = RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
+        existing = await get_session_from_request(request)
+        if existing is None or existing.user_id != player_id:
+            set_session_cookie(resp, session_token)
+        return resp
 
-    player_id, _ = await _resolve_fight_session(request, fight_id)
+    player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
@@ -673,7 +723,10 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
     if fight.status == "active":
-        return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={session_token}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/battle", status_code=303)
+
+    # An open lobby page is proof someone is still here — don't expire under them.
+    await touch_fight_activity(fight_id)
 
     # Determine which player is ready
     is_challenger = player_id == fight.challenger_id
@@ -681,12 +734,7 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
 
     # Load opponent name
     opponent_id = fight.opponent_id if is_challenger else fight.challenger_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name FROM members WHERE discord_id = ?", (opponent_id,)
-        ) as cur:
-            row = await cur.fetchone()
-    opponent_name = row[0] if row else opponent_id
+    opponent_name = await get_member_display_name(opponent_id) or opponent_id
 
     # Load user's cards for the picker
     data = await get_collection(player_id)
@@ -702,7 +750,6 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
             "opponent_name": opponent_name,
             "owned_cards": owned_cards,
             "already_ready": already_ready,
-            "session_token": session_token,
             "rarity_stats": RARITY_STATS,
         },
     )
@@ -712,49 +759,45 @@ async def fight_lobby(fight_id: int, request: Request, ft: str = "", fs: str = "
 async def fight_ready(
     fight_id: int,
     request: Request,
-    fs: str = Form(""),
     slots: list[str] = Form(default=[]),  # noqa: B008 — FastAPI sentinel pattern
 ):
     """Mark the player as ready with chosen cards."""
-    info = await get_fight_session(fs)
-    if not info or info["fight_id"] != fight_id:
+    player_id = await _resolve_fight_player(request, fight_id)
+    if not player_id:
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
-    player_id = info["player_id"]
 
     fight = await get_fight(fight_id)
     if not fight or fight.status != "lobby":
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
     required_slots = 1 if fight.mode == "quick" else 3
     if len(slots) != required_slots:
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
     card_slots = []
     for i, slot_val in enumerate(slots, start=1):
         try:
             member_id, rarity = slot_val.split(":", 1)
         except ValueError:
-            return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+            return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
         card_slots.append({"card_member_id": member_id, "rarity": rarity, "slot": i})
 
     ok = await set_fight_cards(fight_id, player_id, card_slots)
     if not ok:
-        return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+        return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
     both_ready, _ = await mark_player_ready(fight_id, player_id)
 
     if both_ready:
-        # Notify the other connected WS client (if any) that the fight started
-        state = await get_fight_state(fight_id)
-        await _broadcast(fight_id, {"type": "state", "data": state})
-        return RedirectResponse(url=f"/fight/{fight_id}/battle?fs={fs}", status_code=303)
+        # The other player's lobby page polls and follows its own redirect to the battle.
+        return RedirectResponse(url=f"/fight/{fight_id}/battle", status_code=303)
 
-    return RedirectResponse(url=f"/fight/{fight_id}/lobby?fs={fs}", status_code=303)
+    return RedirectResponse(url=f"/fight/{fight_id}/lobby", status_code=303)
 
 
 @router.get("/fight/{fight_id}/battle", response_class=HTMLResponse)
-async def fight_battle(fight_id: int, request: Request, fs: str = ""):
-    player_id, session_token = await _resolve_fight_session(request, fight_id)
+async def fight_battle(fight_id: int, request: Request):
+    player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
@@ -762,14 +805,8 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
     if not fight or fight.status not in ("active", "completed"):
         return templates.TemplateResponse(request, "expired.html", {"command": "/card-fight"})
 
-    effective_fs = session_token or fs
     opponent_id = fight.opponent_id if player_id == fight.challenger_id else fight.challenger_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT display_name FROM members WHERE discord_id = ?", (opponent_id,)
-        ) as cur:
-            row = await cur.fetchone()
-    opponent_name = row[0] if row else opponent_id
+    opponent_name = await get_member_display_name(opponent_id) or opponent_id
 
     items = await get_player_items(player_id)
 
@@ -782,7 +819,6 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
             "opponent_id": opponent_id,
             "opponent_name": opponent_name,
             "fight_mode": fight.mode,
-            "session_token": effective_fs,
             "attacks": ATTACKS,
             "items": items,
             "item_names": ITEM_NAMES,
@@ -790,35 +826,63 @@ async def fight_battle(fight_id: int, request: Request, fs: str = ""):
     )
 
 
+def _register_connection(fight_id: int, player_id: str, conn_id: str, ws: WebSocket) -> None:
+    _fight_connections.setdefault(fight_id, {}).setdefault(player_id, {})[conn_id] = ws
+
+
+def _drop_connection(fight_id: int, player_id: str, conn_id: str) -> None:
+    """Remove one connection, leaving any other socket for the same player intact."""
+    players = _fight_connections.get(fight_id)
+    if players is None:
+        return
+    conns = players.get(player_id)
+    if conns is None:
+        return
+    conns.pop(conn_id, None)
+    if not conns:
+        players.pop(player_id, None)
+    if not players:
+        _fight_connections.pop(fight_id, None)
+
+
 async def _broadcast(fight_id: int, message: dict) -> None:
-    conns = _fight_connections.get(fight_id, {})
-    dead = []
-    for pid, ws in conns.items():
+    """Send to every live socket for both players. Iterates a snapshot — a disconnect
+    handler may mutate the registry while we are awaiting a send."""
+    players = _fight_connections.get(fight_id, {})
+    targets = [
+        (pid, conn_id, ws)
+        for pid, conns in list(players.items())
+        for conn_id, ws in list(conns.items())
+    ]
+    for pid, conn_id, ws in targets:
         try:
             await ws.send_json(message)
         except Exception:
-            dead.append(pid)
-    for pid in dead:
-        conns.pop(pid, None)
+            _drop_connection(fight_id, pid, conn_id)
 
 
 @router.websocket("/ws/fight/{fight_id}")
-async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
-    info = await get_fight_session(fs) if fs else None
-    if not info or info["fight_id"] != fight_id:
+async def fight_ws(websocket: WebSocket, fight_id: int):
+    token = websocket.cookies.get(SESSION_COOKIE_NAME)
+    session = await get_web_session(token) if token else None
+    player_id = await _fight_player_from_session(session, fight_id)
+    if not player_id:
         await websocket.close(code=4003)
         return
-    player_id = info["player_id"]
 
+    # An expired fight is refused so the client stops retrying and shows a terminal
+    # message instead of reconnecting forever against a fight it can never rejoin.
     fight = await get_fight(fight_id)
     if not fight or fight.status not in ("active", "completed"):
         await websocket.close(code=4004)
         return
 
     await websocket.accept()
-    _fight_connections.setdefault(fight_id, {})[player_id] = websocket
+    conn_id = uuid.uuid4().hex
+    _register_connection(fight_id, player_id, conn_id, websocket)
 
     try:
+        await touch_fight_activity(fight_id)
         state = await get_fight_state(fight_id)
         await websocket.send_json({"type": "state", "data": state})
 
@@ -826,6 +890,23 @@ async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
             data = await websocket.receive_json()
             action = data.get("action")
             detail = data.get("detail", {})
+
+            # Heartbeat: proves someone is still watching, and keeps the socket from
+            # being culled by an idle proxy timeout mid-battle.
+            if action == "ping":
+                await touch_fight_activity(fight_id)
+                await websocket.send_json({"type": "pong"})
+                continue
+
+            if action == "claim_win":
+                ok, err = await forfeit_fight(fight_id, player_id)
+                if not ok:
+                    await websocket.send_json({"type": "error", "message": err})
+                    continue
+                await _broadcast(
+                    fight_id, {"type": "state", "data": await get_fight_state(fight_id)}
+                )
+                break
 
             success, err, new_state = await process_action(fight_id, player_id, action, detail)
             if not success:
@@ -840,18 +921,22 @@ async def fight_ws(websocket: WebSocket, fight_id: int, fs: str = ""):
     except WebSocketDisconnect:
         pass
     finally:
-        _fight_connections.get(fight_id, {}).pop(player_id, None)
+        _drop_connection(fight_id, player_id, conn_id)
 
 
 @router.get("/api/fight/{fight_id}/state")
-async def fight_state_api(fight_id: int, request: Request, fs: str = ""):
-    """Lightweight fallback poll endpoint for the battle page."""
-    player_id, _ = await _resolve_fight_session(request, fight_id)
+async def fight_state_api(fight_id: int, request: Request):
+    """Lightweight fallback poll endpoint for the battle page.
+
+    Terminal fights return 200 with their state rather than 404 — a client whose
+    WebSocket died needs to be able to learn the fight is over instead of hanging on
+    "waiting for opponent" forever. A fight that does not exist is answered by the
+    authorization check, which cannot resolve a player for it.
+    """
+    player_id = await _resolve_fight_player(request, fight_id)
     if not player_id:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
-    fight = await get_fight(fight_id)
-    if not fight or fight.status not in ("active", "completed"):
-        return JSONResponse({"error": "fight_not_found"}, status_code=404)
+    await touch_fight_activity(fight_id)
     state = await get_fight_state(fight_id)
     return JSONResponse(state)
 
@@ -864,7 +949,7 @@ async def palymarket_list(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     balance = await palymarket_svc.get_palycoin_balance(session.user_id)
     markets = await palymarket_svc.list_markets()
     player_bets = await palymarket_svc.get_player_active_bets(session.user_id)
@@ -894,7 +979,7 @@ async def palymarket_pending(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    if session.link_type != "admin":
+    if not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     markets = await palymarket_svc.list_pending_markets()
     member = await _member_display(session.user_id)
@@ -926,7 +1011,7 @@ async def palymarket_portfolio(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     portfolio = await palymarket_svc.get_player_portfolio(session.user_id)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     total_staked = sum(p["amount"] for p in portfolio["active"])
@@ -948,7 +1033,7 @@ async def palymarket_activity(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     activity = await palymarket_svc.get_recent_activity(limit=50)
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     member = await _member_display(session.user_id)
@@ -967,7 +1052,7 @@ async def palymarket_propose_form(request: Request):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
     member = await _member_display(session.user_id)
     return templates.TemplateResponse(request, "palymarket_propose.html", {
@@ -1043,7 +1128,7 @@ async def palymarket_detail(request: Request, market_id: int):
     market = await palymarket_svc.get_market(market_id)
     if market is None:
         return templates.TemplateResponse(request, "expired.html")
-    is_admin = session.link_type == "admin"
+    is_admin = session.is_admin
     bets = await palymarket_svc.get_bets_for_market_with_names(market_id)
     player_bet = await palymarket_svc.get_player_bet(market_id, session.user_id)
     balance = await palymarket_svc.get_palycoin_balance(session.user_id)
@@ -1100,7 +1185,7 @@ async def palymarket_bet(
 @router.post("/palymarket/{market_id}/approve")
 async def palymarket_approve(request: Request, market_id: int):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     ok, reason = await palymarket_svc.approve_market(market_id, session.user_id)
     if not ok:
@@ -1111,7 +1196,7 @@ async def palymarket_approve(request: Request, market_id: int):
 @router.post("/palymarket/{market_id}/reject")
 async def palymarket_reject(request: Request, market_id: int):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     ok, reason = await palymarket_svc.reject_market(market_id, session.user_id)
     if not ok:
@@ -1122,7 +1207,7 @@ async def palymarket_reject(request: Request, market_id: int):
 @router.post("/palymarket/{market_id}/close")
 async def palymarket_close(request: Request, market_id: int):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     ok, reason = await palymarket_svc.close_market(market_id, session.user_id)
     if not ok:
@@ -1135,7 +1220,7 @@ async def palymarket_resolve(
     request: Request, market_id: int, outcome: str = Form(...)
 ):
     session = await get_session_from_request(request)
-    if session is None or session.link_type != "admin":
+    if session is None or not session.is_admin:
         return templates.TemplateResponse(request, "expired.html")
     result = await palymarket_svc.resolve_market(market_id, outcome, session.user_id)
     if "error" in result:
