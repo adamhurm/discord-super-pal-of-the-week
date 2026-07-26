@@ -52,7 +52,7 @@ async def notify_trade_offer(offer_id: int) -> None:
     offer = await get_offer_by_id(offer_id)
     if offer is None:
         return
-    guild = _bot.get_guild(int(superpal_env.GUILD_ID))
+    guild = _bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild is None:
         return
     member = guild.get_member(int(offer.listing.owner_id))
@@ -91,7 +91,7 @@ async def send_fight_lobby_dms(
     """DM both players their fight lobby magic links after a challenge is accepted."""
     if _bot is None:
         return
-    guild = _bot.get_guild(int(superpal_env.GUILD_ID))
+    guild = _bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild is None:
         return
     names = {uid: await get_member_display_name(uid) or uid for uid in (challenger_id, opponent_id)}
@@ -117,7 +117,7 @@ async def notify_fight_challenge(fight_id: int) -> None:
     fight = await get_fight(fight_id)
     if fight is None:
         return
-    guild = _bot.get_guild(int(superpal_env.GUILD_ID))
+    guild = _bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild is None:
         return
     opponent = guild.get_member(int(fight.opponent_id))
@@ -197,7 +197,7 @@ async def edit_offer_dm(offer_id: int, message: str) -> None:
     discord_message_id = await get_offer_discord_message_id(offer_id)
     if not discord_message_id:
         return
-    guild = _bot.get_guild(int(superpal_env.GUILD_ID))
+    guild = _bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild is None:
         return
     owner_member = guild.get_member(int(offer.listing.owner_id))

@@ -105,6 +105,7 @@ async def test_bank_of_bringus_partial_pay(db):
             "SELECT bank_debt FROM members WHERE discord_id = 'player2'"
         ) as cur:
             row = await cur.fetchone()
+    assert row is not None
     assert row[0] == 20
 
 

@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from superpal.cards.models import MagicLink, MemberCardContext
+from superpal.palymarket.models import Market
 from superpal.sessions import Session
 from superpal.webapp.app import create_app
 
@@ -1193,3 +1194,94 @@ async def test_collection_page_embeds_parseable_json(client):
     embedded = _attr_values(response.text, "data-stats")
     assert embedded, "card did not render its data-stats attribute"
     assert json.loads(unescape(embedded[0])) == [["Wins", HOSTILE_NAME]]
+
+
+def _market(market_id: int, status: str, yes_pool: int, no_pool: int) -> Market:
+    return Market(
+        id=market_id,
+        title=f"Market {market_id}",
+        description=None,
+        created_by="111",
+        status=status,
+        outcome="yes" if status == "resolved" else None,
+        yes_pool=yes_pool,
+        no_pool=no_pool,
+        created_at=datetime.now(timezone.utc),
+        resolved_at=None,
+        resolved_by=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_palymarket_shows_expired_without_session(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.get("/palymarket")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_palymarket_renders_probability_from_pools(client):
+    """Open and closed markets show a YES/NO split derived from their pools."""
+    markets = [_market(1, "open", 75, 25), _market(2, "closed", 10, 90)]
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.palymarket_svc.get_palycoin_balance",
+            new=AsyncMock(return_value=100),
+        ),
+        patch(
+            "superpal.webapp.routes.palymarket_svc.list_markets",
+            new=AsyncMock(return_value=markets),
+        ),
+        patch(
+            "superpal.webapp.routes.palymarket_svc.get_player_active_bets",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "superpal.webapp.routes._member_display",
+            new=AsyncMock(return_value={"display_name": "TestUser", "avatar_url": None}),
+        ),
+    ):
+        response = await client.get("/palymarket")
+
+    assert response.status_code == 200
+    assert "75% YES" in response.text
+    assert "25% NO" in response.text
+    assert "10% YES" in response.text
+    assert "90% NO" in response.text
+
+
+@pytest.mark.asyncio
+async def test_palymarket_zero_volume_market_renders_even_split(client):
+    """A market with no bets on either side falls back to 50/50 rather than dividing by zero."""
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.palymarket_svc.get_palycoin_balance",
+            new=AsyncMock(return_value=100),
+        ),
+        patch(
+            "superpal.webapp.routes.palymarket_svc.list_markets",
+            new=AsyncMock(return_value=[_market(1, "open", 0, 0)]),
+        ),
+        patch(
+            "superpal.webapp.routes.palymarket_svc.get_player_active_bets",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "superpal.webapp.routes._member_display",
+            new=AsyncMock(return_value={"display_name": "TestUser", "avatar_url": None}),
+        ),
+    ):
+        response = await client.get("/palymarket")
+
+    assert response.status_code == 200
+    assert "50% YES" in response.text
+    assert "50% NO" in response.text

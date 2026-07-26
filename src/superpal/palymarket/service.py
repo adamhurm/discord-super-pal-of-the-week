@@ -92,6 +92,9 @@ async def get_palycoin_balance(player_id: str) -> int:
             (player_id,),
         ) as cur:
             row = await cur.fetchone()
+        if row is None:
+            await db.commit()
+            return 0
         balance = row["palycoin_balance"] if row["palycoin_balance"] is not None else 0
         if balance != 0:
             await db.commit()
@@ -101,6 +104,7 @@ async def get_palycoin_balance(player_id: str) -> int:
             (player_id,),
         ) as cur:
             cnt_row = await cur.fetchone()
+        assert cnt_row is not None
         if cnt_row["cnt"] > 0:
             await db.commit()
             return 0
@@ -155,6 +159,7 @@ async def propose_market(title: str, description: str, created_by: str) -> Marke
             (market_id,),
         ) as cur2:
             row = await cur2.fetchone()
+    assert row is not None
     return _parse_market(row)
 
 

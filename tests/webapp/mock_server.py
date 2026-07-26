@@ -6,6 +6,7 @@ Then open:   http://localhost:8080
 
 import random
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Form, Request
@@ -21,7 +22,7 @@ app = FastAPI(docs_url=None, redoc_url=None)
 # Mock data
 # ---------------------------------------------------------------------------
 
-MOCK_OWNED = [
+MOCK_OWNED: list[dict[str, Any]] = [
     {
         "member_id": "1",
         "display_name": "Dingus Supreme",
