@@ -69,6 +69,7 @@ async def test_exchange_pringles_success(db):
             "SELECT pringle_balance, palycoin_balance FROM members WHERE discord_id = 'player1'"
         ) as cur:
             row = await cur.fetchone()
+    assert row is not None
     assert row[0] == 0  # 200 - 200
     assert row[1] == 100  # 0 + 100
 
@@ -181,6 +182,7 @@ async def test_place_bet_deducts_palycoins(db):
             "SELECT palycoin_balance FROM members WHERE discord_id = 'player1'"
         ) as cur:
             row = await cur.fetchone()
+    assert row is not None
     assert row[0] == 50  # 100 - 50
 
 
@@ -200,6 +202,7 @@ async def test_update_bet_refunds_and_recharges(db):
             "SELECT palycoin_balance FROM members WHERE discord_id = 'player1'"
         ) as cur:
             row = await cur.fetchone()
+    assert row is not None
     assert row[0] == 70  # refund 50, charge 30 -> 100 - 30
 
 
@@ -281,6 +284,8 @@ async def test_resolve_market_pays_winners(db):
             "SELECT palycoin_balance FROM members WHERE discord_id = 'player2'"
         ) as cur:
             row2 = await cur.fetchone()
+    assert row1 is not None
+    assert row2 is not None
     assert row1[0] == 150  # 50 remaining after bet + 100 payout
     assert row2[0] == 50  # 50 remaining after bet, no payout
 

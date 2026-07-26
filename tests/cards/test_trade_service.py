@@ -154,14 +154,20 @@ async def test_accept_offer_swaps_cards_and_declines_siblings(db):
             "SELECT quantity FROM user_cards "
             "WHERE owner_id='222' AND card_member_id='222' AND rarity='common'"
         ) as cur:
-            bob_common = (await cur.fetchone())[0]
+            row = await cur.fetchone()
+            assert row is not None
+            bob_common = row[0]
         async with conn.execute(
             "SELECT quantity FROM user_cards "
             "WHERE owner_id='111' AND card_member_id='111' AND rarity='uncommon'"
         ) as cur:
-            alice_uncommon = (await cur.fetchone())[0]
+            row = await cur.fetchone()
+            assert row is not None
+            alice_uncommon = row[0]
         async with conn.execute("SELECT status FROM trade_offers WHERE id=?", (offer2.id,)) as cur:
-            sibling_status = (await cur.fetchone())[0]
+            row = await cur.fetchone()
+            assert row is not None
+            sibling_status = row[0]
     assert bob_common == 1
     assert alice_uncommon == 1
     assert sibling_status == "declined"

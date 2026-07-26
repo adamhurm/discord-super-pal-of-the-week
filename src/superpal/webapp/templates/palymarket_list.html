@@ -103,12 +103,12 @@
         {% if m.description %}<div class="mc-desc">{{ m.description }}</div>{% endif %}
         <div class="prob-bar-wrap">
           <div class="prob-bar">
-            <div class="prob-bar-yes" style="width: {{ m._yes_pct }}%"></div>
-            <div class="prob-bar-no" style="width: {{ 100 - m._yes_pct }}%"></div>
+            <div class="prob-bar-yes" style="width: {{ yes_pct[m.id] }}%"></div>
+            <div class="prob-bar-no" style="width: {{ 100 - yes_pct[m.id] }}%"></div>
           </div>
           <div class="prob-labels">
-            <span class="prob-yes">{{ m._yes_pct }}% YES</span>
-            <span class="prob-no">{{ 100 - m._yes_pct }}% NO</span>
+            <span class="prob-yes">{{ yes_pct[m.id] }}% YES</span>
+            <span class="prob-no">{{ 100 - yes_pct[m.id] }}% NO</span>
           </div>
         </div>
         <div class="mc-footer">
@@ -132,12 +132,12 @@
         {% if m.description %}<div class="mc-desc">{{ m.description }}</div>{% endif %}
         <div class="prob-bar-wrap">
           <div class="prob-bar">
-            <div class="prob-bar-yes" style="width: {{ m._yes_pct }}%"></div>
-            <div class="prob-bar-no" style="width: {{ 100 - m._yes_pct }}%"></div>
+            <div class="prob-bar-yes" style="width: {{ yes_pct[m.id] }}%"></div>
+            <div class="prob-bar-no" style="width: {{ 100 - yes_pct[m.id] }}%"></div>
           </div>
           <div class="prob-labels">
-            <span class="prob-yes">{{ m._yes_pct }}% YES</span>
-            <span class="prob-no">{{ 100 - m._yes_pct }}% NO</span>
+            <span class="prob-yes">{{ yes_pct[m.id] }}% YES</span>
+            <span class="prob-no">{{ 100 - yes_pct[m.id] }}% NO</span>
           </div>
         </div>
         <div class="mc-footer">

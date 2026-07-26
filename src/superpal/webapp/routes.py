@@ -955,10 +955,10 @@ async def palymarket_list(request: Request):
     player_bets = await palymarket_svc.get_player_active_bets(session.user_id)
     bet_map = {bet.market_id: bet for _, bet in player_bets}
     pending_count = len(await palymarket_svc.list_pending_markets()) if is_admin else 0
-    # Attach yes_pct to each market for template use
-    for m in markets:
-        total = m.yes_pool + m.no_pool
-        m._yes_pct = round(m.yes_pool / total * 100) if total > 0 else 50
+    yes_pct = {
+        m.id: (round(m.yes_pool / (m.yes_pool + m.no_pool) * 100) if m.yes_pool + m.no_pool else 50)
+        for m in markets
+    }
     member = await _member_display(session.user_id)
     return templates.TemplateResponse(
         request,
@@ -967,6 +967,7 @@ async def palymarket_list(request: Request):
             **member,
             "balance": balance,
             "markets": markets,
+            "yes_pct": yes_pct,
             "bet_map": bet_map,
             "is_admin": is_admin,
             "pending_count": pending_count,

@@ -13,7 +13,9 @@ def test_build_card_embed_common():
         drawn_by="DiscordUser",
     )
     assert isinstance(embed, discord.Embed)
+    assert embed.color is not None
     assert embed.color.value == RARITY_COLORS["common"]
+    assert embed.footer.text is not None
     assert "COMMON" in embed.footer.text
     assert "#7" in embed.footer.text
     assert embed.author.name == "Bingus McFlop"
@@ -27,7 +29,9 @@ def test_build_card_embed_legendary():
         card_number=1,
         drawn_by="SomeUser",
     )
+    assert embed.color is not None
     assert embed.color.value == RARITY_COLORS["legendary"]
+    assert embed.footer.text is not None
     assert "LEGENDARY" in embed.footer.text
 
 
@@ -44,6 +48,7 @@ def test_build_card_embed_bio_and_stats():
     assert embed.description == "A mysterious figure."
     assert len(embed.fields) == 1
     assert embed.fields[0].name == "Stats"
+    assert embed.fields[0].value is not None
     assert "Power Level" in embed.fields[0].value
 
 
@@ -68,6 +73,7 @@ def test_build_card_embed_custom_action_label():
         drawn_by="Alice",
         action_label="gifted by Gifter to",
     )
+    assert embed.footer.text is not None
     assert "gifted by Gifter to Alice" in embed.footer.text
     assert "drawn by" not in embed.footer.text
 
@@ -80,4 +86,5 @@ def test_build_card_embed_default_action_label():
         card_number=1,
         drawn_by="Alice",
     )
+    assert embed.footer.text is not None
     assert "drawn by Alice" in embed.footer.text

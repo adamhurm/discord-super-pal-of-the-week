@@ -703,7 +703,9 @@ async def create_listing(
             (owner_id, ask_note or None, now),
         )
         async with db.execute("SELECT last_insert_rowid()") as cur:
-            listing_id = (await cur.fetchone())[0]
+            rowid_row = await cur.fetchone()
+        assert rowid_row is not None
+        listing_id = rowid_row[0]
         for item in items:
             await db.execute(
                 "INSERT INTO trade_listing_items (listing_id, card_member_id, rarity) "
@@ -852,7 +854,9 @@ async def create_offer(
             (listing_id, proposer_id, now_iso, expires_iso),
         )
         async with db.execute("SELECT last_insert_rowid()") as cur:
-            offer_id = (await cur.fetchone())[0]
+            rowid_row = await cur.fetchone()
+        assert rowid_row is not None
+        offer_id = rowid_row[0]
         for item in items:
             await db.execute(
                 "INSERT INTO trade_offer_items (offer_id, card_member_id, rarity) VALUES (?, ?, ?)",

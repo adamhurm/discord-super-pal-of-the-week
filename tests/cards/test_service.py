@@ -259,6 +259,7 @@ async def test_add_member_upserts_name(db):
             "SELECT display_name FROM members WHERE discord_id = ?", ("test_dingus",)
         ) as cur:
             row = await cur.fetchone()
+    assert row is not None
     assert row[0] == "Dingus Supreme Revised"
 
 
@@ -272,6 +273,7 @@ async def test_set_member_avatar_updates_url(db):
             "SELECT avatar_url FROM members WHERE discord_id = ?", ("test_dingus",)
         ) as cur:
             row = await cur.fetchone()
+    assert row is not None
     assert row[0] == "/static/avatars/test_dingus.png"
 
 

@@ -52,7 +52,7 @@ class UserCard:
     card_member_id: str
     rarity: str
     quantity: int
-    first_acquired_at: datetime
+    first_acquired_at: str
     drawn_by_name: str | None = None
 
 
