@@ -131,24 +131,80 @@ CREATE TABLE IF NOT EXISTS trade_listing_items (
     rarity         TEXT NOT NULL CHECK(rarity IN ('common','uncommon','rare','legendary'))
 );
 
+"""
+
+# Shared with the trade_offers rebuild in _migrate_trade_offers(), which recreates the
+# table rather than altering it: listing_id had to become nullable (direct trades have no
+# listing) and the status CHECK had to gain 'countered'.
+_TRADE_OFFERS_DDL = """
 CREATE TABLE IF NOT EXISTS trade_offers (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    listing_id          INTEGER NOT NULL REFERENCES trade_listings(id),
+    listing_id          INTEGER REFERENCES trade_listings(id),
     proposer_id         TEXT NOT NULL REFERENCES members(discord_id),
+    recipient_id        TEXT NOT NULL REFERENCES members(discord_id),
+    counter_of_id       INTEGER REFERENCES trade_offers(id),
     status              TEXT NOT NULL DEFAULT 'pending'
-                        CHECK(status IN ('pending','accepted','declined','expired','cancelled')),
+                        CHECK(status IN ('pending','accepted','declined','expired',
+                                         'cancelled','countered')),
     created_at          TIMESTAMP NOT NULL,
     expires_at          TIMESTAMP NOT NULL,
     discord_message_id  TEXT
 );
+"""
 
+_TRADE_OFFER_ITEMS_DDL = """
 CREATE TABLE IF NOT EXISTS trade_offer_items (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     offer_id       INTEGER NOT NULL REFERENCES trade_offers(id),
     card_member_id TEXT NOT NULL REFERENCES members(discord_id),
-    rarity         TEXT NOT NULL CHECK(rarity IN ('common','uncommon','rare','legendary'))
+    rarity         TEXT NOT NULL CHECK(rarity IN ('common','uncommon','rare','legendary')),
+    side           TEXT NOT NULL DEFAULT 'give' CHECK(side IN ('give','get'))
 );
 """
+
+_SCHEMA = _SCHEMA + _TRADE_OFFERS_DDL + _TRADE_OFFER_ITEMS_DDL
+
+
+async def _migrate_trade_offers(db: aiosqlite.Connection) -> None:
+    """Rebuild trade_offers in the direct-trade shape, preserving existing offers.
+
+    SQLite cannot relax a NOT NULL or widen a CHECK in place, so the table is recreated
+    and copied. recipient_id is backfilled from the listing owner, which is who could
+    accept an offer under the listing-only model.
+    """
+    async with db.execute("PRAGMA table_info(trade_offers)") as cur:
+        columns = {row[1] for row in await cur.fetchall()}
+    if not columns or "recipient_id" in columns:
+        return
+    await db.execute("DROP TABLE IF EXISTS trade_offers_old")
+    await db.execute("ALTER TABLE trade_offers RENAME TO trade_offers_old")
+    await db.execute(_TRADE_OFFERS_DDL)
+    await db.execute(
+        "INSERT INTO trade_offers (id, listing_id, proposer_id, recipient_id, counter_of_id, "
+        "status, created_at, expires_at, discord_message_id) "
+        "SELECT o.id, o.listing_id, o.proposer_id, tl.owner_id, NULL, o.status, o.created_at, "
+        "o.expires_at, o.discord_message_id "
+        "FROM trade_offers_old o JOIN trade_listings tl ON o.listing_id = tl.id"
+    )
+    await db.execute("DROP TABLE trade_offers_old")
+    await db.commit()
+
+
+async def _backfill_offer_get_side(db: aiosqlite.Connection) -> None:
+    """Snapshot each pending listing's items onto its offers as the 'get' side.
+
+    Offers used to imply what the proposer receives by joining back to the listing;
+    they now carry both sides themselves. NOT EXISTS makes the backfill idempotent.
+    """
+    await db.execute(
+        "INSERT INTO trade_offer_items (offer_id, card_member_id, rarity, side) "
+        "SELECT o.id, tli.card_member_id, tli.rarity, 'get' "
+        "FROM trade_offers o "
+        "JOIN trade_listing_items tli ON tli.listing_id = o.listing_id "
+        "WHERE o.status = 'pending' AND NOT EXISTS ("
+        "  SELECT 1 FROM trade_offer_items i WHERE i.offer_id = o.id AND i.side = 'get')"
+    )
+    await db.commit()
 
 
 async def init_db() -> None:
@@ -227,6 +283,16 @@ async def init_db() -> None:
             await db.commit()
         except aiosqlite.OperationalError:
             pass  # column already exists
+        try:
+            await db.execute(
+                "ALTER TABLE trade_offer_items ADD COLUMN side TEXT NOT NULL "
+                "DEFAULT 'give' CHECK(side IN ('give','get'))"
+            )
+            await db.commit()
+        except aiosqlite.OperationalError:
+            pass  # column already exists
+        await _migrate_trade_offers(db)
+        await _backfill_offer_get_side(db)
         await db.execute(
             """CREATE TABLE IF NOT EXISTS markets (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

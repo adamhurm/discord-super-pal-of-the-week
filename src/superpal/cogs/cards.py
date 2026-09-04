@@ -10,10 +10,7 @@ import superpal.static as superpal_static
 from superpal.cards.db import DB_PATH
 from superpal.cards.models import RARITY_LABELS
 from superpal.cards.service import (
-    accept_offer,
-    decline_offer,
     draw_card,
-    expire_offer,
     generate_magic_link,
     get_card_quantity,
     get_collection,
@@ -24,12 +21,16 @@ from superpal.cards.service import (
     trade_in,
     upgrade,
 )
+from superpal.cards.trade_service import (
+    TRADE_OFFER_EXPIRY_HOURS,
+    accept_offer,
+    decline_offer,
+    expire_offer,
+)
 from superpal.cogs.helpers import _label_card_subjects, _member_card_embed
 from superpal.env import WEBAPP_BASE_URL
 
 log = superpal_env.log
-
-TRADE_OFFER_EXPIRY_HOURS = 24
 
 RARITY_CHOICES = [
     app_commands.Choice(name="Common", value="common"),
@@ -40,24 +41,27 @@ RARITY_CHOICES = [
 
 
 class TradeOfferView(discord.ui.View):
-    """Discord DM view sent when a marketplace offer arrives."""
+    """Discord DM view sent when a trade offer arrives."""
 
-    def __init__(self, offer_id: int, listing_owner_id: str):
+    def __init__(self, offer_id: int, recipient_id: str, trade_url: str):
         super().__init__(timeout=TRADE_OFFER_EXPIRY_HOURS * 3600)
         self.offer_id = offer_id
-        self.listing_owner_id = listing_owner_id
+        self.recipient_id = recipient_id
         self.message: discord.Message | None = None
+        # Countering means picking cards from both collections, which only the web
+        # trade window can do — the DM just links there.
+        self.add_item(discord.ui.Button(label="Counter", url=trade_url))
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
     async def accept_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        if str(interaction.user.id) != self.listing_owner_id:
+        if str(interaction.user.id) != self.recipient_id:
             await interaction.response.send_message(
-                "Only the listing owner can accept.", ephemeral=True
+                "Only the trade recipient can accept.", ephemeral=True
             )
             return
-        success, reason = await accept_offer(self.offer_id, self.listing_owner_id)
+        success, reason = await accept_offer(self.offer_id, self.recipient_id)
         self.stop()
         if success:
             await interaction.response.edit_message(
@@ -65,10 +69,11 @@ class TradeOfferView(discord.ui.View):
             )
         else:
             msg = {
-                "not_found": "This offer no longer exists.",
-                "not_owner": "You are not the listing owner.",
-                "listing_no_card": "Trade failed — you no longer have those listing cards.",
-                "offer_no_card": "Trade failed — the proposer no longer has their offered cards.",
+                "not_found": "This trade is no longer pending.",
+                "not_recipient": "You are not the recipient of this trade.",
+                "expired": "This trade has expired.",
+                "give_no_card": "Trade failed — they no longer have the cards they offered.",
+                "get_no_card": "Trade failed — you no longer have the cards they asked for.",
             }.get(reason or "", "Trade failed.")
             await interaction.response.edit_message(content=msg, view=None)
 
@@ -76,12 +81,12 @@ class TradeOfferView(discord.ui.View):
     async def decline_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        if str(interaction.user.id) != self.listing_owner_id:
+        if str(interaction.user.id) != self.recipient_id:
             await interaction.response.send_message(
-                "Only the listing owner can decline.", ephemeral=True
+                "Only the trade recipient can decline.", ephemeral=True
             )
             return
-        await decline_offer(self.offer_id, self.listing_owner_id)
+        await decline_offer(self.offer_id, self.recipient_id)
         self.stop()
         await interaction.response.edit_message(content="Offer declined.", view=None)
 
@@ -363,28 +368,44 @@ class CardsCog(commands.Cog):
 
     @app_commands.command(
         name="card-trade",
-        description="Open the trade marketplace to list cards and make offers",
+        description="Open the trade marketplace, or start a trade with one player",
     )
-    async def propose_trade_command(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(player="Trade directly with this player instead of browsing listings")
+    async def propose_trade_command(
+        self, interaction: discord.Interaction, player: discord.Member | None = None
+    ) -> None:
         await interaction.response.defer(ephemeral=True)
+        if player is not None and player.id == interaction.user.id:
+            await interaction.followup.send("You can't trade with yourself.", ephemeral=True)
+            return
         url = await generate_magic_link(
             user_id=str(interaction.user.id),
             link_type="collection",
             base_url=WEBAPP_BASE_URL,
         )
-        try:
-            await interaction.user.send(
+        if player is not None:
+            url = f"{url}?next=/trade/new%3Fwith%3D{player.id}"
+            body = (
+                f"Open this link to build a trade with **{player.display_name}** "
+                f"(valid 24 hours after first click):\n{url}\n\n"
+                "Pick the cards you're offering on the left and the cards you want from them "
+                "on the right, then send it — they can accept, decline or counter."
+            )
+            confirmation = f"Check your DMs for your trade link for {player.display_name}!"
+        else:
+            body = (
                 f"Open this link to access the trade marketplace "
                 f"(valid 24 hours after first click):\n{url}\n\n"
                 "Once open, click **Marketplace** in the top nav to browse listings and make "
                 "offers. Right-click any card in your collection to list it for trade."
             )
-            await interaction.followup.send(
-                "Check your DMs for your marketplace link!", ephemeral=True
-            )
+            confirmation = "Check your DMs for your marketplace link!"
+        try:
+            await interaction.user.send(body)
+            await interaction.followup.send(confirmation, ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send(
-                f"Here's your marketplace link (enable DMs to receive these privately):\n{url}",
+                f"Here's your link (enable DMs to receive these privately):\n{url}",
                 ephemeral=True,
             )
 

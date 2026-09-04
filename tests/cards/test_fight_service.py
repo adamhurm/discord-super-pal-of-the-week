@@ -7,7 +7,7 @@ import pytest
 
 @pytest.fixture
 async def db(db_mods):
-    db_mod, svc_mod, fs_mod, ps_mod = db_mods
+    db_mod, svc_mod, fs_mod, ps_mod, *_ = db_mods
     await db_mod.init_db()
     await svc_mod.sync_members(
         [

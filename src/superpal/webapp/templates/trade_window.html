@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade with {{ counterparty_name }} — Bringus Card Game</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; }
+    .page { padding: 20px 24px; max-width: 900px; margin: 0 auto; }
+    .head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+    .head h1 { font-size: 20px; }
+    .status-pill { font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
+                   border-radius: 10px; text-transform: uppercase; }
+    .status-pending { background: #4a3a14; color: #faa61a; }
+    .status-accepted { background: #1e3b28; color: #3ba55c; }
+    .status-declined, .status-cancelled, .status-expired { background: #4a2226; color: #ed4245; }
+    .status-countered { background: #2f3a4a; color: #5865f2; }
+    .head-sub { font-size: 12px; color: #72767d; margin-bottom: 16px; }
+    .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .side { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px; padding: 14px; }
+    .side-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+                  color: #72767d; margin-bottom: 10px; }
+    .item { display: flex; align-items: center; gap: 8px; background: #313338; border-radius: 6px;
+            padding: 8px; margin-bottom: 6px; }
+    .item-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+                   background: #555; flex-shrink: 0; }
+    .item-avatar-placeholder { width: 32px; height: 32px; border-radius: 50%; background: #555;
+                               flex-shrink: 0; }
+    .item-name { font-size: 13px; font-weight: 600; }
+    .item-rarity { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; }
+    .rarity-common { color: #95a5a6; }
+    .rarity-uncommon { color: #27ae60; }
+    .rarity-rare { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+    .btn { padding: 9px 18px; border-radius: 4px; font-size: 13px; font-weight: 600;
+           cursor: pointer; border: none; text-decoration: none; display: inline-block; }
+    .btn-accept { background: #3ba55c; color: #fff; }
+    .btn-accept:hover { background: #2d7d46; }
+    .btn-decline { background: #ed4245; color: #fff; }
+    .btn-decline:hover { background: #c03537; }
+    .btn-secondary { background: #3f4147; color: #dcddde; }
+    .btn-secondary:hover { background: #4a4d55; }
+    .notice { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px;
+              padding: 14px; margin-top: 18px; font-size: 13px; }
+    .error-banner { background: #4a2226; border: 1px solid #ed4245; color: #f2a5a7;
+                    border-radius: 6px; padding: 10px 14px; font-size: 13px;
+                    margin-bottom: 16px; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+                      z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: #2b2d31; border-radius: 8px; padding: 24px; max-width: 460px;
+             width: 100%; }
+    .modal h2 { font-size: 1rem; margin-bottom: 12px; }
+    .modal-line { font-size: 13px; margin-bottom: 8px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
+    @media (max-width: 720px) { .sides { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+<div class="page">
+  <div class="head">
+    <h1>Trade with {{ counterparty_name }}</h1>
+    <span class="status-pill status-{{ offer.status }}" id="status-pill">{{ offer.status }}</span>
+  </div>
+  <div class="head-sub" id="head-sub">
+    {% if offer.status == 'pending' and role == 'recipient' %}
+      {{ counterparty_name }} is waiting on your answer. Expires {{ offer.expires_at[:10] }}.
+    {% elif offer.status == 'pending' %}
+      Waiting on {{ counterparty_name }}. Expires {{ offer.expires_at[:10] }}.
+    {% endif %}
+  </div>
+
+  {% if request.query_params.get('error') %}
+  <div class="error-banner">
+    {% set err = request.query_params.get('error') %}
+    {% if err == 'give_no_card' %}{{ counterparty_name }} no longer has the cards they offered.
+    {% elif err == 'get_no_card' %}You no longer have the cards they asked for.
+    {% elif err == 'expired' %}This trade has expired.
+    {% elif err == 'not_recipient' %}Only {{ counterparty_name }} can accept this trade.
+    {% else %}This trade could not be completed.{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="sides">
+    <div class="side trade-side-mine">
+      <div class="side-title">You give</div>
+      {% for item in mine %}
+      <div class="item">
+        {% if item.avatar_url %}
+          <img class="item-avatar" src="{{ item.avatar_url }}" alt="">
+        {% else %}
+          <div class="item-avatar-placeholder"></div>
+        {% endif %}
+        <div>
+          <div class="item-name">{{ item.display_name or item.member_id }}</div>
+          <div class="item-rarity rarity-{{ item.rarity }}">{{ item.rarity | upper }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="side trade-side-theirs">
+      <div class="side-title">{{ counterparty_name }} gives</div>
+      {% for item in theirs %}
+      <div class="item">
+        {% if item.avatar_url %}
+          <img class="item-avatar" src="{{ item.avatar_url }}" alt="">
+        {% else %}
+          <div class="item-avatar-placeholder"></div>
+        {% endif %}
+        <div>
+          <div class="item-name">{{ item.display_name or item.member_id }}</div>
+          <div class="item-rarity rarity-{{ item.rarity }}">{{ item.rarity | upper }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if offer.status == 'pending' %}
+    <div class="actions">
+      {% if role == 'recipient' %}
+        <button class="btn btn-accept" onclick="openConfirm()">Accept</button>
+        <form method="post" action="/trade/{{ offer.id }}/decline">
+          <button class="btn btn-decline" type="submit">Decline</button>
+        </form>
+        <a class="btn btn-secondary"
+           href="/trade/new?with={{ counterparty_id }}&counter_of={{ offer.id }}">Counter</a>
+      {% else %}
+        <form method="post" action="/trade/{{ offer.id }}/cancel">
+          <button class="btn btn-decline" type="submit">Withdraw Offer</button>
+        </form>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="notice" id="settled-notice">
+      {% if offer.status == 'accepted' %}Trade complete — the cards have been exchanged.
+      {% elif offer.status == 'declined' %}This trade was declined.
+      {% elif offer.status == 'cancelled' %}This offer was withdrawn.
+      {% elif offer.status == 'countered' %}This offer was answered with a counter-offer.
+      {% else %}This trade is no longer open.{% endif %}
+      <div style="margin-top:10px;">
+        <a class="btn btn-secondary" href="/marketplace">Back to Marketplace</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+{% if offer.status == 'pending' and role == 'recipient' %}
+<div class="modal-backdrop" id="confirm-modal">
+  <div class="modal">
+    <h2>Confirm this trade</h2>
+    <div class="modal-line">
+      You give:
+      {% for item in mine %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>
+      <strong>{{ item.display_name or item.member_id }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    <div class="modal-line">
+      You receive:
+      {% for item in theirs %}<span class="rarity-{{ item.rarity }}">{{ item.rarity | upper }}</span>
+      <strong>{{ item.display_name or item.member_id }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    <form method="post" action="/trade/{{ offer.id }}/accept" class="modal-actions">
+      <button class="btn btn-accept" type="submit">Confirm Trade</button>
+      <button class="btn btn-secondary" type="button" onclick="closeConfirm()">Back</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  function openConfirm() { document.getElementById('confirm-modal').classList.add('open'); }
+  function closeConfirm() { document.getElementById('confirm-modal').classList.remove('open'); }
+
+  // The other party's accept/decline/counter arrives here; reload so the whole window
+  // re-renders from the server rather than trying to patch it in place.
+  (function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const status = {{ offer.status | tojson }};
+    if (status !== 'pending') return;
+    let socket;
+    try {
+      socket = new WebSocket(`${proto}//${location.host}/ws/trade/{{ offer.id }}`);
+    } catch (e) {
+      return;
+    }
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'state' && msg.data.status !== status) location.reload();
+    };
+    setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({action: 'ping'}));
+    }, 30000);
+  })();
+</script>
+</body>
+</html>

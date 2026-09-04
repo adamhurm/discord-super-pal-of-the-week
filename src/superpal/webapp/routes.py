@@ -32,7 +32,7 @@ from superpal.cards.fight_service import (
     touch_fight_activity,
     use_fight_token,
 )
-from superpal.cards.models import CardRef
+from superpal.cards.models import CardRef, TradeOfferFull
 from superpal.cards.pringle_service import (
     ITEM_COSTS,
     ITEM_DESCRIPTIONS,
@@ -42,24 +42,15 @@ from superpal.cards.pringle_service import (
     get_player_items,
 )
 from superpal.cards.service import (
-    accept_offer,
     add_draws,
     add_member,
     award_card,
-    cancel_listing,
-    cancel_offer,
-    create_listing,
-    create_offer,
-    decline_offer,
-    get_active_listings,
     get_all_members_for_admin,
     get_collection,
     get_draw_audit,
     get_fight_opponents,
     get_member_card_context,
     get_member_display_name,
-    get_my_offers,
-    get_player_listings,
     get_pool_stats,
     reset_draw_log,
     set_excluded,
@@ -71,6 +62,21 @@ from superpal.cards.service import (
 )
 from superpal.cards.service import (
     sync_members as _sync_members,
+)
+from superpal.cards.trade_service import (
+    MAX_ITEMS_PER_SIDE,
+    accept_offer,
+    cancel_listing,
+    cancel_offer,
+    create_direct_offer,
+    create_listing,
+    create_listing_offer,
+    decline_offer,
+    get_active_listings,
+    get_incoming_offers,
+    get_offer_by_id,
+    get_outgoing_offers,
+    get_player_listings,
 )
 from superpal.economy import boin_service, exchange_service
 from superpal.sessions import Session
@@ -86,6 +92,10 @@ from superpal.webapp.auth import (
 # holds two sockets, and keying by player alone means the older one's cleanup unhooks the
 # live one — the player then sits on an open socket that never receives another update.
 _fight_connections: dict[int, dict[str, dict[str, WebSocket]]] = {}
+
+# offer_id -> player_id -> connection_id -> WebSocket, same shape and for the same
+# reason as _fight_connections: both parties may have the trade window open in tabs.
+_trade_connections: dict[int, dict[str, dict[str, WebSocket]]] = {}
 
 IMAGES_DIR = Path(DB_PATH).parent / "images"
 
@@ -192,7 +202,8 @@ async def _collection_context(user_id: str) -> dict:
 async def _marketplace_context(user_id: str) -> dict:
     listings = await get_active_listings(exclude_owner_id=user_id)
     my_listings = await get_player_listings(user_id)
-    my_offers = await get_my_offers(user_id)
+    outgoing_offers = await get_outgoing_offers(user_id)
+    incoming_offers = await get_incoming_offers(user_id)
     collection = await get_collection(user_id)
 
     # Aggregate active traders for sidebar
@@ -200,7 +211,11 @@ async def _marketplace_context(user_id: str) -> dict:
     for listing in listings:
         oid = listing.owner_id
         if oid not in trader_counts:
-            trader_counts[oid] = {"display_name": listing.owner_display_name, "count": 0}
+            trader_counts[oid] = {
+                "player_id": oid,
+                "display_name": listing.owner_display_name,
+                "count": 0,
+            }
         trader_counts[oid]["count"] += 1
     active_traders = sorted(trader_counts.values(), key=lambda x: -x["count"])
 
@@ -208,10 +223,11 @@ async def _marketplace_context(user_id: str) -> dict:
         **(await _member_display(user_id)),
         "listings": listings,
         "my_listings": my_listings,
-        "my_offers": my_offers,
+        "outgoing_offers": outgoing_offers,
+        "incoming_offers": incoming_offers,
         "my_collection": collection["owned"],
         "active_traders": active_traders,
-        "pending_offer_count": len(my_offers),
+        "pending_offer_count": len(incoming_offers),
     }
 
 
@@ -270,36 +286,11 @@ async def create_offer_route(
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    items = [
-        CardRef(member_id=mid, rarity=rar)
-        for mid, rar in zip(card_member_ids, card_rarities, strict=False)
-    ]
-    offer = await create_offer(listing_id, session.user_id, items)
+    offer = await create_listing_offer(
+        listing_id, session.user_id, _card_refs(card_member_ids, card_rarities)
+    )
     if not isinstance(offer, str):
         asyncio.create_task(notify.notify_trade_offer(offer.id))  # noqa: RUF006
-    return RedirectResponse(url="/marketplace", status_code=303)
-
-
-@router.post("/marketplace/offer/{offer_id}/accept")
-async def accept_offer_route(offer_id: int, request: Request):
-    session = await get_session_from_request(request)
-    if session is None:
-        return templates.TemplateResponse(request, "expired.html")
-    ok, _err = await accept_offer(offer_id, session.user_id)
-    if ok:
-        asyncio.create_task(  # noqa: RUF006
-            notify.edit_offer_dm(offer_id, "Trade accepted! Cards have been exchanged.")
-        )
-    return RedirectResponse(url="/marketplace", status_code=303)
-
-
-@router.post("/marketplace/offer/{offer_id}/decline")
-async def decline_offer_route(offer_id: int, request: Request):
-    session = await get_session_from_request(request)
-    if session is None:
-        return templates.TemplateResponse(request, "expired.html")
-    await decline_offer(offer_id, session.user_id)
-    asyncio.create_task(notify.edit_offer_dm(offer_id, "Offer declined."))  # noqa: RUF006
     return RedirectResponse(url="/marketplace", status_code=303)
 
 
@@ -310,6 +301,284 @@ async def cancel_offer_route(offer_id: int, request: Request):
         return templates.TemplateResponse(request, "expired.html")
     await cancel_offer(offer_id, session.user_id)
     return RedirectResponse(url="/marketplace", status_code=303)
+
+
+# ─── Direct trades ──────────────────────────────────────────────────────────
+
+
+def _card_refs(member_ids: list[str], rarities: list[str]) -> list[CardRef]:
+    return [
+        CardRef(member_id=mid, rarity=rar) for mid, rar in zip(member_ids, rarities, strict=False)
+    ]
+
+
+def _trade_view(offer: TradeOfferFull, viewer_id: str) -> dict:
+    """Describe a trade from one seat: your cards on the left, theirs on the right."""
+    is_proposer = viewer_id == offer.proposer_id
+    return {
+        "offer": offer,
+        "role": "proposer" if is_proposer else "recipient",
+        "mine": offer.give_items if is_proposer else offer.get_items,
+        "theirs": offer.get_items if is_proposer else offer.give_items,
+        "counterparty_id": offer.recipient_id if is_proposer else offer.proposer_id,
+        "counterparty_name": (
+            offer.recipient_display_name if is_proposer else offer.proposer_display_name
+        ),
+    }
+
+
+async def _trade_party(request: Request, offer_id: int) -> tuple[Session, TradeOfferFull] | None:
+    """Resolve the session and offer only when the caller is one of the two traders."""
+    session = await get_session_from_request(request)
+    if session is None:
+        return None
+    offer = await get_offer_by_id(offer_id)
+    if offer is None or session.user_id not in (offer.proposer_id, offer.recipient_id):
+        return None
+    return session, offer
+
+
+async def _broadcast_trade(offer_id: int) -> None:
+    """Push the current trade to every open window, each from its own viewer's seat."""
+    offer = await get_offer_by_id(offer_id)
+    if offer is None:
+        return
+    players = _trade_connections.get(offer_id, {})
+    targets = [
+        (pid, conn_id, ws)
+        for pid, conns in list(players.items())
+        for conn_id, ws in list(conns.items())
+    ]
+    for pid, conn_id, ws in targets:
+        try:
+            await ws.send_json({"type": "state", "data": _trade_state(offer, pid)})
+        except Exception:
+            _drop_trade_connection(offer_id, pid, conn_id)
+
+
+def _trade_state(offer: TradeOfferFull, viewer_id: str) -> dict:
+    view = _trade_view(offer, viewer_id)
+    return {
+        "id": offer.id,
+        "status": offer.status,
+        "role": view["role"],
+        "counterparty_name": view["counterparty_name"],
+        "mine": [dataclasses.asdict(item) for item in view["mine"]],
+        "theirs": [dataclasses.asdict(item) for item in view["theirs"]],
+    }
+
+
+def _drop_trade_connection(offer_id: int, player_id: str, conn_id: str) -> None:
+    players = _trade_connections.get(offer_id)
+    if players is None:
+        return
+    conns = players.get(player_id)
+    if conns is None:
+        return
+    conns.pop(conn_id, None)
+    if not conns:
+        players.pop(player_id, None)
+    if not players:
+        _trade_connections.pop(offer_id, None)
+
+
+@router.get("/collection/{player_id}", response_class=HTMLResponse)
+async def player_collection_view(player_id: str, request: Request):
+    """Another player's collection, so you know what there is to ask them for."""
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    if player_id == session.user_id:
+        return RedirectResponse(url="/collection", status_code=303)
+    data = await get_collection(player_id)
+    owner = await get_member_card_context(player_id)
+    if owner is None:
+        return templates.TemplateResponse(request, "expired.html")
+    return templates.TemplateResponse(
+        request,
+        "player_collection.html",
+        {
+            **(await _member_display(session.user_id)),
+            "active_page": "marketplace",
+            "player_id": player_id,
+            "player_name": owner.display_name,
+            "player_avatar_url": owner.avatar_url,
+            "owned": data["owned"],
+            "total_cards": sum(c["quantity"] for c in data["owned"]),
+            "unique_members": len({c["member_id"] for c in data["owned"]}),
+        },
+    )
+
+
+@router.get("/trade/new", response_class=HTMLResponse)
+async def trade_builder(request: Request, counter_of: int | None = None):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    # "with" is a Python keyword, so the query parameter is read off the request.
+    partner_id = request.query_params.get("with", "")
+    if not partner_id or partner_id == session.user_id:
+        return RedirectResponse(url="/collection", status_code=303)
+    partner = await get_member_card_context(partner_id)
+    if partner is None:
+        return RedirectResponse(url="/marketplace", status_code=303)
+
+    # A counter starts from the offer being answered, with the sides swapped: what they
+    # asked you for is now what you are offering.
+    prefill_give: list[CardRef] = []
+    prefill_get: list[CardRef] = []
+    if counter_of is not None:
+        parent = await get_offer_by_id(counter_of)
+        if parent is None or parent.recipient_id != session.user_id:
+            return RedirectResponse(url="/marketplace", status_code=303)
+        prefill_give, prefill_get = parent.get_items, parent.give_items
+
+    return templates.TemplateResponse(
+        request,
+        "trade_new.html",
+        {
+            **(await _member_display(session.user_id)),
+            "active_page": "marketplace",
+            "partner_id": partner_id,
+            "partner_name": partner.display_name,
+            "my_cards": (await get_collection(session.user_id))["owned"],
+            "their_cards": (await get_collection(partner_id))["owned"],
+            "prefill_give": prefill_give,
+            "prefill_get": prefill_get,
+            "counter_of": counter_of,
+            "error": request.query_params.get("error", ""),
+            "max_items": MAX_ITEMS_PER_SIDE,
+        },
+    )
+
+
+@router.post("/trade")
+async def create_trade_route(
+    request: Request,
+    recipient_id: str = Form(...),
+    give_member_ids: list[str] = Form(default=[]),
+    give_rarities: list[str] = Form(default=[]),
+    get_member_ids: list[str] = Form(default=[]),
+    get_rarities: list[str] = Form(default=[]),
+    counter_of: int | None = Form(default=None),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    offer = await create_direct_offer(
+        session.user_id,
+        recipient_id,
+        _card_refs(give_member_ids, give_rarities),
+        _card_refs(get_member_ids, get_rarities),
+        counter_of_id=counter_of,
+    )
+    if isinstance(offer, str):
+        return RedirectResponse(
+            url=f"/trade/new?with={recipient_id}&error={offer}", status_code=303
+        )
+    asyncio.create_task(notify.notify_trade_offer(offer.id))  # noqa: RUF006
+    if counter_of is not None:
+        asyncio.create_task(  # noqa: RUF006
+            notify.edit_offer_dm(counter_of, "Offer countered — check your new trade.")
+        )
+        await _broadcast_trade(counter_of)
+    return RedirectResponse(url=f"/trade/{offer.id}", status_code=303)
+
+
+@router.get("/trade/{offer_id}", response_class=HTMLResponse)
+async def trade_window(offer_id: int, request: Request):
+    party = await _trade_party(request, offer_id)
+    if party is None:
+        return templates.TemplateResponse(request, "expired.html")
+    session, offer = party
+    return templates.TemplateResponse(
+        request,
+        "trade_window.html",
+        {
+            **(await _member_display(session.user_id)),
+            "active_page": "marketplace",
+            **_trade_view(offer, session.user_id),
+        },
+    )
+
+
+@router.post("/trade/{offer_id}/accept")
+async def accept_trade_route(offer_id: int, request: Request):
+    party = await _trade_party(request, offer_id)
+    if party is None:
+        return templates.TemplateResponse(request, "expired.html")
+    session, _offer = party
+    ok, err = await accept_offer(offer_id, session.user_id)
+    if ok:
+        asyncio.create_task(  # noqa: RUF006
+            notify.edit_offer_dm(offer_id, "Trade accepted! Cards have been exchanged.")
+        )
+    await _broadcast_trade(offer_id)
+    suffix = f"?error={err}" if err else ""
+    return RedirectResponse(url=f"/trade/{offer_id}{suffix}", status_code=303)
+
+
+@router.post("/trade/{offer_id}/decline")
+async def decline_trade_route(offer_id: int, request: Request):
+    party = await _trade_party(request, offer_id)
+    if party is None:
+        return templates.TemplateResponse(request, "expired.html")
+    session, _offer = party
+    await decline_offer(offer_id, session.user_id)
+    asyncio.create_task(notify.edit_offer_dm(offer_id, "Offer declined."))  # noqa: RUF006
+    await _broadcast_trade(offer_id)
+    return RedirectResponse(url=f"/trade/{offer_id}", status_code=303)
+
+
+@router.post("/trade/{offer_id}/cancel")
+async def cancel_trade_route(offer_id: int, request: Request):
+    party = await _trade_party(request, offer_id)
+    if party is None:
+        return templates.TemplateResponse(request, "expired.html")
+    session, _offer = party
+    await cancel_offer(offer_id, session.user_id)
+    asyncio.create_task(notify.edit_offer_dm(offer_id, "Offer withdrawn."))  # noqa: RUF006
+    await _broadcast_trade(offer_id)
+    return RedirectResponse(url=f"/trade/{offer_id}", status_code=303)
+
+
+@router.get("/api/trade/{offer_id}/state")
+async def trade_state_api(offer_id: int, request: Request):
+    """Fallback poll for a trade window whose WebSocket dropped."""
+    party = await _trade_party(request, offer_id)
+    if party is None:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    session, offer = party
+    return JSONResponse(_trade_state(offer, session.user_id))
+
+
+@router.websocket("/ws/trade/{offer_id}")
+async def trade_ws(websocket: WebSocket, offer_id: int):
+    token = websocket.cookies.get(SESSION_COOKIE_NAME)
+    session = await get_web_session(token) if token else None
+    offer = await get_offer_by_id(offer_id)
+    if session is None or offer is None:
+        await websocket.close(code=4003)
+        return
+    player_id = session.user_id
+    if player_id not in (offer.proposer_id, offer.recipient_id):
+        await websocket.close(code=4003)
+        return
+
+    await websocket.accept()
+    conn_id = uuid.uuid4().hex
+    _trade_connections.setdefault(offer_id, {}).setdefault(player_id, {})[conn_id] = websocket
+    try:
+        await websocket.send_json({"type": "state", "data": _trade_state(offer, player_id)})
+        # The window never acts over the socket — accept/decline/counter are ordinary
+        # form posts — so this loop only keeps the connection alive to receive pushes.
+        while True:
+            await websocket.receive_json()
+            await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _drop_trade_connection(offer_id, player_id, conn_id)
 
 
 async def _admin_context() -> dict:
@@ -327,11 +596,19 @@ async def _expired_command_for_token(token: str) -> str:
 
 
 @router.get("/link/{token}")
-async def magic_link_landing(token: str, request: Request):
+async def magic_link_landing(token: str, request: Request, next: str = ""):
     link = await use_magic_link(token)
     if link is None:
         command = await _expired_command_for_token(token)
         return templates.TemplateResponse(request, "expired.html", {"command": command})
+    # `next` lets a DM drop you straight onto a page (a trade builder, say) once the
+    # cookie is set. Only same-site paths: "//host" and absolute URLs would send the
+    # session cookie holder off to someone else's page.
+    if next.startswith("/") and not next.startswith("//"):
+        redirect = RedirectResponse(url=next, status_code=303)
+        assert link.session_token is not None
+        set_session_cookie(redirect, link.session_token)
+        return redirect
     if link.link_type == "admin":
         ctx = await _admin_context()
         template, replace_url = "admin.html", "/admin"
