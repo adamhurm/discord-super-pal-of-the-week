@@ -154,12 +154,21 @@ class TradeListingFull:
 
 @dataclass
 class TradeOfferFull:
+    """A trade proposal. give_items move proposer → recipient, get_items the other way.
+
+    listing is set only for offers made against a marketplace listing; direct trades
+    carry both sides on the offer itself.
+    """
+
     id: int
-    listing_id: int
     proposer_id: str
     proposer_display_name: str
+    recipient_id: str
+    recipient_display_name: str
     status: str
     created_at: str
     expires_at: str
-    items: list[CardRef]
-    listing: TradeListingFull
+    give_items: list[CardRef]
+    get_items: list[CardRef]
+    listing: TradeListingFull | None = None
+    counter_of_id: int | None = None

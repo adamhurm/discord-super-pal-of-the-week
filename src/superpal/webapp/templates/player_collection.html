@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ player_name }}'s Collection — Bringus Card Game</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; }
+    .page { padding: 20px 24px; }
+    .player-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px;
+                   flex-wrap: wrap; }
+    .player-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+                     background: #5865f2; }
+    .player-avatar-placeholder { width: 56px; height: 56px; border-radius: 50%;
+                                 background: linear-gradient(135deg,#667eea,#764ba2);
+                                 display: flex; align-items: center; justify-content: center;
+                                 color: #fff; font-weight: 700; font-size: 22px; }
+    .player-name { font-size: 20px; font-weight: 700; }
+    .player-stats { font-size: 12px; color: #72767d; }
+    .btn { display: inline-block; padding: 8px 16px; border-radius: 4px; font-size: 13px;
+           font-weight: 600; cursor: pointer; border: none; text-decoration: none; }
+    .btn-primary { background: #5865f2; color: #fff; }
+    .btn-primary:hover { background: #4752c4; }
+    .head-actions { margin-left: auto; }
+    .section-title { font-size: 11px; font-weight: 700; color: #72767d; letter-spacing: 1px;
+                     text-transform: uppercase; margin-bottom: 12px; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                 gap: 12px; }
+    .card { background: #2b2d31; border-radius: 8px; padding: 12px; text-align: center;
+            border: 1px solid #3f4147; }
+    .card-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+                   background: #555; margin: 0 auto 8px; display: block; }
+    .card-avatar-placeholder { width: 56px; height: 56px; border-radius: 50%; background: #555;
+                               margin: 0 auto 8px; }
+    .card-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden;
+                 text-overflow: ellipsis; }
+    .card-rarity { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; margin-top: 2px; }
+    .card-qty { font-size: 10px; color: #72767d; margin-top: 2px; }
+    .rarity-common { color: #95a5a6; }
+    .rarity-uncommon { color: #27ae60; }
+    .rarity-rare { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .empty-state { color: #72767d; font-size: 13px; font-style: italic; padding: 20px 0; }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+<div class="page">
+  <div class="player-head">
+    {% if player_avatar_url %}
+      <img class="player-avatar" src="{{ player_avatar_url }}" alt="">
+    {% else %}
+      <div class="player-avatar-placeholder">{{ player_name[0] | upper }}</div>
+    {% endif %}
+    <div>
+      <div class="player-name">{{ player_name }}</div>
+      <div class="player-stats">
+        {{ total_cards }} card{{ 's' if total_cards != 1 else '' }} ·
+        {{ unique_members }} unique member{{ 's' if unique_members != 1 else '' }}
+      </div>
+    </div>
+    <div class="head-actions">
+      <a class="btn btn-primary" href="/trade/new?with={{ player_id }}">Propose Trade</a>
+    </div>
+  </div>
+
+  <div class="section-title">Cards</div>
+  {% if owned %}
+  <div class="card-grid">
+    {% for card in owned %}
+    <div class="card">
+      {% if card.avatar_url %}
+        <img class="card-avatar" src="{{ card.avatar_url }}" alt="">
+      {% else %}
+        <div class="card-avatar-placeholder"></div>
+      {% endif %}
+      <div class="card-name">{{ card.display_name }}</div>
+      <div class="card-rarity rarity-{{ card.rarity }}">{{ card.rarity | upper }}</div>
+      {% if card.quantity > 1 %}<div class="card-qty">×{{ card.quantity }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">{{ player_name }} hasn't drawn any cards yet.</div>
+  {% endif %}
+</div>
+</body>
+</html>

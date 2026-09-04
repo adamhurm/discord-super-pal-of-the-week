@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade with {{ partner_name }} — Bringus Card Game</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1f22; color: #dcddde; font-family: sans-serif; }
+    .page { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
+    .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px;
+            flex-wrap: wrap; }
+    .head h1 { font-size: 20px; }
+    .head-sub { font-size: 12px; color: #72767d; margin-bottom: 16px; }
+    .error-banner { background: #4a2226; border: 1px solid #ed4245; color: #f2a5a7;
+                    border-radius: 6px; padding: 10px 14px; font-size: 13px;
+                    margin-bottom: 16px; }
+    .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .side { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px; padding: 14px; }
+    .side-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+                  color: #72767d; margin-bottom: 10px; }
+    .slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+    .slot { aspect-ratio: 1; background: #1e1f22; border: 1px solid #3f4147; border-radius: 6px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 4px; text-align: center; cursor: pointer; }
+    .slot.filled { border-color: #5865f2; }
+    .slot-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+                   background: #555; }
+    .slot-avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; background: #555; }
+    .slot-name { font-size: 9px; margin-top: 3px; white-space: nowrap; overflow: hidden;
+                 text-overflow: ellipsis; max-width: 100%; }
+    .slot-rarity { font-size: 8px; font-weight: 700; }
+    .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+                 gap: 8px; max-height: 300px; overflow-y: auto; }
+    .pick-card { background: #313338; border-radius: 6px; padding: 8px; text-align: center;
+                 cursor: pointer; border: 2px solid transparent; }
+    .pick-card:hover { border-color: #5865f2; }
+    .pick-card.selected { border-color: #5865f2; background: #2a2d4a; }
+    .pick-card-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+                        background: #555; margin: 0 auto 4px; display: block; }
+    .pick-card-avatar-placeholder { width: 32px; height: 32px; border-radius: 50%;
+                                    background: #555; margin: 0 auto 4px; }
+    .pick-card-name { font-size: 10px; white-space: nowrap; overflow: hidden;
+                      text-overflow: ellipsis; }
+    .pick-card-rarity { font-size: 9px; font-weight: 700; }
+    .pick-card-count { font-size: 9px; color: #72767d; }
+    .rarity-common { color: #95a5a6; }
+    .rarity-uncommon { color: #27ae60; }
+    .rarity-rare { color: #2980b9; }
+    .rarity-legendary { color: #f39c12; }
+    .actions { display: flex; align-items: center; gap: 12px; margin-top: 18px;
+               flex-wrap: wrap; }
+    .btn { padding: 9px 18px; border-radius: 4px; font-size: 13px; font-weight: 600;
+           cursor: pointer; border: none; text-decoration: none; display: inline-block; }
+    .btn-primary { background: #5865f2; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #4752c4; }
+    .btn-primary:disabled { background: #3f4147; color: #72767d; cursor: not-allowed; }
+    .btn-secondary { background: #3f4147; color: #dcddde; }
+    .summary { font-size: 12px; color: #72767d; }
+    .empty-state { color: #72767d; font-size: 12px; font-style: italic; padding: 12px 0; }
+    @media (max-width: 720px) { .sides { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+<div class="page">
+  <div class="head"><h1>Trade with {{ partner_name }}</h1></div>
+  <div class="head-sub">
+    {% if counter_of %}Countering their offer — adjust either side, then send it back.
+    {% else %}Pick what you're offering and what you want from them. They can accept, decline or counter.{% endif %}
+  </div>
+
+  {% if error %}
+  <div class="error-banner">
+    {% if error == 'no_card' %}You don't have all of those cards any more.
+    {% elif error == 'recipient_no_card' %}{{ partner_name }} doesn't have all of those cards any more.
+    {% elif error == 'empty_items' %}A trade needs cards on both sides.
+    {% elif error == 'too_many_items' %}That's more than {{ max_items }} cards on one side.
+    {% elif error == 'self_offer' %}You can't trade with yourself.
+    {% else %}That trade couldn't be created.{% endif %}
+  </div>
+  {% endif %}
+
+  <form id="trade-form" method="post" action="/trade">
+    <input type="hidden" name="recipient_id" value="{{ partner_id }}">
+    {% if counter_of %}<input type="hidden" name="counter_of" value="{{ counter_of }}">{% endif %}
+    <div id="hidden-inputs"></div>
+
+    <div class="sides">
+      <div class="side">
+        <div class="side-title">You give</div>
+        <div class="slots" id="slots-give"></div>
+        <div class="side-title">Your collection</div>
+        {% if my_cards %}
+        <div class="pick-grid" id="grid-give"></div>
+        {% else %}
+        <div class="empty-state">You have no cards to offer.</div>
+        {% endif %}
+      </div>
+
+      <div class="side">
+        <div class="side-title">{{ partner_name }} gives</div>
+        <div class="slots" id="slots-get"></div>
+        <div class="side-title">{{ partner_name }}'s collection</div>
+        {% if their_cards %}
+        <div class="pick-grid" id="grid-get"></div>
+        {% else %}
+        <div class="empty-state">{{ partner_name }} has no cards to trade.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" type="submit" id="submit-btn" disabled>Send Offer</button>
+      <a class="btn btn-secondary" href="/collection/{{ partner_id }}">Cancel</a>
+      <span class="summary" id="summary">Nothing selected yet.</span>
+    </div>
+  </form>
+</div>
+
+<script>
+  const MAX_ITEMS = {{ max_items }};
+  const CARDS = {
+    give: {{ my_cards | tojson }},
+    get: {{ their_cards | tojson }}
+  };
+  const PREFILL = {
+    give: {{ prefill_give | tojson }},
+    get: {{ prefill_get | tojson }}
+  };
+  const RARITY_COLORS = {
+    common: '#95a5a6', uncommon: '#27ae60', rare: '#2980b9', legendary: '#f39c12'
+  };
+  const selected = { give: [], get: [] };
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function key(card) { return card.member_id + ':' + card.rarity; }
+
+  function ownedCount(side, card) {
+    const owned = CARDS[side].find(c => key(c) === key(card));
+    return owned ? owned.quantity : 0;
+  }
+
+  function pickedCount(side, card) {
+    return selected[side].filter(c => key(c) === key(card)).length;
+  }
+
+  function renderGrid(side, gridId) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.innerHTML = CARDS[side].map((card, i) => {
+      const picked = pickedCount(side, card);
+      return `<div class="pick-card ${picked ? 'selected' : ''}" data-side="${side}" data-index="${i}">
+        ${card.avatar_url
+          ? `<img class="pick-card-avatar" src="${escapeHtml(card.avatar_url)}" alt="">`
+          : `<div class="pick-card-avatar-placeholder"></div>`}
+        <div class="pick-card-name">${escapeHtml(card.display_name || card.member_id)}</div>
+        <div class="pick-card-rarity" style="color:${RARITY_COLORS[card.rarity]}">${escapeHtml(card.rarity).toUpperCase()}</div>
+        <div class="pick-card-count">${picked}/${card.quantity}</div>
+      </div>`;
+    }).join('');
+    grid.querySelectorAll('.pick-card').forEach(el => {
+      el.addEventListener('click', () => addCard(side, CARDS[side][parseInt(el.dataset.index)]));
+    });
+  }
+
+  function renderSlots(side) {
+    const slots = document.getElementById('slots-' + side);
+    const cells = [];
+    for (let i = 0; i < MAX_ITEMS; i++) {
+      const card = selected[side][i];
+      if (!card) {
+        cells.push('<div class="slot"></div>');
+        continue;
+      }
+      cells.push(`<div class="slot filled" data-side="${side}" data-slot="${i}" title="Click to remove">
+        ${card.avatar_url
+          ? `<img class="slot-avatar" src="${escapeHtml(card.avatar_url)}" alt="">`
+          : `<div class="slot-avatar-placeholder"></div>`}
+        <div class="slot-name">${escapeHtml(card.display_name || card.member_id)}</div>
+        <div class="slot-rarity" style="color:${RARITY_COLORS[card.rarity]}">${escapeHtml(card.rarity).toUpperCase()}</div>
+      </div>`);
+    }
+    slots.innerHTML = cells.join('');
+    slots.querySelectorAll('.slot.filled').forEach(el => {
+      el.addEventListener('click', () => removeCard(side, parseInt(el.dataset.slot)));
+    });
+  }
+
+  function addCard(side, card) {
+    if (selected[side].length >= MAX_ITEMS) return;
+    if (pickedCount(side, card) >= ownedCount(side, card)) return;
+    selected[side].push(card);
+    refresh(side);
+  }
+
+  function removeCard(side, index) {
+    selected[side].splice(index, 1);
+    refresh(side);
+  }
+
+  function refresh(side) {
+    renderSlots(side);
+    renderGrid(side, 'grid-' + side);
+    updateSummary();
+  }
+
+  function describe(cards) {
+    return cards.map(c => c.rarity.toUpperCase() + ' ' + (c.display_name || c.member_id)).join(', ');
+  }
+
+  function updateSummary() {
+    const ready = selected.give.length > 0 && selected.get.length > 0;
+    document.getElementById('submit-btn').disabled = !ready;
+    document.getElementById('summary').textContent = ready
+      ? `Giving ${describe(selected.give)} for ${describe(selected.get)}.`
+      : 'Pick at least one card on each side.';
+    document.getElementById('hidden-inputs').innerHTML = ['give', 'get'].map(side =>
+      selected[side].map(c =>
+        `<input type="hidden" name="${side}_member_ids" value="${escapeHtml(c.member_id)}">` +
+        `<input type="hidden" name="${side}_rarities" value="${escapeHtml(c.rarity)}">`
+      ).join('')
+    ).join('');
+  }
+
+  ['give', 'get'].forEach(side => {
+    PREFILL[side].forEach(item => {
+      const owned = CARDS[side].find(c => key(c) === key(item));
+      if (owned) addCard(side, owned);
+    });
+    refresh(side);
+  });
+</script>
+</body>
+</html>

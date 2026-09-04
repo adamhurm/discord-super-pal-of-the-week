@@ -34,10 +34,11 @@ async def test_edit_offer_dm_noop_without_bot():
 
 def _fake_offer():
     offer = MagicMock()
-    offer.items = []
+    offer.id = 7
     offer.proposer_display_name = "Bob"
-    offer.listing.owner_id = "42"
-    offer.listing.items = []
+    offer.recipient_id = "42"
+    offer.give_items = []
+    offer.get_items = []
     return offer
 
 
@@ -60,7 +61,9 @@ async def test_notify_trade_offer_sends_dm(monkeypatch):
         await notify.notify_trade_offer(7)
 
     member.send.assert_awaited_once()
-    assert "made an offer on your listing" in member.send.call_args.kwargs["content"]
+    content = member.send.call_args.kwargs["content"]
+    assert "wants to trade with you" in content
+    assert "/trade/7" in content
     set_msg_id.assert_awaited_once_with(7, "555")
 
 

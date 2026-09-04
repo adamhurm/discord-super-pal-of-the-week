@@ -16,9 +16,9 @@ from superpal.cards.fight_service import (
     fight_ended_by_forfeit,
     get_fight,
 )
-from superpal.cards.models import RARITY_LABELS
-from superpal.cards.service import (
-    get_member_display_name,
+from superpal.cards.models import RARITY_LABELS, CardRef
+from superpal.cards.service import get_member_display_name
+from superpal.cards.trade_service import (
     get_offer_by_id,
     get_offer_discord_message_id,
     set_offer_discord_message_id,
@@ -45,8 +45,17 @@ def get_guild_members_cache() -> list[dict] | None:
     return _guild_members_cache
 
 
+async def _card_names(items: list[CardRef]) -> str:
+    labels = [
+        f"{RARITY_LABELS[item.rarity]} "
+        f"{await get_member_display_name(item.member_id) or item.member_id}"
+        for item in items
+    ]
+    return ", ".join(labels)
+
+
 async def notify_trade_offer(offer_id: int) -> None:
-    """DM the listing owner about a new marketplace offer."""
+    """DM the recipient of a new trade offer with both sides of the swap."""
     if _bot is None:
         return
     offer = await get_offer_by_id(offer_id)
@@ -55,27 +64,23 @@ async def notify_trade_offer(offer_id: int) -> None:
     guild = _bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild is None:
         return
-    member = guild.get_member(int(offer.listing.owner_id))
+    member = guild.get_member(int(offer.recipient_id))
     if member is None:
         return
-    offer_names = [
-        f"{RARITY_LABELS[item.rarity]} "
-        f"{await get_member_display_name(item.member_id) or item.member_id}"
-        for item in offer.items
-    ]
-    listing_names = [
-        f"{RARITY_LABELS[item.rarity]} "
-        f"{await get_member_display_name(item.member_id) or item.member_id}"
-        for item in offer.listing.items
-    ]
+
     from superpal.cogs.cards import TradeOfferView
 
-    view = TradeOfferView(offer_id=offer_id, listing_owner_id=offer.listing.owner_id)
+    view = TradeOfferView(
+        offer_id=offer_id,
+        recipient_id=offer.recipient_id,
+        trade_url=f"{WEBAPP_BASE_URL}/trade/{offer_id}",
+    )
     content = (
-        f"**{offer.proposer_display_name}** made an offer on your listing!\n\n"
-        f"Your listing: {', '.join(listing_names)}\n"
-        f"Their offer: {', '.join(offer_names)}\n\n"
-        f"View in marketplace: {WEBAPP_BASE_URL}/marketplace"
+        f"**{offer.proposer_display_name}** wants to trade with you!\n\n"
+        f"You get: {await _card_names(offer.give_items)}\n"
+        f"You give: {await _card_names(offer.get_items)}\n\n"
+        f"Open the trade window to accept, decline or counter: "
+        f"{WEBAPP_BASE_URL}/trade/{offer_id}"
     )
     try:
         dm = await member.send(content=content, view=view)
@@ -200,7 +205,7 @@ async def edit_offer_dm(offer_id: int, message: str) -> None:
     guild = _bot.get_guild(superpal_env.GUILD_ID or 0)
     if guild is None:
         return
-    owner_member = guild.get_member(int(offer.listing.owner_id))
+    owner_member = guild.get_member(int(offer.recipient_id))
     if owner_member is None:
         return
     try:

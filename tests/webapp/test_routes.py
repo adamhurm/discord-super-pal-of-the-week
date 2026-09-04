@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from superpal.cards.models import MagicLink, MemberCardContext
+from superpal.cards.models import CardRef, MagicLink, MemberCardContext, TradeOfferFull
 from superpal.palymarket.models import Market
 from superpal.sessions import Session
 from superpal.webapp.app import create_app
@@ -1124,7 +1124,8 @@ async def test_marketplace_page_embeds_parseable_json(client):
         ),
         patch("superpal.webapp.routes.get_active_listings", new=AsyncMock(return_value=[listing])),
         patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
-        patch("superpal.webapp.routes.get_my_offers", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_outgoing_offers", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_incoming_offers", new=AsyncMock(return_value=[])),
         patch(
             "superpal.webapp.routes.get_collection",
             new=AsyncMock(return_value={"owned": [{"display_name": HOSTILE_NAME}]}),
@@ -1202,11 +1203,13 @@ async def test_marketplace_listings_show_card_names_not_just_rarity(client):
 
     offer = MagicMock()
     offer.id = 3
-    offer.items = [
+    offer.give_items = [
         {"member_id": "444", "display_name": "Chadwick", "rarity": "uncommon", "avatar_url": None}
     ]
+    offer.get_items = listing.items
     offer.status = "pending"
     offer.expires_at = "2026-01-01T00:00:00+00:00"
+    offer.recipient_display_name = HOSTILE_NAME
     offer.listing = listing
 
     with (
@@ -1218,7 +1221,8 @@ async def test_marketplace_listings_show_card_names_not_just_rarity(client):
         patch(
             "superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[my_listing])
         ),
-        patch("superpal.webapp.routes.get_my_offers", new=AsyncMock(return_value=[offer])),
+        patch("superpal.webapp.routes.get_outgoing_offers", new=AsyncMock(return_value=[offer])),
+        patch("superpal.webapp.routes.get_incoming_offers", new=AsyncMock(return_value=[])),
         patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value={"owned": []})),
         patch(
             "superpal.webapp.routes.get_member_card_context",
@@ -1377,3 +1381,321 @@ async def test_palymarket_zero_volume_market_renders_even_split(client):
     assert response.status_code == 200
     assert "50% YES" in response.text
     assert "50% NO" in response.text
+
+
+# ─── Direct trade routes ────────────────────────────────────────────────────
+
+
+def _offer(offer_id=5, proposer_id="111", recipient_id="222", status="pending"):
+    now = datetime.now(timezone.utc)
+    return TradeOfferFull(
+        id=offer_id,
+        proposer_id=proposer_id,
+        proposer_display_name="Alice",
+        recipient_id=recipient_id,
+        recipient_display_name="Bob",
+        status=status,
+        created_at=now.isoformat(),
+        expires_at=(now + timedelta(hours=24)).isoformat(),
+        give_items=[CardRef("222", "rare", "Bob", None)],
+        get_items=[CardRef("111", "legendary", "Alice", None)],
+    )
+
+
+def _other_collection():
+    return {
+        "owned": [
+            {
+                "member_id": "111",
+                "display_name": "Alice",
+                "avatar_url": None,
+                "rarity": "legendary",
+                "quantity": 1,
+                "bio": None,
+                "stats_pairs": [],
+            }
+        ],
+        "undiscovered": [],
+        "counts": {"common": 0, "uncommon": 0, "rare": 0, "legendary": 1},
+    }
+
+
+@pytest.mark.asyncio
+async def test_player_collection_requires_a_session(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.get("/collection/222")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_player_collection_shows_another_players_cards(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_collection",
+            new=AsyncMock(return_value=_other_collection()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member("Bob")),
+        ),
+    ):
+        response = await client.get("/collection/222")
+    assert response.status_code == 200
+    assert "Alice" in response.text
+    assert "/trade/new?with=222" in response.text
+
+
+@pytest.mark.asyncio
+async def test_trade_builder_refuses_to_target_yourself(client):
+    with patch(
+        "superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=_session())
+    ):
+        response = await client.get("/trade/new?with=111")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/collection"
+
+
+@pytest.mark.asyncio
+async def test_trade_builder_loads_both_collections(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_collection",
+            new=AsyncMock(return_value=_other_collection()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member("Bob")),
+        ),
+        patch("superpal.webapp.routes.get_offer_by_id", new=AsyncMock(return_value=None)),
+    ):
+        response = await client.get("/trade/new?with=222")
+    assert response.status_code == 200
+    assert "Bob" in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_trade_sends_both_sides_to_the_service(client):
+    create = AsyncMock(return_value=_offer())
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.create_direct_offer", new=create),
+        patch("superpal.webapp.routes.notify.notify_trade_offer", new=AsyncMock()),
+    ):
+        response = await client.post(
+            "/trade",
+            data={
+                "recipient_id": "222",
+                "give_member_ids": ["222"],
+                "give_rarities": ["rare"],
+                "get_member_ids": ["111"],
+                "get_rarities": ["legendary"],
+            },
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/trade/5"
+    call = create.await_args
+    assert call is not None
+    assert call.args[0] == "111"
+    assert call.args[1] == "222"
+    assert [(c.member_id, c.rarity) for c in call.args[2]] == [("222", "rare")]
+    assert [(c.member_id, c.rarity) for c in call.args[3]] == [("111", "legendary")]
+
+
+@pytest.mark.asyncio
+async def test_create_trade_failure_returns_to_the_builder(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.create_direct_offer",
+            new=AsyncMock(return_value="recipient_no_card"),
+        ),
+    ):
+        response = await client.post(
+            "/trade",
+            data={
+                "recipient_id": "222",
+                "give_member_ids": ["222"],
+                "give_rarities": ["rare"],
+                "get_member_ids": ["111"],
+                "get_rarities": ["legendary"],
+            },
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/trade/new?with=222&error=recipient_no_card"
+
+
+@pytest.mark.asyncio
+async def test_trade_window_hidden_from_third_parties(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_offer_by_id",
+            new=AsyncMock(return_value=_offer(proposer_id="222", recipient_id="333")),
+        ),
+    ):
+        response = await client.get("/trade/5")
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_trade_window_shows_the_viewers_side_on_the_left(client):
+    """The proposer's own cards are the left panel; what they'd receive is on the right."""
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_offer_by_id", new=AsyncMock(return_value=_offer())),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+    ):
+        response = await client.get("/trade/5")
+    assert response.status_code == 200
+    left = response.text.index("trade-side-mine")
+    right = response.text.index("trade-side-theirs")
+    assert response.text.index("RARE", left, right) < right
+
+
+@pytest.mark.asyncio
+async def test_accept_trade_uses_the_session_user_as_recipient(client):
+    accept = AsyncMock(return_value=(True, None))
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.accept_offer", new=accept),
+        patch("superpal.webapp.routes.get_offer_by_id", new=AsyncMock(return_value=_offer())),
+        patch("superpal.webapp.routes.notify.edit_offer_dm", new=AsyncMock()),
+        patch("superpal.webapp.routes._broadcast_trade", new=AsyncMock()),
+    ):
+        response = await client.post("/trade/5/accept")
+    assert response.status_code == 303
+    assert accept.await_args is not None
+    assert accept.await_args.args == (5, "111")
+
+
+@pytest.mark.asyncio
+async def test_trade_state_api_refuses_non_participants(client):
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch(
+            "superpal.webapp.routes.get_offer_by_id",
+            new=AsyncMock(return_value=_offer(proposer_id="222", recipient_id="333")),
+        ),
+    ):
+        response = await client.get("/api/trade/5/state")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_magic_link_next_sends_you_to_the_trade_builder(client):
+    with patch("superpal.webapp.routes.use_magic_link", new=AsyncMock(return_value=_link())):
+        response = await client.get("/link/abc123?next=/trade/new%3Fwith%3D222")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/trade/new?with=222"
+    assert "bringus_session" in response.headers["set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_magic_link_next_ignores_offsite_targets(client):
+    fake_collection = {
+        "owned": [],
+        "undiscovered": [],
+        "counts": {"common": 0, "uncommon": 0, "rare": 0, "legendary": 0},
+    }
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=(0,))
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+    with (
+        patch("superpal.webapp.routes.use_magic_link", new=AsyncMock(return_value=_link())),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member()),
+        ),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
+        response = await client.get("/link/abc123?next=https://evil.example/steal")
+    assert response.status_code == 200
+
+
+def test_trade_ws_pushes_the_other_partys_answer(app):
+    """Declining in one window must reach the socket the other party is holding open."""
+    from fastapi.testclient import TestClient
+
+    with (
+        patch("superpal.webapp.routes.get_web_session", new=AsyncMock(return_value=_session())),
+        patch("superpal.webapp.routes.get_offer_by_id", new=AsyncMock(return_value=_offer())),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with client.websocket_connect("/ws/trade/5") as ws:
+            first = ws.receive_json()
+            assert first["type"] == "state"
+            assert first["data"]["status"] == "pending"
+            assert [c["rarity"] for c in first["data"]["mine"]] == ["rare"]
+
+            with (
+                patch(
+                    "superpal.webapp.routes.get_session_from_request",
+                    new=AsyncMock(return_value=_session()),
+                ),
+                patch("superpal.webapp.routes.decline_offer", new=AsyncMock(return_value=True)),
+                patch("superpal.webapp.routes.notify.edit_offer_dm", new=AsyncMock()),
+                patch(
+                    "superpal.webapp.routes.get_offer_by_id",
+                    new=AsyncMock(return_value=_offer(status="declined")),
+                ),
+            ):
+                client.post("/trade/5/decline", follow_redirects=False)
+
+            assert ws.receive_json()["data"]["status"] == "declined"
+
+
+def test_trade_ws_rejects_non_participant(app):
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+
+    with (
+        patch("superpal.webapp.routes.get_web_session", new=AsyncMock(return_value=_session())),
+        patch(
+            "superpal.webapp.routes.get_offer_by_id",
+            new=AsyncMock(return_value=_offer(proposer_id="222", recipient_id="333")),
+        ),
+    ):
+        client = TestClient(app, cookies={"bringus_session": "sess_abc"})
+        with pytest.raises(StarletteWSDisconnect):
+            with client.websocket_connect("/ws/trade/5") as ws:
+                ws.receive_json()

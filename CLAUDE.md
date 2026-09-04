@@ -41,16 +41,37 @@ Two processes run concurrently inside a single container via `asyncio.gather` in
 
 `src/superpal/notify.py` is the webapp→Discord seam: bot.py registers the bot instance at startup, and webapp routes call `notify.notify_trade_offer()` / `notify.edit_offer_dm()` / `notify.get_guild_members_cache()`. Every notify function no-ops when no bot is registered (standalone webapp, tests).
 
-The webapp's `lifespan` handler in `src/superpal/webapp/app.py` calls `init_db()` before the first request, ensuring all SQLite schema migrations run before any HTTP handler touches the DB. The bot's `on_ready` event also calls `init_db()` — both are safe because all migrations are idempotent `ALTER TABLE ... ADD COLUMN` wrapped in `try/except OperationalError`.
+The webapp's `lifespan` handler in `src/superpal/webapp/app.py` calls `init_db()` before the first request, ensuring all SQLite schema migrations run before any HTTP handler touches the DB. The bot's `on_ready` event also calls `init_db()` — both are safe because every migration is idempotent — `ALTER TABLE ... ADD COLUMN` wrapped in `try/except OperationalError`, and the one table rebuild (`_migrate_trade_offers`) guarded by a `PRAGMA table_info` check.
 
 ### Card game data layer (`src/superpal/cards/`)
 
 - **`db.py`** — `DB_PATH` (env `CARDS_DB_PATH`, default `cards.db`), schema definition, `init_db()` with inline migrations
-- **`service.py`** — all async business logic: draw, trade-in, upgrade, marketplace trades, magic links, admin ops
+- **`service.py`** — async business logic: draw, trade-in, upgrade, gifts, magic links, admin ops
 - **`models.py`** — dataclasses (`Member`, `UserCard`, `MemberCardContext`, `MagicLink`, `Fight`, `FightCard`, `FightLogEntry`, `PlayerItem`) and rarity constants
 - **`embeds.py`** — Discord embed builders for card draw results
+- **`trade_service.py`** — listings and trade offers (see below)
 - **`fight_service.py`** — turn-based card fight system (see below)
 - **`pringle_service.py`** — Pringle economy: balances, item shop, fight payouts
+
+### Trading
+
+Both kinds of trade are one `trade_offers` row carrying both sides: `trade_offer_items.side` is
+`give` (proposer → recipient) or `get` (recipient → proposer), so `accept_offer()` settles any
+trade the same way.
+
+- **Marketplace listing** — a player lists cards, others offer against it (`create_listing_offer`,
+  which snapshots the listing's items as the offer's `get` side). Accepting completes the listing
+  and declines its sibling offers.
+- **Direct trade** — `create_direct_offer` proposes a swap at any player with no listing involved;
+  the proposer fills both sides, validated against what each player currently holds. The recipient
+  accepts, declines, or counters — a counter closes the parent as `countered` and creates the
+  reversed offer (`counter_of_id`).
+
+Web UI: `/collection/{player_id}` (public collection) → `/trade/new?with={id}` (OSRS-style builder,
+your cards left, theirs right) → `/trade/{id}` (trade window, always the viewer's own cards on the
+left, with an accept confirmation screen). `/ws/trade/{id}` pushes state to both parties' open
+windows; all mutations are ordinary form posts. `/card-trade [player]` DMs a magic link with
+`?next=` pointing straight at the builder.
 
 ### Fight system
 
