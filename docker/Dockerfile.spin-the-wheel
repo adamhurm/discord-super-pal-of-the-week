@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 LABEL MAINTAINER="Adam Hurm" INFO="Discord Spin The Wheel"
 
 WORKDIR /super-pal
