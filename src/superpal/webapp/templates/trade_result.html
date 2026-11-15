@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trade Complete — Bringus Card Game</title>
+  <title>{{ title or "Trade Complete" }} — Bringus Card Game</title>
   <link rel="icon" href="/static/favicon.ico">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -41,7 +41,7 @@
 </head>
 <body>
   <div class="result-box">
-    <p class="label">Trade complete — you received:</p>
+    <p class="label">{{ heading or "Trade complete — you received:" }}</p>
     <div class="card card-{{ rarity }}">
       {% if avatar_url %}
         <img class="card-avatar" src="{{ avatar_url }}" alt="">

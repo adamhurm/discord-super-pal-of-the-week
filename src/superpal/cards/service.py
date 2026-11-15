@@ -250,11 +250,38 @@ async def gift_card(
     ), None
 
 
+async def get_trade_in_targets(rarity: str, exclude_member_id: str | None = None) -> list[dict]:
+    """Members a trade-in at `rarity` can be exchanged for, sorted by display name.
+
+    Same pool the random trade-in drew from: non-excluded members whose forced rarity
+    (if any) matches. The card being traded away is left out — swapping 3 copies for
+    one more of the same card would just burn two."""
+    if rarity not in RARITY_ORDER:
+        return []
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT discord_id, display_name FROM members "
+            "WHERE is_excluded = 0 AND (forced_rarity IS NULL OR forced_rarity = ?) "
+            "ORDER BY display_name COLLATE NOCASE",
+            (rarity,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [{"discord_id": r[0], "display_name": r[1]} for r in rows if r[0] != exclude_member_id]
+
+
 async def trade_in(
-    owner_id: str, card_member_id: str, rarity: str, drawn_by_name: str = ""
+    owner_id: str,
+    card_member_id: str,
+    rarity: str,
+    drawn_by_name: str = "",
+    target_member_id: str | None = None,
 ) -> UserCard | None:
-    """Trade 3x [card_member_id, rarity] for a random card of the same rarity.
-    Returns the new card, or None if insufficient duplicates or invalid rarity."""
+    """Trade 3x [card_member_id, rarity] for one card of the same rarity.
+
+    With `target_member_id` the player picks which member they receive; it must be in
+    `get_trade_in_targets(rarity, card_member_id)`. Without it, a random eligible member.
+    Returns the new card, or None if insufficient duplicates, invalid rarity, or the
+    target isn't eligible — in every None case no cards are spent."""
     if rarity not in RARITY_ORDER:
         return None
 
@@ -270,6 +297,22 @@ async def trade_in(
         if not row or row[0] < 3:
             return None
 
+        async with db.execute(
+            "SELECT discord_id FROM members "
+            "WHERE is_excluded = 0 AND (forced_rarity IS NULL OR forced_rarity = ?)",
+            (rarity,),
+        ) as cur:
+            eligible = [r[0] for r in await cur.fetchall()]
+
+        if target_member_id is not None:
+            if target_member_id == card_member_id or target_member_id not in eligible:
+                return None
+            new_member_id = target_member_id
+        else:
+            if not eligible:
+                return None
+            new_member_id = random.choice(eligible)
+
         await db.execute(
             "UPDATE user_cards SET quantity = quantity - 3 "
             "WHERE owner_id = ? AND card_member_id = ? AND rarity = ?",
@@ -279,19 +322,6 @@ async def trade_in(
             "DELETE FROM user_cards WHERE owner_id = ? AND quantity <= 0",
             (owner_id,),
         )
-
-        async with db.execute(
-            "SELECT discord_id FROM members "
-            "WHERE is_excluded = 0 AND (forced_rarity IS NULL OR forced_rarity = ?)",
-            (rarity,),
-        ) as cur:
-            eligible = [r[0] for r in await cur.fetchall()]
-
-        if not eligible:
-            await db.commit()
-            return None
-
-        new_member_id = random.choice(eligible)
 
         await db.execute(
             """

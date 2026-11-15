@@ -17,6 +17,7 @@ from superpal.cards.service import (
     get_leaderboard,
     get_member_display_name,
     get_owned_card_subjects,
+    get_trade_in_targets,
     gift_card,
     trade_in,
     upgrade,
@@ -279,11 +280,12 @@ class CardsCog(commands.Cog):
 
     @app_commands.command(
         name="card-trade-in",
-        description="Trade 3 duplicate cards for a random card of the same rarity",
+        description="Trade 3 duplicate cards for a card of your choice at the same rarity",
     )
     @app_commands.describe(
         card="The card you want to trade in",
         rarity="The rarity of the card to trade",
+        target="The card you want in return (random if omitted)",
     )
     @app_commands.choices(rarity=RARITY_CHOICES)
     async def trade_in_command(
@@ -291,6 +293,7 @@ class CardsCog(commands.Cog):
         interaction: discord.Interaction,
         card: str,
         rarity: str,
+        target: str | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         result_card = await trade_in(
@@ -298,13 +301,18 @@ class CardsCog(commands.Cog):
             card_member_id=card,
             rarity=rarity,
             drawn_by_name=interaction.user.display_name,
+            target_member_id=target,
         )
         if result_card is None:
             display_name = await get_member_display_name(card) or "Unknown"
-            await interaction.followup.send(
-                f"You need at least 3× {rarity.upper()} {display_name} to trade in.",
-                ephemeral=True,
-            )
+            quantity = await get_card_quantity(str(interaction.user.id), card, rarity)
+            if quantity < 3:
+                msg = f"You need at least 3× {rarity.upper()} {display_name} to trade in."
+            else:
+                msg = (
+                    f"That card isn't available as a {rarity.upper()} trade-in for {display_name}."
+                )
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         embed = await _member_card_embed(
@@ -455,6 +463,21 @@ class CardsCog(commands.Cog):
             view=view,
             ephemeral=True,
         )
+
+    @trade_in_command.autocomplete("target")
+    async def _trade_in_target_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        rarity = getattr(interaction.namespace, "rarity", None)
+        source = getattr(interaction.namespace, "card", None)
+        if not rarity:
+            return []
+        targets = await get_trade_in_targets(rarity, exclude_member_id=source)
+        matches = [t for t in targets if current.lower() in t["display_name"].lower()]
+        return [
+            app_commands.Choice(name=t["display_name"][:100], value=t["discord_id"])
+            for t in matches[:25]
+        ]
 
     @display_card_command.autocomplete("card")
     @trade_in_command.autocomplete("card")

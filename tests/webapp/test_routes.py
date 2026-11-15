@@ -176,7 +176,7 @@ async def test_trade_in_without_session_shows_expired(client):
     with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
         response = await client.post(
             "/collection/trade-in",
-            data={"member_id": "111", "rarity": "common"},
+            data={"member_id": "111", "rarity": "common", "target_member_id": "222"},
         )
     assert response.status_code == 200
     assert "expired" in response.text.lower()
@@ -198,9 +198,10 @@ async def test_trade_in_success_shows_result(client):
         first_acquired_at=datetime.now(timezone.utc).isoformat(),
     )
 
+    trade_in_mock = AsyncMock(return_value=received_card)
     with (
         patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
-        patch("superpal.webapp.routes.trade_in", new=AsyncMock(return_value=received_card)),
+        patch("superpal.webapp.routes.trade_in", new=trade_in_mock),
         patch(
             "superpal.webapp.routes.get_member_card_context",
             new=AsyncMock(return_value=_member("Florp Xennial")),
@@ -208,11 +209,91 @@ async def test_trade_in_success_shows_result(client):
     ):
         response = await client.post(
             "/collection/trade-in",
-            data={"member_id": "222", "rarity": "common"},
+            data={"member_id": "333", "rarity": "common", "target_member_id": "222"},
         )
     assert response.status_code == 200
     assert "trade" in response.text.lower()
     assert "Florp Xennial" in response.text
+    assert trade_in_mock.await_args is not None
+    assert trade_in_mock.await_args.kwargs["target_member_id"] == "222"
+
+
+@pytest.mark.asyncio
+async def test_trade_in_without_target_is_rejected(client):
+    link = _session()
+    trade_in_mock = AsyncMock()
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.trade_in", new=trade_in_mock),
+    ):
+        response = await client.post(
+            "/collection/trade-in",
+            data={"member_id": "333", "rarity": "common"},
+        )
+    assert response.status_code == 422
+    trade_in_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upgrade_without_session_shows_expired(client):
+    with patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=None)):
+        response = await client.post(
+            "/collection/upgrade",
+            data={"member_id": "111", "rarity": "common"},
+        )
+    assert response.status_code == 200
+    assert "expired" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_upgrade_success_shows_result(client):
+    from datetime import datetime, timezone
+
+    from superpal.cards.models import UserCard
+
+    link = _session()
+    upgraded = UserCard(
+        id=43,
+        owner_id="111",
+        card_member_id="222",
+        rarity="uncommon",
+        quantity=1,
+        first_acquired_at=datetime.now(timezone.utc).isoformat(),
+    )
+    upgrade_mock = AsyncMock(return_value=upgraded)
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.upgrade", new=upgrade_mock),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member("Florp Xennial")),
+        ),
+    ):
+        response = await client.post(
+            "/collection/upgrade",
+            data={"member_id": "222", "rarity": "common"},
+        )
+    assert response.status_code == 200
+    assert "Upgrade complete" in response.text
+    assert "Florp Xennial" in response.text
+    assert "UNCOMMON" in response.text
+    upgrade_mock.assert_awaited_once_with(owner_id="111", card_member_id="222", rarity="common")
+
+
+@pytest.mark.asyncio
+async def test_upgrade_insufficient_redirects_to_collection(client):
+    link = _session()
+    with (
+        patch("superpal.webapp.routes.get_session_from_request", new=AsyncMock(return_value=link)),
+        patch("superpal.webapp.routes.upgrade", new=AsyncMock(return_value=None)),
+    ):
+        response = await client.post(
+            "/collection/upgrade",
+            data={"member_id": "222", "rarity": "legendary"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/collection"
 
 
 @pytest.mark.asyncio
@@ -224,7 +305,7 @@ async def test_trade_in_insufficient_redirects_to_collection(client):
     ):
         response = await client.post(
             "/collection/trade-in",
-            data={"member_id": "999", "rarity": "common"},
+            data={"member_id": "999", "rarity": "common", "target_member_id": "222"},
             follow_redirects=False,
         )
     assert response.status_code == 303
@@ -451,6 +532,71 @@ async def test_collection_shows_completion_pct(client):
         response = await client.get("/collection")
     assert response.status_code == 200
     assert "50%" in response.text
+
+
+@pytest.mark.asyncio
+async def test_collection_shows_trade_in_and_trade_up_buttons(client):
+    """3+ copies → Trade In with a target picker; 5+ non-legendary → Trade Up."""
+
+    def _card(member_id, name, rarity, quantity):
+        return {
+            "member_id": member_id,
+            "display_name": name,
+            "avatar_url": None,
+            "rarity": rarity,
+            "quantity": quantity,
+            "bio": None,
+            "stats_pairs": [],
+        }
+
+    fake_collection = {
+        "owned": [
+            _card("111", "Alice", "common", 5),
+            _card("222", "Bob", "rare", 3),
+            _card("333", "Cara", "legendary", 5),
+        ],
+        "undiscovered": [],
+        "counts": {"common": 5, "uncommon": 0, "rare": 3, "legendary": 5},
+    }
+    targets = AsyncMock(
+        side_effect=lambda rarity: [{"discord_id": "444", "display_name": f"Pick-{rarity}"}]
+    )
+
+    mock_cursor = MagicMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.fetchone = AsyncMock(return_value=(0,))
+    mock_conn = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.execute = MagicMock(return_value=mock_cursor)
+
+    with (
+        patch(
+            "superpal.webapp.routes.get_session_from_request",
+            new=AsyncMock(return_value=_session()),
+        ),
+        patch("superpal.webapp.routes.get_collection", new=AsyncMock(return_value=fake_collection)),
+        patch(
+            "superpal.webapp.routes.get_member_card_context",
+            new=AsyncMock(return_value=_member("Alice")),
+        ),
+        patch("superpal.webapp.routes.get_player_listings", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_fight_opponents", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_pending_challenges", new=AsyncMock(return_value=[])),
+        patch("superpal.webapp.routes.get_trade_in_targets", new=targets),
+        patch("superpal.webapp.routes.aiosqlite.connect", return_value=mock_conn),
+    ):
+        response = await client.get("/collection")
+
+    assert response.status_code == 200
+    html = response.text
+    assert html.count("TRADE IN (3×)") == 3
+    # Alice (common ×5) only — Bob has 3, Cara is already legendary.
+    assert html.count("TRADE UP (5×)") == 1
+    assert 'action="/collection/upgrade"' in html
+    assert 'name="target_member_id"' in html
+    assert "Pick-common" in html and "Pick-rare" in html and "Pick-legendary" in html
 
 
 # ─── Fight route auth tests ─────────────────────────────────────────────────

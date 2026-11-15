@@ -194,10 +194,16 @@
         </div>
       {% endif %}
       {% if card.quantity >= 3 %}
-        <form method="post" action="/collection/trade-in" onclick="event.stopPropagation()">
+        <button class="trade-btn" type="button"
+                onclick="event.stopPropagation(); openTradeIn(this.closest('.card'))">TRADE IN (3×)</button>
+      {% endif %}
+      {% if card.quantity >= 5 and card.rarity != 'legendary' %}
+        <form method="post" action="/collection/upgrade"
+              onclick="event.stopPropagation()"
+              onsubmit="return confirmUpgrade(this.closest('.card'))">
           <input type="hidden" name="member_id" value="{{ card.member_id }}">
           <input type="hidden" name="rarity" value="{{ card.rarity }}">
-          <button class="trade-btn" type="submit">TRADE IN (3×)</button>
+          <button class="trade-btn" type="submit">TRADE UP (5×)</button>
         </form>
       {% endif %}
       {% if card.listing_id %}
@@ -252,16 +258,47 @@
       <p>Cards you haven't drawn yet appear as <strong>???</strong> silhouettes — so you can see the full roster.</p>
 
       <h3>Trading In</h3>
-      <p>When you own <strong>3 or more copies</strong> of a card, a <strong>Trade In (3×)</strong> button appears on it. Click it to spend 3 copies and receive 1 random card of the same rarity.</p>
+      <p>When you own <strong>3 or more copies</strong> of a card, a <strong>Trade In (3×)</strong> button appears on it. Click it, pick the member you want, and spend 3 copies to receive 1 card of that member at the same rarity.</p>
 
-      <h3>Upgrading — <code>/upgrade @member rarity</code></h3>
-      <p>Spend <strong>5 copies</strong> of the same [member + rarity] to receive that member at the next rarity tier.</p>
+      <h3>Trading Up</h3>
+      <p>When you own <strong>5 or more copies</strong> of a card, a <strong>Trade Up (5×)</strong> button appears on it. Spend 5 copies of the same [member + rarity] to receive that member at the next rarity tier. (Also available as <code>/card-upgrade</code> in Discord.)</p>
       <ul>
         <li>Common → Uncommon → Rare → Legendary</li>
         <li>Legendary cards cannot be upgraded further.</li>
       </ul>
     </div>
   </div>
+  <!-- Trade-in target picker -->
+  <div class="modal-backdrop" id="trade-in-modal" onclick="if(event.target===this)closeTradeIn()">
+    <div class="modal" style="max-width:380px">
+      <button class="modal-close" onclick="closeTradeIn()">×</button>
+      <h2>Trade In (3×)</h2>
+      <p id="trade-in-info" style="font-size:13px;color:#b9bbbe;margin-bottom:12px;"></p>
+      <form method="post" action="/collection/trade-in">
+        <input type="hidden" id="trade-in-member-id" name="member_id" value="">
+        <input type="hidden" id="trade-in-rarity" name="rarity" value="">
+        <label for="trade-in-target" style="font-size:12px;color:#72767d;display:block;margin-bottom:4px;">
+          Card you want in return
+        </label>
+        <select id="trade-in-target" name="target_member_id" required
+                style="width:100%;background:#313338;border:1px solid #3f4147;border-radius:4px;
+                       color:#dcddde;padding:6px 10px;font-size:13px;margin-bottom:12px;"></select>
+        <div style="display:flex;gap:8px;">
+          <button id="trade-in-submit" type="submit"
+                  style="background:#5865f2;color:#fff;border:none;border-radius:4px;
+                         padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;flex:1;">
+            Trade In
+          </button>
+          <button type="button" onclick="closeTradeIn()"
+                  style="background:#3f4147;color:#b9bbbe;border:none;border-radius:4px;
+                         padding:7px 16px;font-size:13px;cursor:pointer;">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Right-click context menu -->
   <div id="card-menu" style="display:none;position:fixed;background:#2b2d31;
        border:1px solid #3f4147;border-radius:6px;padding:4px 0;z-index:200;min-width:150px;">
@@ -380,6 +417,46 @@
       ).join('');
 
       document.getElementById('card-modal').style.display = 'flex';
+    }
+
+    const TRADE_IN_TARGETS = {{ (trade_in_targets or {}) | tojson }};
+
+    function openTradeIn(el) {
+      const memberId = el.dataset.memberId;
+      const rarity = el.dataset.rarity;
+      document.getElementById('trade-in-member-id').value = memberId;
+      document.getElementById('trade-in-rarity').value = rarity;
+      document.getElementById('trade-in-info').textContent =
+        `Spend 3× ${rarity.toUpperCase()} ${el.dataset.name} for 1× ${rarity.toUpperCase()} card of your choice.`;
+
+      const select = document.getElementById('trade-in-target');
+      select.innerHTML = '';
+      const targets = (TRADE_IN_TARGETS[rarity] || []).filter(t => t.discord_id !== memberId);
+      for (const t of targets) {
+        const opt = document.createElement('option');
+        opt.value = t.discord_id;
+        opt.textContent = t.display_name;
+        select.appendChild(opt);
+      }
+      const submit = document.getElementById('trade-in-submit');
+      submit.disabled = targets.length === 0;
+      submit.textContent = targets.length ? 'Trade In' : 'No cards available';
+
+      document.getElementById('trade-in-modal').style.display = 'flex';
+    }
+
+    const NEXT_RARITY = { common: 'uncommon', uncommon: 'rare', rare: 'legendary' };
+
+    function confirmUpgrade(el) {
+      const cardName = el.dataset.name;
+      const rarity = el.dataset.rarity;
+      return confirm(
+        `Spend 5× ${rarity.toUpperCase()} ${cardName} for 1× ${NEXT_RARITY[rarity].toUpperCase()} ${cardName}?`
+      );
+    }
+
+    function closeTradeIn() {
+      document.getElementById('trade-in-modal').style.display = 'none';
     }
 
     let _menuCard = null;
