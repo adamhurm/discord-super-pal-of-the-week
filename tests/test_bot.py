@@ -429,3 +429,118 @@ class TestLabelCardSubjects:
             ("Bringus (Custom) (1111)", "aaaa1111"),
             ("Bringus (Custom) (2222)", "bbbb2222"),
         ]
+
+
+class TestSuperPalDrawEligibility:
+    """Only members who drew a card during the week can become super pal."""
+
+    def _member(self, member_id, name, roles=None):
+        member = Mock(spec=discord.Member)
+        member.id = member_id
+        member.name = name
+        member.mention = f"<@{member_id}>"
+        member.bot = False
+        member.roles = roles or []
+        member.add_roles = AsyncMock()
+        member.remove_roles = AsyncMock()
+        return member
+
+    def _cog(self, guild, channel):
+        from superpal.cogs.superpal import SuperPalCog
+
+        bot = Mock()
+        bot.get_guild = Mock(return_value=guild)
+        bot.get_channel = Mock(return_value=channel)
+        return SuperPalCog(bot)
+
+    @pytest.mark.asyncio
+    async def test_weekly_rotation_only_picks_members_who_drew(
+        self, mock_env, mock_guild, mock_super_pal_role, mock_channel
+    ):
+        current = self._member(1, "Current", roles=[mock_super_pal_role])
+        drew = self._member(2, "Drew")
+        lurker = self._member(3, "Lurker")
+        mock_guild.members = [current, drew, lurker]
+        mock_guild.member_count = 3
+        mock_guild.roles = [mock_super_pal_role]
+        cog = self._cog(mock_guild, mock_channel)
+
+        with (
+            patch("discord.utils.get", return_value=mock_super_pal_role),
+            patch(
+                "superpal.cards.service.get_weekly_drawer_ids",
+                new=AsyncMock(return_value={"1", "2"}),
+            ),
+        ):
+            for _ in range(20):
+                await cog.super_pal_of_the_week.coro(cog)
+
+        drew.add_roles.assert_awaited_with(mock_super_pal_role)
+        lurker.add_roles.assert_not_awaited()
+        current.add_roles.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_weekly_rotation_skips_when_nobody_drew(
+        self, mock_env, mock_guild, mock_super_pal_role, mock_channel
+    ):
+        current = self._member(1, "Current", roles=[mock_super_pal_role])
+        lurker = self._member(3, "Lurker")
+        mock_guild.members = [current, lurker]
+        mock_guild.member_count = 2
+        mock_guild.roles = [mock_super_pal_role]
+        cog = self._cog(mock_guild, mock_channel)
+
+        with (
+            patch("discord.utils.get", return_value=mock_super_pal_role),
+            patch(
+                "superpal.cards.service.get_weekly_drawer_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+        ):
+            await cog.super_pal_of_the_week.coro(cog)
+
+        lurker.add_roles.assert_not_awaited()
+        current.remove_roles.assert_not_awaited()
+        assert "Nobody drew a card" in mock_channel.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_spotw_rejects_member_who_has_not_drawn(
+        self, mock_env, mock_guild, mock_super_pal_role, mock_channel
+    ):
+        lurker = self._member(3, "Lurker")
+        mock_guild.members = [lurker]
+        mock_guild.roles = [mock_super_pal_role]
+        cog = self._cog(mock_guild, mock_channel)
+        ctx = Mock()
+        ctx.send = AsyncMock()
+
+        with (
+            patch("discord.utils.get", return_value=mock_super_pal_role),
+            patch(
+                "superpal.cards.service.get_weekly_drawer_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+        ):
+            await cog.spotw_command.callback(cog, ctx, lurker)
+
+        lurker.add_roles.assert_not_awaited()
+        assert "hasn't drawn a card" in ctx.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_spinthewheel_lists_only_members_who_drew(
+        self, mock_env, mock_guild, mock_channel
+    ):
+        drew = self._member(2, "Drew")
+        lurker = self._member(3, "Lurker")
+        mock_guild.members = [drew, lurker]
+        cog = self._cog(mock_guild, mock_channel)
+        ctx = Mock()
+        ctx.send = AsyncMock()
+
+        with patch(
+            "superpal.cards.service.get_weekly_drawer_ids",
+            new=AsyncMock(return_value={"2"}),
+        ):
+            await cog.spinthewheel.callback(cog, ctx)
+
+        mock_channel.send.assert_awaited_once_with("?pick Drew")

@@ -32,6 +32,17 @@ def _get_week_start() -> str:
     return (next_sunday_noon_utc() - timedelta(weeks=1)).isoformat()
 
 
+def get_closing_week_start() -> str:
+    """Start of the draw week the weekly Super Pal rotation is closing out.
+
+    The rotation fires at the Sunday-noon week boundary, so judge by the week
+    that contained one hour ago — that's the week that just ended whether the
+    task wakes exactly on time, a little late, or a hair early.
+    """
+    an_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    return (next_sunday_noon_utc(an_hour_ago) - timedelta(weeks=1)).isoformat()
+
+
 def _roll_rarity() -> str:
     population = list(RARITY_WEIGHTS.keys())
     weights = list(RARITY_WEIGHTS.values())
@@ -126,6 +137,10 @@ async def draw_card(owner_id: str, max_draws: int, drawn_by_name: str = "") -> U
             ON CONFLICT(user_id, week_start)
             DO UPDATE SET draws_used = draws_used + 1
         """,
+            (owner_id, week_start),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO weekly_drawers (user_id, week_start) VALUES (?, ?)",
             (owner_id, week_start),
         )
 
@@ -484,6 +499,20 @@ async def get_fight_opponents(exclude_id: str) -> list[dict]:
         ) as cur:
             rows = await cur.fetchall()
     return [{"discord_id": r[0], "display_name": r[1]} for r in rows]
+
+
+async def get_weekly_drawer_ids(week_start: str | None = None) -> set[str]:
+    """Discord IDs of everyone who drew at least one card in the given draw week.
+
+    Defaults to the current week. Admin draw resets and refunds don't affect
+    this — once you've drawn, you stay on the list for that week.
+    """
+    week_start = week_start or _get_week_start()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT user_id FROM weekly_drawers WHERE week_start = ?", (week_start,)
+        ) as cur:
+            return {r[0] for r in await cur.fetchall()}
 
 
 async def reset_draw_log() -> None:
