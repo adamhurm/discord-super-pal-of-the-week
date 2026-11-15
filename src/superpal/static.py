@@ -17,7 +17,7 @@ COMMANDS_MSG = (
     "**/card-draw** — Draw a random Bringus card (5 per week; Super Pal gets 10). "
     "Resets every Sunday.\n"
     "**/card-display** — Show off a card you own in the channel.\n"
-    "**/card-trade-in** — Trade 3 duplicates for a new random card of that rarity.\n"
+    "**/card-trade-in** — Trade 3 duplicates for a card of your choice at that rarity.\n"
     "**/card-upgrade** — Spend 5 duplicates to upgrade a card to the next rarity.\n"
     "**/card-gift** — Give one of your cards to another player.\n"
     "**/card-collection** — Get a private link to your card collection.\n"

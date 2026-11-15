@@ -166,6 +166,73 @@ async def test_trade_in_succeeds_with_three(db):
     assert remaining == 0
 
 
+async def _seed_trade_in(db_mod, svc, quantity=3):
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+            {"discord_id": "333", "display_name": "Cara", "avatar_url": None},
+        ]
+    )
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO user_cards"
+            " (owner_id, card_member_id, rarity, quantity, first_acquired_at) "
+            "VALUES ('111', '222', 'common', ?, ?)",
+            (quantity, datetime.now(timezone.utc).isoformat()),
+        )
+        await conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_trade_in_with_target_gives_chosen_card(db):
+    db_mod, svc = db
+    await _seed_trade_in(db_mod, svc, quantity=4)
+    result = await svc.trade_in("111", "222", "common", target_member_id="333")
+    assert result is not None
+    assert result.card_member_id == "333"
+    assert result.rarity == "common"
+    assert await svc.get_card_quantity("111", "222", "common") == 1
+
+
+@pytest.mark.asyncio
+async def test_trade_in_target_same_as_source_rejected(db):
+    db_mod, svc = db
+    await _seed_trade_in(db_mod, svc)
+    result = await svc.trade_in("111", "222", "common", target_member_id="222")
+    assert result is None
+    assert await svc.get_card_quantity("111", "222", "common") == 3
+
+
+@pytest.mark.asyncio
+async def test_trade_in_ineligible_target_keeps_cards(db):
+    db_mod, svc = db
+    await _seed_trade_in(db_mod, svc)
+    await svc.set_excluded("333", excluded=True)
+    assert await svc.trade_in("111", "222", "common", target_member_id="333") is None
+    assert await svc.trade_in("111", "222", "common", target_member_id="nobody") is None
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE members SET forced_rarity = 'rare' WHERE discord_id = '111'")
+        await conn.commit()
+    assert await svc.trade_in("111", "222", "common", target_member_id="111") is None
+    assert await svc.get_card_quantity("111", "222", "common") == 3
+
+
+@pytest.mark.asyncio
+async def test_get_trade_in_targets_filters_pool(db):
+    db_mod, svc = db
+    await _seed_trade_in(db_mod, svc)
+    await svc.set_excluded("333", excluded=True)
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.execute("UPDATE members SET forced_rarity = 'rare' WHERE discord_id = '111'")
+        await conn.commit()
+    common = await svc.get_trade_in_targets("common", exclude_member_id="222")
+    assert common == []
+    rare = await svc.get_trade_in_targets("rare")
+    assert [t["discord_id"] for t in rare] == ["111", "222"]
+    assert await svc.get_trade_in_targets("bogus") == []
+
+
 @pytest.mark.asyncio
 async def test_upgrade_legendary_rejected(db):
     _db_mod, svc = db

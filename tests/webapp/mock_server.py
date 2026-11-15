@@ -4,7 +4,6 @@ Start with:  uv run python mock_server.py
 Then open:   http://localhost:8080
 """
 
-import random
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +48,7 @@ MOCK_OWNED: list[dict[str, Any]] = [
         "display_name": "Bingus McFlop",
         "avatar_url": None,
         "rarity": "common",
-        "quantity": 3,
+        "quantity": 6,
     },
     {
         "member_id": "5",
@@ -139,6 +138,8 @@ async def index():
 
 @app.get("/collection", response_class=HTMLResponse)
 async def collection(request: Request):
+    for card in MOCK_OWNED:
+        card.setdefault("stats_pairs", [])
     total_cards = sum(c["quantity"] for c in MOCK_OWNED)
     unique_members = len({c["member_id"] for c in MOCK_OWNED})
     return templates.TemplateResponse(
@@ -152,8 +153,36 @@ async def collection(request: Request):
             "counts": MOCK_COUNTS,
             "total_cards": total_cards,
             "unique_members": unique_members,
+            "trade_in_targets": {
+                rarity: [
+                    {"discord_id": m["discord_id"], "display_name": m["display_name"]}
+                    for m in MOCK_MEMBERS
+                    if not m["is_excluded"]
+                ]
+                for rarity in ("common", "uncommon", "rare", "legendary")
+            },
         },
     )
+
+
+def _add_mock_card(member: dict, rarity: str) -> int:
+    existing = next(
+        (c for c in MOCK_OWNED if c["member_id"] == member["discord_id"] and c["rarity"] == rarity),
+        None,
+    )
+    if existing:
+        existing["quantity"] += 1
+        return existing["quantity"]
+    MOCK_OWNED.append(
+        {
+            "member_id": member["discord_id"],
+            "display_name": member["display_name"],
+            "avatar_url": member["avatar_url"],
+            "rarity": rarity,
+            "quantity": 1,
+        }
+    )
+    return 1
 
 
 @app.post("/collection/trade-in", response_class=HTMLResponse)
@@ -161,43 +190,27 @@ async def collection_trade_in(
     request: Request,
     member_id: str = Form(...),
     rarity: str = Form(...),
+    target_member_id: str = Form(...),
 ):
-    # Deduct 3 from the traded card (mock only — mutates in-memory list)
-    for card in MOCK_OWNED:
-        if card["member_id"] == member_id and card["rarity"] == rarity:
-            card["quantity"] -= 3
-            break
-    MOCK_OWNED[:] = [c for c in MOCK_OWNED if c["quantity"] > 0]
-
-    # Pick a random eligible member as the result
-    eligible = [m for m in MOCK_MEMBERS if not m["is_excluded"]]
-    received = (
-        random.choice(eligible) if eligible else {"display_name": "Unknown", "avatar_url": None}
-    )
-
-    # Update or add received card in mock collection
-    existing = next(
-        (
-            c
-            for c in MOCK_OWNED
-            if c["member_id"] == received["discord_id"] and c["rarity"] == rarity
-        ),
+    received = next(
+        (m for m in MOCK_MEMBERS if m["discord_id"] == target_member_id and not m["is_excluded"]),
         None,
     )
-    if existing:
-        existing["quantity"] += 1
-        new_qty = existing["quantity"]
-    else:
-        MOCK_OWNED.append(
-            {
-                "member_id": received["discord_id"],
-                "display_name": received["display_name"],
-                "avatar_url": received["avatar_url"],
-                "rarity": rarity,
-                "quantity": 1,
-            }
-        )
-        new_qty = 1
+    source = next(
+        (c for c in MOCK_OWNED if c["member_id"] == member_id and c["rarity"] == rarity), None
+    )
+    if (
+        received is None
+        or source is None
+        or source["quantity"] < 3
+        or member_id == target_member_id
+    ):
+        return RedirectResponse(url="/collection", status_code=303)
+
+    # Mock only — mutates the in-memory list
+    source["quantity"] -= 3
+    MOCK_OWNED[:] = [c for c in MOCK_OWNED if c["quantity"] > 0]
+    new_qty = _add_mock_card(received, rarity)
 
     return templates.TemplateResponse(
         request,
@@ -207,6 +220,41 @@ async def collection_trade_in(
             "avatar_url": received["avatar_url"],
             "rarity": rarity,
             "quantity": new_qty,
+        },
+    )
+
+
+NEXT_RARITY = {"common": "uncommon", "uncommon": "rare", "rare": "legendary"}
+
+
+@app.post("/collection/upgrade", response_class=HTMLResponse)
+async def collection_upgrade(
+    request: Request,
+    member_id: str = Form(...),
+    rarity: str = Form(...),
+):
+    source = next(
+        (c for c in MOCK_OWNED if c["member_id"] == member_id and c["rarity"] == rarity), None
+    )
+    member = next((m for m in MOCK_MEMBERS if m["discord_id"] == member_id), None)
+    if source is None or member is None or source["quantity"] < 5 or rarity not in NEXT_RARITY:
+        return RedirectResponse(url="/collection", status_code=303)
+
+    source["quantity"] -= 5
+    MOCK_OWNED[:] = [c for c in MOCK_OWNED if c["quantity"] > 0]
+    new_rarity = NEXT_RARITY[rarity]
+    new_qty = _add_mock_card(member, new_rarity)
+
+    return templates.TemplateResponse(
+        request,
+        "trade_result.html",
+        {
+            "display_name": member["display_name"],
+            "avatar_url": member["avatar_url"],
+            "rarity": new_rarity,
+            "quantity": new_qty,
+            "title": "Upgrade Complete",
+            "heading": "Upgrade complete — you received:",
         },
     )
 

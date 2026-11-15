@@ -52,12 +52,14 @@ from superpal.cards.service import (
     get_member_card_context,
     get_member_display_name,
     get_pool_stats,
+    get_trade_in_targets,
     reset_draw_log,
     set_excluded,
     set_forced_rarity,
     set_member_avatar,
     set_member_bio_stats,
     trade_in,
+    upgrade,
     use_magic_link,
 )
 from superpal.cards.service import (
@@ -174,6 +176,13 @@ async def _collection_context(user_id: str) -> dict:
 
     fight_opponents = await get_fight_opponents(user_id)
 
+    # Who each rarity's trade-in can be exchanged for. The modal drops the card being
+    # traded away client-side; the service re-validates on submit.
+    trade_in_targets = {
+        rarity: await get_trade_in_targets(rarity)
+        for rarity in sorted({str(c["rarity"]) for c in data["owned"] if c["quantity"] >= 3})
+    }
+
     pending_challenges = [
         {
             "id": c.id,
@@ -194,6 +203,7 @@ async def _collection_context(user_id: str) -> dict:
         "total_draws": total_draws,
         "unique_members": unique_members,
         "fight_opponents": fight_opponents,
+        "trade_in_targets": trade_in_targets,
         "pending_challenges": pending_challenges,
         "completion_pct": completion_pct,
     }
@@ -636,11 +646,17 @@ async def collection_trade_in(
     request: Request,
     member_id: str = Form(...),
     rarity: str = Form(...),
+    target_member_id: str = Form(...),
 ):
     session = await get_session_from_request(request)
     if session is None:
         return templates.TemplateResponse(request, "expired.html")
-    card = await trade_in(owner_id=session.user_id, card_member_id=member_id, rarity=rarity)
+    card = await trade_in(
+        owner_id=session.user_id,
+        card_member_id=member_id,
+        rarity=rarity,
+        target_member_id=target_member_id,
+    )
     if card is None:
         return RedirectResponse(url="/collection", status_code=303)
     return templates.TemplateResponse(
@@ -650,6 +666,33 @@ async def collection_trade_in(
             **(await _member_display(card.card_member_id)),
             "rarity": card.rarity,
             "quantity": card.quantity,
+            "title": "Trade Complete",
+            "heading": "Trade complete — you received:",
+        },
+    )
+
+
+@router.post("/collection/upgrade", response_class=HTMLResponse)
+async def collection_upgrade(
+    request: Request,
+    member_id: str = Form(...),
+    rarity: str = Form(...),
+):
+    session = await get_session_from_request(request)
+    if session is None:
+        return templates.TemplateResponse(request, "expired.html")
+    card = await upgrade(owner_id=session.user_id, card_member_id=member_id, rarity=rarity)
+    if card is None:
+        return RedirectResponse(url="/collection", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "trade_result.html",
+        {
+            **(await _member_display(card.card_member_id)),
+            "rarity": card.rarity,
+            "quantity": card.quantity,
+            "title": "Upgrade Complete",
+            "heading": "Upgrade complete — you received:",
         },
     )
 
