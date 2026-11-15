@@ -9,12 +9,23 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+import superpal.cards.service as card_service
 import superpal.env as superpal_env
 import superpal.static as superpal_static
 from superpal.cogs.helpers import get_non_bot_members, get_super_pal_role
 from superpal.schedule import next_sunday_noon_utc
 
 log = superpal_env.log
+
+NOT_ELIGIBLE_MSG = (
+    "{mention} hasn't drawn a card this week, so they aren't eligible for "
+    "super pal of the week. Use `/card-draw` first!"
+)
+
+
+async def drew_this_week(member: discord.Member) -> bool:
+    """Only members who drew a card in the current draw week can be super pal."""
+    return str(member.id) in await card_service.get_weekly_drawer_ids()
 
 
 async def promote_super_pal(
@@ -102,11 +113,20 @@ class SuperPalCog(commands.Cog):
                     "Member cache may be incomplete! Some users may be excluded from selection."
                 )
 
-            # Exclude current super pal so they can't be re-selected
-            eligible_members = [m for m in true_member_list if role not in m.roles]
+            # Only members who drew a card during the week that just ended are
+            # eligible, and the current super pal can't be re-selected.
+            drawer_ids = await card_service.get_weekly_drawer_ids(
+                card_service.get_closing_week_start()
+            )
+            eligible_members = [
+                m for m in true_member_list if role not in m.roles and str(m.id) in drawer_ids
+            ]
+            log.info(f"Members who drew a card this week: {len(drawer_ids)}")
             if not eligible_members:
-                log.error(
-                    "No eligible members for super pal selection (all members already have role)"
+                log.warning("No eligible members for super pal selection (nobody else drew a card)")
+                await channel.send(
+                    "Nobody drew a card this week, so there's no new super pal of the week. "
+                    "Draw a card with `/card-draw` to be eligible next week!"
                 )
                 return
 
@@ -169,6 +189,12 @@ class SuperPalCog(commands.Cog):
                 )
                 return
 
+            if not await drew_this_week(new_super_pal):
+                await interaction.response.send_message(
+                    NOT_ELIGIBLE_MSG.format(mention=new_super_pal.mention), ephemeral=True
+                )
+                return
+
             log.info(f"{new_super_pal.name} promoted by {interaction.user.name}")
             await interaction.response.send_message(
                 f"You have promoted {new_super_pal.mention} to super pal of the week!",
@@ -207,6 +233,10 @@ class SuperPalCog(commands.Cog):
                 await ctx.send(f"{new_super_pal.mention} is already super pal of the week.")
                 return
 
+            if not await drew_this_week(new_super_pal):
+                await ctx.send(NOT_ELIGIBLE_MSG.format(mention=new_super_pal.mention))
+                return
+
             log.info(f"{new_super_pal.name} promoted by {ctx.message.author.name}")
             await promote_super_pal(
                 guild, channel, new_super_pal, promoted_by=ctx.message.author.name
@@ -230,12 +260,15 @@ class SuperPalCog(commands.Cog):
                 await ctx.send("Error: Could not find guild or channel.")
                 return
 
-            true_member_list = get_non_bot_members(guild)
-            if not true_member_list:
-                await ctx.send("Error: No members found.")
+            drawer_ids = await card_service.get_weekly_drawer_ids()
+            eligible_members = [m for m in get_non_bot_members(guild) if str(m.id) in drawer_ids]
+            if not eligible_members:
+                await ctx.send(
+                    "Nobody has drawn a card this week, so nobody is eligible for the wheel."
+                )
                 return
 
-            true_name_list = [member.name for member in true_member_list]
+            true_name_list = [member.name for member in eligible_members]
             true_name_str = ", ".join(true_name_list)
 
             # Send Spin the Wheel command
@@ -284,6 +317,13 @@ class SuperPalCog(commands.Cog):
 
                     if not new_super_pal:
                         log.error(f"Could not find member: {new_super_pal_name}")
+                        return
+
+                    if not await drew_this_week(new_super_pal):
+                        log.info(f"Wheel picked {new_super_pal.name}, who hasn't drawn this week")
+                        await message.channel.send(
+                            NOT_ELIGIBLE_MSG.format(mention=new_super_pal.mention)
+                        )
                         return
 
                     log.info(f"{new_super_pal.name} was chosen by wheel spin")

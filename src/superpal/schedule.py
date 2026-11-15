@@ -10,9 +10,9 @@ def next_noon_utc() -> datetime:
     return candidate
 
 
-def next_sunday_noon_utc() -> datetime:
-    """Return the next Sunday noon UTC that is strictly in the future."""
-    now = datetime.now(timezone.utc)
+def next_sunday_noon_utc(now: datetime | None = None) -> datetime:
+    """Return the next Sunday noon UTC strictly after `now` (default: the current time)."""
+    now = now or datetime.now(timezone.utc)
     days_since_sunday = (now.weekday() + 1) % 7
     this_sunday = now.date() - timedelta(days=days_since_sunday)
     candidate = datetime(

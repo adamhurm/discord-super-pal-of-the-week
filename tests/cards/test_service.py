@@ -709,3 +709,80 @@ async def test_get_member_card_context_malformed_stats(db):
     ctx = await svc.get_member_card_context("alice")
     assert ctx is not None
     assert ctx.stats_pairs == []
+
+
+# ── Super Pal eligibility: weekly drawers ────────────────────────────────────
+
+
+async def _sync_alice_bob(svc):
+    await svc.sync_members(
+        [
+            {"discord_id": "111", "display_name": "Alice", "avatar_url": None},
+            {"discord_id": "222", "display_name": "Bob", "avatar_url": None},
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_weekly_drawers_records_only_players_who_drew(db):
+    _db_mod, svc = db
+    await _sync_alice_bob(svc)
+    assert await svc.get_weekly_drawer_ids() == set()
+
+    await svc.draw_card(owner_id="111", max_draws=1)
+    assert await svc.get_weekly_drawer_ids() == {"111"}
+
+
+@pytest.mark.asyncio
+async def test_weekly_drawers_survive_admin_draw_reset_and_refund(db):
+    _db_mod, svc = db
+    await _sync_alice_bob(svc)
+    await svc.draw_card(owner_id="111", max_draws=1)
+    await svc.draw_card(owner_id="222", max_draws=1)
+
+    await svc.add_draws("111", 5)
+    await svc.reset_draw_log()
+
+    assert await svc.get_weekly_drawer_ids() == {"111", "222"}
+
+
+@pytest.mark.asyncio
+async def test_weekly_drawers_are_scoped_to_the_draw_week(db):
+    _db_mod, svc = db
+    await _sync_alice_bob(svc)
+    with freeze_time("2026-05-13 15:00:00+00:00"):  # week starting 2026-05-10
+        await svc.draw_card(owner_id="111", max_draws=1)
+    with freeze_time("2026-05-20 15:00:00+00:00"):  # week starting 2026-05-17
+        await svc.draw_card(owner_id="222", max_draws=1)
+        assert await svc.get_weekly_drawer_ids() == {"222"}
+        assert await svc.get_weekly_drawer_ids("2026-05-10T12:00:00+00:00") == {"111"}
+
+
+@pytest.mark.asyncio
+async def test_init_db_backfills_weekly_drawers_from_draw_log(db):
+    db_mod, svc = db
+    async with aiosqlite.connect(db_mod.DB_PATH) as conn:
+        await conn.executemany(
+            "INSERT INTO draw_log (user_id, week_start, draws_used) VALUES (?, ?, ?)",
+            [("111", "2026-05-10T12:00:00+00:00", 2), ("222", "2026-05-10T12:00:00+00:00", 0)],
+        )
+        await conn.commit()
+
+    await db_mod.init_db()
+
+    assert await svc.get_weekly_drawer_ids("2026-05-10T12:00:00+00:00") == {"111"}
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        "2026-05-17 11:59:59+00:00",  # rotation wakes a hair early
+        "2026-05-17 12:00:00+00:00",  # exactly on the boundary
+        "2026-05-17 12:05:00+00:00",  # a little late
+    ],
+)
+def test_get_closing_week_start_is_the_week_that_just_ended(now):
+    from superpal.cards.service import get_closing_week_start
+
+    with freeze_time(now):
+        assert get_closing_week_start() == "2026-05-10T12:00:00+00:00"

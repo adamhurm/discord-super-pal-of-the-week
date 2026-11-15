@@ -105,6 +105,15 @@ CREATE TABLE IF NOT EXISTS draw_log (
     UNIQUE(user_id, week_start)
 );
 
+-- Who drew at least one card in a given draw week. Separate from draw_log so
+-- admin draw resets/refunds (which zero or delete draw_log rows) never revoke
+-- Super Pal of the Week eligibility.
+CREATE TABLE IF NOT EXISTS weekly_drawers (
+    user_id    TEXT NOT NULL,
+    week_start TEXT NOT NULL,
+    PRIMARY KEY (user_id, week_start)
+);
+
 CREATE TABLE IF NOT EXISTS magic_links (
     token              TEXT PRIMARY KEY,
     user_id            TEXT NOT NULL,
@@ -219,6 +228,12 @@ async def init_db() -> None:
         # The DM-based pending_trades flow was replaced by the marketplace
         # (trade_listings/trade_offers); drop the orphaned table.
         await db.execute("DROP TABLE IF EXISTS pending_trades")
+        await db.commit()
+        # Backfill weekly_drawers from draws recorded before it existed.
+        await db.execute(
+            "INSERT OR IGNORE INTO weekly_drawers (user_id, week_start) "
+            "SELECT user_id, week_start FROM draw_log WHERE draws_used > 0"
+        )
         await db.commit()
         # fight_sessions was folded into the unified sessions table.
         await db.execute("DROP TABLE IF EXISTS fight_sessions")
